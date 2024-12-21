@@ -7,6 +7,7 @@ import { PrivateRoute } from './components/common/PrivateRoute';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { NewPRForm } from './components/pr/NewPRForm';
 import { PRList } from './components/pr/PRList';
+import { PRDetails } from './components/pr/PRDetails';
 import { authService } from './services/auth';
 import { setUser, setLoading } from './store/slices/authSlice';
 import { UserRole } from './types/pr';
@@ -75,8 +76,7 @@ function App() {
           element={
             <PrivateRoute>
               <Layout>
-                {/* PR Details component will be added later */}
-                <div>PR Details Coming Soon</div>
+                <PRDetails />
               </Layout>
             </PrivateRoute>
           }
