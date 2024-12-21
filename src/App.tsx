@@ -6,6 +6,7 @@ import { Layout } from './components/common/Layout';
 import { PrivateRoute } from './components/common/PrivateRoute';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { NewPRForm } from './components/pr/NewPRForm';
+import { PRList } from './components/pr/PRList';
 import { authService } from './services/auth';
 import { setUser, setLoading } from './store/slices/authSlice';
 import { UserRole } from './types/pr';
@@ -64,8 +65,7 @@ function App() {
           element={
             <PrivateRoute>
               <Layout>
-                {/* PR List component will be added later */}
-                <div>PR List Coming Soon</div>
+                <PRList />
               </Layout>
             </PrivateRoute>
           }
