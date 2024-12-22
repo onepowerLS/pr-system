@@ -20,13 +20,6 @@ dist-ssr
 .env.test.local
 .env.production.local
 
-# Firebase
-.firebase/
-firebase-debug.log*
-firestore-debug.log*
-ui-debug.log*
-.runtimeconfig.json
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -37,6 +30,20 @@ ui-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+.runtimeconfig.json
+firebase-service-account.json
+google-sheets-credentials.json
+
+# Data files
+*.xlsx
+*.xls
+*.csv
 
 # Build files
 build

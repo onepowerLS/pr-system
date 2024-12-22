@@ -4,7 +4,8 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
 import { User } from '../types/pr';
 
 export const authService = {
@@ -14,7 +15,7 @@ export const authService = {
       return userCredential.user;
     } catch (error) {
       console.error('Login error:', error);
-      throw error;
+      throw new Error('Invalid email or password');
     }
   },
 
@@ -40,9 +41,33 @@ export const authService = {
     });
   },
 
-  // This will be expanded to fetch user details from Firestore
   getUserDetails: async (userId: string): Promise<User | null> => {
-    // TODO: Implement user details fetch from Firestore
-    return null;
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (!userDoc.exists()) {
+        console.error('No user document found for ID:', userId);
+        throw new Error('User account not properly set up. Please contact support.');
+      }
+      
+      const userData = userDoc.data();
+      if (!userData.active) {
+        throw new Error('User account is inactive. Please contact support.');
+      }
+
+      return {
+        id: userId,
+        email: userData.email,
+        name: userData.name,
+        department: userData.department,
+        role: userData.role,
+        active: userData.active
+      };
+    } catch (error) {
+      console.error('Error fetching user details:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to load user details. Please try again later.');
+    }
   }
 };

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { 
   Container, 
   Paper, 
@@ -12,11 +12,13 @@ import {
   CircularProgress
 } from '@mui/material';
 import { authService } from '../../services/auth';
-import { setUser, setError } from '../../store/slices/authSlice';
+import { setUser, setError, clearAuth } from '../../store/slices/authSlice';
+import { RootState } from '../../store/store';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { error: globalError } = useSelector((state: RootState) => state.auth);
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,6 +28,8 @@ export const LoginPage = () => {
     e.preventDefault();
     setLoading(true);
     setLocalError(null);
+    dispatch(setError(null));
+    dispatch(clearAuth());
 
     try {
       const firebaseUser = await authService.login(email, password);
@@ -60,7 +64,7 @@ export const LoginPage = () => {
           alignItems: 'center',
         }}
       >
-        <Paper 
+        <Paper
           elevation={3}
           sx={{
             padding: 4,
@@ -71,12 +75,12 @@ export const LoginPage = () => {
           }}
         >
           <Typography component="h1" variant="h5">
-            1PWR Procurement System
+            Sign in
           </Typography>
-          <Box component="form" onSubmit={handleLogin} sx={{ mt: 3 }} width="100%">
-            {error && (
+          <Box component="form" onSubmit={handleLogin} sx={{ mt: 1, width: '100%' }}>
+            {(error || globalError) && (
               <Alert severity="error" sx={{ mb: 2 }}>
-                {error}
+                {error || globalError}
               </Alert>
             )}
             <TextField

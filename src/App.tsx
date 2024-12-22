@@ -9,7 +9,7 @@ import { NewPRForm } from './components/pr/NewPRForm';
 import { PRList } from './components/pr/PRList';
 import { PRDetails } from './components/pr/PRDetails';
 import { authService } from './services/auth';
-import { setUser, setLoading } from './store/slices/authSlice';
+import { setUser, setLoading, setError, clearAuth } from './store/slices/authSlice';
 import { UserRole } from './types/pr';
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
@@ -21,13 +21,37 @@ function App() {
   useEffect(() => {
     const initAuth = async () => {
       dispatch(setLoading(true));
+      dispatch(setError(null));
       try {
         const firebaseUser = await authService.getCurrentUser();
         if (firebaseUser) {
-          const userDetails = await authService.getUserDetails(firebaseUser.uid);
-          dispatch(setUser(userDetails));
+          try {
+            const userDetails = await authService.getUserDetails(firebaseUser.uid);
+            if (userDetails) {
+              dispatch(setUser(userDetails));
+            } else {
+              dispatch(clearAuth());
+              console.error('No user details found');
+            }
+          } catch (error) {
+            dispatch(clearAuth());
+            if (error instanceof Error) {
+              dispatch(setError(error.message));
+            } else {
+              dispatch(setError('Failed to load user details'));
+            }
+            console.error('Error fetching user details:', error);
+          }
+        } else {
+          dispatch(clearAuth());
         }
       } catch (error) {
+        dispatch(clearAuth());
+        if (error instanceof Error) {
+          dispatch(setError(error.message));
+        } else {
+          dispatch(setError('Authentication failed'));
+        }
         console.error('Auth initialization error:', error);
       } finally {
         dispatch(setLoading(false));

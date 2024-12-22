@@ -83,7 +83,7 @@ export const NewPRForm = () => {
       // Calculate total amount and prepare items
       const items = data.items.map((item, index) => ({
         ...item,
-        id: \`item_\${index}\`,
+        id: `item_${index}`,
         totalPrice: item.quantity * item.unitPrice,
         currency: data.currency,
       }));
@@ -104,7 +104,7 @@ export const NewPRForm = () => {
       const newPR = await prService.getPR(prId);
       if (newPR) {
         dispatch(setCurrentPR(newPR));
-        navigate(\`/pr/\${prId}\`);
+        navigate(`/pr/${prId}`);
       }
     } catch (error) {
       console.error('Error creating PR:', error);
@@ -217,7 +217,7 @@ export const NewPRForm = () => {
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12}>
               <Controller
-                name={\`items.\${index}.description\`}
+                name={`items.${index}.description`}
                 control={control}
                 rules={{ required: 'Description is required' }}
                 render={({ field }) => (
@@ -233,7 +233,7 @@ export const NewPRForm = () => {
             </Grid>
             <Grid item xs={12} sm={4}>
               <Controller
-                name={\`items.\${index}.quantity\`}
+                name={`items.${index}.quantity`}
                 control={control}
                 rules={{ required: 'Quantity is required', min: 1 }}
                 render={({ field }) => (
@@ -250,7 +250,7 @@ export const NewPRForm = () => {
             </Grid>
             <Grid item xs={12} sm={4}>
               <Controller
-                name={\`items.\${index}.unitPrice\`}
+                name={`items.${index}.unitPrice`}
                 control={control}
                 rules={{ required: 'Unit Price is required', min: 0 }}
                 render={({ field }) => (

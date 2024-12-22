@@ -211,7 +211,7 @@ export const PRList = () => {
                     <Tooltip title="View Details">
                       <IconButton
                         size="small"
-                        onClick={() => navigate(\`/pr/\${pr.id}\`)}
+                        onClick={() => navigate(`/pr/${pr.id}`)}
                       >
                         <ViewIcon />
                       </IconButton>
