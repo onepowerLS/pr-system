@@ -66,7 +66,7 @@ export const NewPRForm = () => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Reference data state
+  // Reference data states
   const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
   const [projectCategories, setProjectCategories] = useState<ReferenceDataItem[]>([]);
   const [sites, setSites] = useState<ReferenceDataItem[]>([]);
@@ -76,8 +76,8 @@ export const NewPRForm = () => {
 
   // Form state
   const [formState, setFormState] = useState<FormState>({
-    organization: '',
-    requestor: user?.displayName || '',
+    organization: '1PWR LESOTHO',
+    requestor: user?.name || '',
     email: user?.email || '',
     department: '',
     projectCategory: '',
@@ -87,13 +87,14 @@ export const NewPRForm = () => {
     vehicle: '',
     vendor: '',
     estimatedAmount: 0,
-    requiredDate: '',
+    requiredDate: new Date().toISOString().split('T')[0],
     lineItems: [],
     attachments: []
   });
 
   useEffect(() => {
     const loadReferenceData = async () => {
+      setLoading(true);
       try {
         const [
           deptData,
@@ -103,12 +104,12 @@ export const NewPRForm = () => {
           vehicleData,
           vendorData
         ] = await Promise.all([
-          referenceDataService.getDepartments(),
+          referenceDataService.getDepartments(formState.organization),
           referenceDataService.getProjectCategories(),
-          referenceDataService.getSites(),
+          referenceDataService.getSites(formState.organization),
           referenceDataService.getExpenseTypes(),
-          referenceDataService.getVehicles(),
-          referenceDataService.getVendors()
+          referenceDataService.getVehicles(formState.organization),
+          referenceDataService.getVendors(formState.organization)
         ]);
 
         setDepartments(deptData);
@@ -120,6 +121,8 @@ export const NewPRForm = () => {
       } catch (error) {
         console.error('Error loading reference data:', error);
         enqueueSnackbar('Error loading form data', { variant: 'error' });
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -128,7 +131,7 @@ export const NewPRForm = () => {
     // Cleanup function
     return () => {
       setFormState({
-        organization: '',
+        organization: '1PWR LESOTHO',
         requestor: '',
         email: '',
         department: '',
@@ -139,14 +142,25 @@ export const NewPRForm = () => {
         vehicle: '',
         vendor: '',
         estimatedAmount: 0,
-        requiredDate: '',
+        requiredDate: new Date().toISOString().split('T')[0],
         lineItems: [],
         attachments: []
       });
       setActiveStep(0);
       setLoading(false);
     };
-  }, [user, enqueueSnackbar]);
+  }, [formState.organization, enqueueSnackbar]);
+
+  // Update user info when it changes
+  useEffect(() => {
+    if (user) {
+      setFormState(prev => ({
+        ...prev,
+        requestor: user.name,
+        email: user.email
+      }));
+    }
+  }, [user]);
 
   const validateBasicInfo = () => {
     const requiredFields = [
@@ -286,7 +300,7 @@ export const NewPRForm = () => {
       
       // Reset form state before navigating
       setFormState({
-        organization: '',
+        organization: '1PWR LESOTHO',
         requestor: '',
         email: '',
         department: '',
@@ -297,7 +311,7 @@ export const NewPRForm = () => {
         vehicle: '',
         vendor: '',
         estimatedAmount: 0,
-        requiredDate: '',
+        requiredDate: new Date().toISOString().split('T')[0],
         lineItems: [],
         attachments: []
       });
