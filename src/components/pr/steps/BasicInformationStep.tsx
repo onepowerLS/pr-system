@@ -75,7 +75,18 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     }));
   };
 
+  // Check if expense type is vehicle (type 4)
   const isVehicleExpense = formState.expenseType === '4';
+
+  // Validate that vehicle is selected if expense type is vehicle
+  React.useEffect(() => {
+    if (isVehicleExpense && !formState.vehicle) {
+      setFormState(prev => ({
+        ...prev,
+        vehicle: vehicles[0]?.id || ''
+      }));
+    }
+  }, [isVehicleExpense, vehicles]);
 
   return (
     <Grid container spacing={3}>
@@ -206,13 +217,16 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               </MenuItem>
             ))}
           </Select>
+          {isVehicleExpense && !formState.vehicle && (
+            <FormHelperText error>Please select a vehicle</FormHelperText>
+          )}
         </FormControl>
       </Grid>
 
       {/* Vehicle (only if expense type is Vehicle) */}
       {isVehicleExpense && (
         <Grid item xs={12} md={6}>
-          <FormControl fullWidth required>
+          <FormControl fullWidth required error={!formState.vehicle}>
             <InputLabel>Vehicle</InputLabel>
             <Select
               value={formState.vehicle || ''}
@@ -226,6 +240,9 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
                 </MenuItem>
               ))}
             </Select>
+            {!formState.vehicle && (
+              <FormHelperText>Vehicle selection is required for vehicle expenses</FormHelperText>
+            )}
           </FormControl>
         </Grid>
       )}
