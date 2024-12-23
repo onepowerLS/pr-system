@@ -19,6 +19,8 @@ import {
   FormHelperText,
   Autocomplete,
   Chip,
+  Box,
+  Typography,
 } from '@mui/material';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
@@ -51,19 +53,21 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   expenseTypes,
   vehicles,
   approvers,
-  loading
+  loading,
 }) => {
-  // Handle field changes
   const handleChange = (field: keyof FormState) => (
     event: React.ChangeEvent<HTMLInputElement | { value: unknown }>
   ) => {
-    setFormState(prev => ({
-      ...prev,
-      [field]: event.target.value
-    }));
+    const value = event.target.value;
+    setFormState(prev => {
+      // If changing expense type from vehicle to non-vehicle, clear vehicle
+      if (field === 'expenseType' && prev.expenseType === '4' && value !== '4') {
+        return { ...prev, [field]: value, vehicle: undefined };
+      }
+      return { ...prev, [field]: value };
+    });
   };
 
-  // Handle approver changes
   const handleApproverChange = (_event: any, value: any) => {
     setFormState(prev => ({
       ...prev,
@@ -71,46 +75,51 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     }));
   };
 
+  const isVehicleExpense = formState.expenseType === '4';
+
   return (
     <Grid container spacing={3}>
       {/* Organization */}
       <Grid item xs={12}>
-        <TextField
-          required
-          fullWidth
-          label="Organization"
-          value={formState.organization}
-          onChange={handleChange('organization')}
-          disabled
-        />
+        <FormControl fullWidth disabled>
+          <InputLabel>Organization</InputLabel>
+          <Select
+            value={formState.organization}
+            label="Organization"
+          >
+            <MenuItem value="1PWR LESOTHO">1PWR LESOTHO</MenuItem>
+          </Select>
+          <FormHelperText>Organization is fixed to 1PWR LESOTHO</FormHelperText>
+        </FormControl>
       </Grid>
 
       {/* Requestor */}
-      <Grid item xs={12} sm={6}>
+      <Grid item xs={12} md={6}>
         <TextField
-          required
           fullWidth
           label="Requestor"
           value={formState.requestor}
           onChange={handleChange('requestor')}
-          disabled
+          required
+          disabled={loading}
         />
       </Grid>
 
       {/* Email */}
-      <Grid item xs={12} sm={6}>
+      <Grid item xs={12} md={6}>
         <TextField
-          required
           fullWidth
           label="Email"
+          type="email"
           value={formState.email}
           onChange={handleChange('email')}
-          disabled
+          required
+          disabled={loading}
         />
       </Grid>
 
       {/* Department */}
-      <Grid item xs={12} sm={6}>
+      <Grid item xs={12} md={6}>
         <FormControl fullWidth required>
           <InputLabel>Department</InputLabel>
           <Select
@@ -129,7 +138,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       </Grid>
 
       {/* Project Category */}
-      <Grid item xs={12} sm={6}>
+      <Grid item xs={12} md={6}>
         <FormControl fullWidth required>
           <InputLabel>Project Category</InputLabel>
           <Select
@@ -138,9 +147,9 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             label="Project Category"
             disabled={loading}
           >
-            {projectCategories.map(category => (
-              <MenuItem key={category.id} value={category.id}>
-                {category.name}
+            {projectCategories.map(cat => (
+              <MenuItem key={cat.id} value={cat.id}>
+                {cat.name}
               </MenuItem>
             ))}
           </Select>
@@ -150,20 +159,20 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       {/* Description */}
       <Grid item xs={12}>
         <TextField
-          required
           fullWidth
-          multiline
-          rows={4}
           label="Description"
+          multiline
+          rows={3}
           value={formState.description}
           onChange={handleChange('description')}
+          required
           disabled={loading}
-          helperText="Provide a detailed description of what you are requesting"
+          helperText="Provide a clear description of what you are requesting"
         />
       </Grid>
 
       {/* Site */}
-      <Grid item xs={12} sm={6}>
+      <Grid item xs={12} md={6}>
         <FormControl fullWidth required>
           <InputLabel>Site</InputLabel>
           <Select
@@ -182,7 +191,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       </Grid>
 
       {/* Expense Type */}
-      <Grid item xs={12} sm={6}>
+      <Grid item xs={12} md={6}>
         <FormControl fullWidth required>
           <InputLabel>Expense Type</InputLabel>
           <Select
@@ -200,10 +209,10 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
         </FormControl>
       </Grid>
 
-      {/* Vehicle (Optional) */}
-      {formState.expenseType === 'VEHICLE_EXPENSE' && (
-        <Grid item xs={12}>
-          <FormControl fullWidth>
+      {/* Vehicle (only if expense type is Vehicle) */}
+      {isVehicleExpense && (
+        <Grid item xs={12} md={6}>
+          <FormControl fullWidth required>
             <InputLabel>Vehicle</InputLabel>
             <Select
               value={formState.vehicle || ''}
@@ -217,10 +226,61 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
                 </MenuItem>
               ))}
             </Select>
-            <FormHelperText>Select a vehicle if this is a vehicle-related expense</FormHelperText>
           </FormControl>
         </Grid>
       )}
+
+      {/* Estimated Amount */}
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Estimated Amount"
+          type="number"
+          value={formState.estimatedAmount}
+          onChange={handleChange('estimatedAmount')}
+          required
+          disabled={loading}
+          InputProps={{
+            inputProps: { min: 0, step: 0.01 }
+          }}
+        />
+      </Grid>
+
+      {/* Currency */}
+      <Grid item xs={12} md={6}>
+        <FormControl fullWidth required>
+          <InputLabel>Currency</InputLabel>
+          <Select
+            value={formState.currency}
+            onChange={handleChange('currency')}
+            label="Currency"
+            disabled={loading}
+          >
+            <MenuItem value="LSL">LSL</MenuItem>
+            <MenuItem value="USD">USD</MenuItem>
+            <MenuItem value="ZAR">ZAR</MenuItem>
+          </Select>
+        </FormControl>
+      </Grid>
+
+      {/* Required Date */}
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Required Date"
+          type="date"
+          value={formState.requiredDate}
+          onChange={handleChange('requiredDate')}
+          required
+          disabled={loading}
+          InputLabelProps={{
+            shrink: true,
+          }}
+          inputProps={{
+            min: new Date().toISOString().split('T')[0]
+          }}
+        />
+      </Grid>
 
       {/* Approvers */}
       <Grid item xs={12}>
@@ -263,3 +323,5 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     </Grid>
   );
 };
+
+export default BasicInformationStep;
