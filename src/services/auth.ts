@@ -1,3 +1,36 @@
+/**
+ * @fileoverview Authentication Service Implementation
+ * @version 1.2.0
+ * 
+ * Change History:
+ * 1.0.0 - Initial implementation of basic auth functions
+ * 1.1.0 - Added error handling and user state management
+ * 1.2.0 - Improved logging and error messages, refactored to individual exports
+ * 
+ * Description:
+ * This module provides authentication services for the PR System application.
+ * It wraps Firebase Authentication functionality with application-specific
+ * logic and error handling. Manages user authentication state and provides
+ * methods for sign-in, sign-out, and user state management.
+ * 
+ * Architecture Notes:
+ * - Uses Firebase Auth for authentication backend
+ * - Integrates with Redux store for state management
+ * - Provides error handling and logging for auth operations
+ * - Exports individual functions for better tree-shaking
+ * 
+ * Related Modules:
+ * - src/config/firebase.ts: Provides the auth instance
+ * - src/store/slices/authSlice.ts: Manages auth state in Redux
+ * - src/components/auth/LoginPage.tsx: Uses these functions for user login
+ * 
+ * Data Flow:
+ * 1. User initiates auth action (e.g., login)
+ * 2. Auth service calls Firebase Auth
+ * 3. Updates Redux store with result
+ * 4. UI components react to state changes
+ */
+
 import { 
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -9,6 +42,13 @@ import { User } from '../types/user';
 import { store } from '../store';
 import { setUser, clearUser, setLoading, setError } from '../store/slices/authSlice';
 
+/**
+ * Signs in a user with email and password
+ * @param email - User's email address
+ * @param password - User's password
+ * @returns Promise resolving to the signed-in user
+ * @throws Error if sign-in fails
+ */
 export const signIn = async (email: string, password: string): Promise<void> => {
   console.log('auth.ts: Attempting sign in');
   try {
@@ -61,6 +101,11 @@ export const signIn = async (email: string, password: string): Promise<void> => 
   }
 };
 
+/**
+ * Signs out the current user
+ * @returns Promise<void>
+ * @throws Error if sign-out fails
+ */
 export const signOut = async (): Promise<void> => {
   console.log('auth.ts: Attempting sign out');
   try {
@@ -75,6 +120,11 @@ export const signOut = async (): Promise<void> => {
   }
 };
 
+/**
+ * Retrieves user details from Firestore
+ * @param uid - User's unique ID
+ * @returns Promise resolving to the user details or null if not found
+ */
 export const getUserDetails = async (uid: string): Promise<User | null> => {
   console.log('auth.ts: Getting user details for:', uid);
   try {
@@ -96,6 +146,10 @@ export const getUserDetails = async (uid: string): Promise<User | null> => {
   }
 };
 
+/**
+ * Retrieves the current user's details
+ * @returns Promise resolving to the current user or null if not signed in
+ */
 export const getCurrentUser = async (): Promise<User | null> => {
   console.log('auth.ts: Getting current user');
   try {
@@ -122,6 +176,9 @@ export const getCurrentUser = async (): Promise<User | null> => {
   }
 };
 
+/**
+ * Initializes the authentication listener
+ */
 export const initializeAuthListener = (): void => {
   console.log('auth.ts: Initializing auth listener');
   onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
