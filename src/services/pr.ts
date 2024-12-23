@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PRRequest, PRStatus, User } from '../types/pr';
+import { notificationService } from './notification';
 
 const PR_COLLECTION = 'purchaseRequests';
 
@@ -43,8 +44,17 @@ export const prService = {
         ...prData,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-        status: PRStatus.DRAFT
+        status: PRStatus.SUBMITTED
       });
+      
+      // Send notification for new PR submission
+      const user = prData.requestor;
+      await notificationService.handleStatusChange(
+        prRef.id,
+        '', // No previous status for new PR
+        PRStatus.SUBMITTED,
+        user
+      );
       
       return prRef.id;
     } catch (error) {
@@ -138,11 +148,26 @@ export const prService = {
   updateStatus: async (prId: string, status: PRStatus, updatedBy: User): Promise<void> => {
     try {
       const prRef = doc(db, PR_COLLECTION, prId);
+      const prDoc = await getDoc(prRef);
+      
+      if (!prDoc.exists()) {
+        throw new Error('PR not found');
+      }
+
+      const currentStatus = prDoc.data().status;
+      
       await updateDoc(prRef, {
         status,
-        updatedBy: updatedBy.id,
         updatedAt: Timestamp.now()
       });
+
+      // Send notification for status change
+      await notificationService.handleStatusChange(
+        prId,
+        currentStatus,
+        status,
+        updatedBy
+      );
     } catch (error) {
       console.error('Error updating PR status:', error);
       throw error;

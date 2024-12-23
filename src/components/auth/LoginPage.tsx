@@ -1,126 +1,113 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { 
-  Container, 
-  Paper, 
-  Typography, 
-  TextField, 
-  Button, 
-  Box,
-  Alert,
-  CircularProgress
-} from '@mui/material';
+import { useDispatch } from 'react-redux';
+import { Box, Button, TextField, Typography, CircularProgress } from '@mui/material';
 import { authService } from '../../services/auth';
-import { setUser, setError, clearAuth } from '../../store/slices/authSlice';
-import { RootState } from '../../store/store';
+import { setUser, setError } from '../../store/slices/authSlice';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { error: globalError } = useSelector((state: RootState) => state.auth);
-  const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setLocalError] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('LoginPage: Starting login attempt');
     setLoading(true);
     setLocalError(null);
-    dispatch(setError(null));
-    dispatch(clearAuth());
 
     try {
+      console.log('LoginPage: Attempting login with email:', email);
       const firebaseUser = await authService.login(email, password);
-      if (!firebaseUser) {
-        throw new Error('Login failed');
-      }
-
-      // Get additional user details from Firestore
+      console.log('LoginPage: Login successful, getting user details');
+      
       const userDetails = await authService.getUserDetails(firebaseUser.uid);
-      if (!userDetails) {
-        throw new Error('User details not found');
+      if (userDetails) {
+        console.log('LoginPage: User details loaded, setting user');
+        dispatch(setUser(userDetails));
+        navigate('/dashboard');
+      } else {
+        console.error('LoginPage: No user details found after login');
+        setLocalError('User account not found. Please contact support.');
       }
-
-      dispatch(setUser(userDetails));
-      navigate('/dashboard');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Login failed';
-      setLocalError(errorMessage);
-      dispatch(setError(errorMessage));
+    } catch (error) {
+      console.error('LoginPage: Login error:', error);
+      setLocalError(error instanceof Error ? error.message : 'Login failed');
+      dispatch(setError(error instanceof Error ? error.message : 'Login failed'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Container component="main" maxWidth="xs">
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        bgcolor: 'background.default',
+        p: 3,
+      }}
+    >
       <Box
+        component="form"
+        onSubmit={handleLogin}
         sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
+          backgroundColor: 'white',
+          padding: 3,
+          borderRadius: 2,
+          boxShadow: 3,
+          width: '100%',
+          maxWidth: 400,
         }}
       >
-        <Paper
-          elevation={3}
-          sx={{
-            padding: 4,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            width: '100%',
-          }}
-        >
-          <Typography component="h1" variant="h5">
-            Sign in
+        <Typography variant="h4" component="h1" gutterBottom align="center">
+          Login
+        </Typography>
+
+        {error && (
+          <Typography color="error" align="center" gutterBottom>
+            {error}
           </Typography>
-          <Box component="form" onSubmit={handleLogin} sx={{ mt: 1, width: '100%' }}>
-            {(error || globalError) && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {error || globalError}
-              </Alert>
-            )}
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="Email Address"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="Password"
-              type="password"
-              id="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              sx={{ mt: 3, mb: 2 }}
-              disabled={loading}
-            >
-              {loading ? <CircularProgress size={24} /> : 'Sign In'}
-            </Button>
-          </Box>
-        </Paper>
+        )}
+
+        <TextField
+          label="Email"
+          type="email"
+          fullWidth
+          margin="normal"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={loading}
+        />
+
+        <TextField
+          label="Password"
+          type="password"
+          fullWidth
+          margin="normal"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={loading}
+        />
+
+        <Button
+          type="submit"
+          variant="contained"
+          color="primary"
+          fullWidth
+          size="large"
+          disabled={loading}
+          sx={{ mt: 3 }}
+        >
+          {loading ? <CircularProgress size={24} /> : 'Login'}
+        </Button>
       </Box>
-    </Container>
+    </Box>
   );
 };

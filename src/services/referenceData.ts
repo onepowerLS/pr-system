@@ -19,19 +19,19 @@ interface ReferenceData {
 
 class ReferenceDataService {
   async getDepartments(organization: string): Promise<ReferenceData[]> {
-    return departments;
+    return departments.filter(dept => dept.organization === organization);
   }
 
-  async getProjectCategories(): Promise<ReferenceData[]> {
-    return projectCategories;
+  async getProjectCategories(organization: string): Promise<ReferenceData[]> {
+    return projectCategories.filter(cat => cat.organization === organization);
   }
 
   async getSites(organization: string): Promise<ReferenceData[]> {
     return sites.filter(site => site.organization === organization);
   }
 
-  async getExpenseTypes(): Promise<ReferenceData[]> {
-    return expenseTypes;
+  async getExpenseTypes(organization: string): Promise<ReferenceData[]> {
+    return expenseTypes.filter(type => type.organization === organization);
   }
 
   async getVehicles(organization: string): Promise<ReferenceData[]> {

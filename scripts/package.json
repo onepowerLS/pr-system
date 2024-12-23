@@ -1,0 +1,9 @@
+{
+  "name": "pr-system-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for PR System data import",
+  "main": "import_to_firebase.js",
+  "dependencies": {
+    "firebase-admin": "^11.11.1"
+  }
+}

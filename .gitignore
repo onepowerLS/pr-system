@@ -54,3 +54,9 @@ coverage
 *.pem
 .cache
 .temp
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/

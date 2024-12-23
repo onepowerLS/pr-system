@@ -1,6 +1,6 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useEffect } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { CircularProgress, Box } from '@mui/material';
+import { CircularProgress, Box, Typography } from '@mui/material';
 import { RootState } from '../../store';
 
 interface PrivateRouteProps {
@@ -10,17 +10,34 @@ interface PrivateRouteProps {
 
 export const PrivateRoute = ({ children, requiredRoles }: PrivateRouteProps) => {
   const location = useLocation();
-  const { user, loading } = useSelector((state: RootState) => state.auth);
+  const navigate = useNavigate();
+  const { user, loading, error } = useSelector((state: RootState) => {
+    console.log('PrivateRoute: Checking auth state:', state.auth);
+    return state.auth;
+  });
+
+  useEffect(() => {
+    console.log('PrivateRoute: Auth state changed:', { user, loading, error });
+    if (!loading && !user) {
+      console.log('PrivateRoute: No user found, redirecting to login');
+      navigate('/login');
+    }
+  }, [user, loading, error, navigate]);
 
   if (loading) {
     return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="100vh"
-      >
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
         <CircularProgress />
+        <Typography sx={{ mt: 2 }}>Loading...</Typography>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <Typography color="error" gutterBottom>{error}</Typography>
+        <Typography>Please try refreshing the page.</Typography>
       </Box>
     );
   }

@@ -34,14 +34,13 @@ import { PRRequest, PRStatus } from '../../types/pr';
 import { format } from 'date-fns';
 
 const statusColors: Record<PRStatus, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  [PRStatus.DRAFT]: 'default',
-  [PRStatus.PENDING_APPROVAL]: 'warning',
-  [PRStatus.APPROVED]: 'success',
-  [PRStatus.ORDERED]: 'info',
-  [PRStatus.PARTIALLY_RECEIVED]: 'secondary',
-  [PRStatus.RECEIVED]: 'primary',
-  [PRStatus.CANCELLED]: 'error',
+  [PRStatus.SUBMITTED]: 'warning',
+  [PRStatus.IN_QUEUE]: 'info',
+  [PRStatus.ORDERED]: 'primary',
+  [PRStatus.COMPLETED]: 'success',
+  [PRStatus.REVISION_REQUIRED]: 'warning',
   [PRStatus.REJECTED]: 'error',
+  [PRStatus.CANCELED]: 'error',
 };
 
 export const PRList = () => {

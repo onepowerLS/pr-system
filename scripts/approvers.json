@@ -1,0 +1,58 @@
+{
+  "approvers": [
+    {
+      "id": "8e8e7021-5995-4582-8bf6-4d1049024d86",
+      "name": "Amy Mueller",
+      "email": "amy@1pwrafrica.com",
+      "role": "APPROVER",
+      "department": "CFO",
+      "isActive": true,
+      "approvalLimit": 50000.0
+    },
+    {
+      "id": "086b1e48-2b25-4389-aaa3-3ad56c755f40",
+      "name": "Matt Orosz",
+      "email": "mso@1pwrafrica.com",
+      "role": "APPROVER",
+      "department": "CEO",
+      "isActive": true,
+      "approvalLimit": 50000.0
+    },
+    {
+      "id": "06623b3a-6011-47d7-8fc9-0490269b124f",
+      "name": "Tumelo Makhetha",
+      "email": "tumelo@1pwrafrica.com",
+      "role": "APPROVER",
+      "department": "DPO",
+      "isActive": true,
+      "approvalLimit": 50000.0
+    },
+    {
+      "id": "cf71ce22-6d02-42f0-b514-7af0dd25d425",
+      "name": "Teboho Noko",
+      "email": "teboho@1pwrafrica.com",
+      "role": "APPROVER",
+      "department": "DPO",
+      "isActive": true,
+      "approvalLimit": 50000.0
+    },
+    {
+      "id": "a6717090-bcf8-4837-a52e-5f04b485de2a",
+      "name": "Charlotte Oster",
+      "email": "charlotte@1pwrafrica.com",
+      "role": "APPROVER",
+      "department": "DPO",
+      "isActive": true,
+      "approvalLimit": 50000.0
+    },
+    {
+      "id": "87595860-1edc-418b-a5f3-99276593905f",
+      "name": "admin (under 1000)",
+      "email": "admin@1pwrafrica.com",
+      "role": "APPROVER",
+      "department": "Admin",
+      "isActive": true,
+      "approvalLimit": 1000.0
+    }
+  ]
+}

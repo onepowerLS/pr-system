@@ -3,7 +3,7 @@ export interface PRRequest {
   requestor: User;
   status: PRStatus;
   items: PRItem[];
-  approvers: User[];
+  approvers: ApprovalInfo[];
   createdAt: string; // ISO string in Redux
   updatedAt: string; // ISO string in Redux
   expectedLandingDate?: string; // ISO string in Redux
@@ -15,6 +15,8 @@ export interface PRRequest {
   organization: string;
   attachments?: Attachment[];
   metrics?: PRMetrics;
+  quotes?: Quote[];
+  workflow?: PRWorkflow;
 }
 
 export interface PRItem {
@@ -36,6 +38,7 @@ export interface User {
   role: UserRole;
   department?: string;
   isActive: boolean;
+  approvalLimit?: number;  // Maximum amount in LSL that this approver can approve
 }
 
 export interface Attachment {
@@ -48,8 +51,59 @@ export interface Attachment {
   uploadedBy: User;
 }
 
-export enum PRStatus {
+export interface Quote {
+  id: string;
+  vendorName: string;
+  amount: number;
+  currency: string;
+  attachment?: Attachment;
+  notes?: string;
+  submittedAt: string;
+  submittedBy: User;
+}
+
+export interface ApprovalInfo {
+  approver: User;
+  approvedAt?: string;
+  notes?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+}
+
+export interface PRWorkflow {
+  currentStep: WorkflowStep;
+  adjudication?: AdjudicationInfo;
+  financeApproval?: ApprovalInfo;
+  procurementReview?: ApprovalInfo;
+  history: WorkflowHistory[];
+}
+
+export interface AdjudicationInfo {
+  notes: string;
+  addedBy: User;
+  addedAt: string;
+  attachments?: Attachment[];
+}
+
+export interface WorkflowHistory {
+  step: WorkflowStep;
+  timestamp: string;
+  user: User;
+  notes?: string;
+}
+
+export enum WorkflowStep {
   DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  IN_QUEUE = 'IN_QUEUE',
+  ADJUDICATION_REQUIRED = 'ADJUDICATION_REQUIRED',
+  ADJUDICATION_COMPLETE = 'ADJUDICATION_COMPLETE',
+  FINANCE_REVIEW = 'FINANCE_REVIEW',
+  PROCUREMENT_REVIEW = 'PROCUREMENT_REVIEW',
+  READY_FOR_PO = 'READY_FOR_PO',
+  PO_CREATED = 'PO_CREATED'
+}
+
+export enum PRStatus {
   SUBMITTED = 'SUBMITTED',
   IN_QUEUE = 'IN_QUEUE',
   ORDERED = 'ORDERED',
@@ -66,13 +120,20 @@ export enum UserRole {
   VIEWER = 'VIEWER'
 }
 
+export const PR_AMOUNT_THRESHOLDS = {
+  ADMIN_APPROVAL: 1000,      // Below this amount requires admin approval
+  QUOTES_REQUIRED: 5000,     // Above this amount requires 3 quotes (unless approved vendor)
+  FINANCE_APPROVAL: 50000,   // Above this amount requires finance approval and adjudication
+} as const;
+
 export interface PRMetrics {
   daysOpen: number;
   isUrgent: boolean;
   isOverdue: boolean;
   quotesRequired: boolean;
   adjudicationRequired: boolean;
-  customsClearanceRequired: boolean;
+  financeApprovalRequired: boolean;
+  isApprovedVendor: boolean;
   completionPercentage: number;
   queuePosition?: number;
 }
