@@ -60,17 +60,18 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   ) => {
     const value = event.target.value;
     setFormState(prev => {
-      // If changing expense type from vehicle to non-vehicle, clear vehicle
+      // Handle expense type changes
       if (field === 'expenseType') {
-        if (value === '4' && !prev.vehicle) {
-          // If changing to vehicle type and no vehicle selected, select first available
+        if (value === '4') {
+          // When switching to vehicle expense type
           return {
             ...prev,
             [field]: value,
-            vehicle: vehicles[0]?.id || ''
+            // Don't auto-select vehicle - user must explicitly choose
+            vehicle: undefined
           };
-        } else if (value !== '4' && prev.vehicle) {
-          // If changing from vehicle type, clear vehicle
+        } else if (prev.expenseType === '4') {
+          // When switching from vehicle expense type, clear vehicle
           return {
             ...prev,
             [field]: value,
@@ -231,13 +232,15 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               </MenuItem>
             ))}
           </Select>
-          {isVehicleExpense && (
-            <FormHelperText>Vehicle selection is required for this expense type</FormHelperText>
+          {isVehicleExpense && !formState.vehicle && (
+            <FormHelperText error>
+              Vehicle expenses require a vehicle to be selected
+            </FormHelperText>
           )}
         </FormControl>
       </Grid>
 
-      {/* Vehicle Selection - Only shown for vehicle expense type */}
+      {/* Vehicle Selection - Required for vehicle expense type */}
       {isVehicleExpense && (
         <Grid item xs={12} md={6}>
           <FormControl fullWidth required error={!formState.vehicle}>
@@ -248,6 +251,9 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               label="Vehicle"
               disabled={loading}
             >
+              <MenuItem value="" disabled>
+                <em>Select a vehicle</em>
+              </MenuItem>
               {vehicles.map(vehicle => (
                 <MenuItem key={vehicle.id} value={vehicle.id}>
                   {vehicle.name}
@@ -255,7 +261,9 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               ))}
             </Select>
             {!formState.vehicle && (
-              <FormHelperText>Please select a vehicle</FormHelperText>
+              <FormHelperText error>
+                Please select the vehicle this expense is for
+              </FormHelperText>
             )}
           </FormControl>
         </Grid>
