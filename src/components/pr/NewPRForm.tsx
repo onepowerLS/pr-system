@@ -1,3 +1,44 @@
+/**
+ * @fileoverview Purchase Request Form Component
+ * @version 1.2.0
+ * 
+ * Change History:
+ * 1.0.0 - Initial implementation with basic form fields
+ * 1.1.0 - Added multi-step form and validation
+ * 1.2.0 - Added reference data integration and approver logic
+ * 
+ * Description:
+ * This component provides a multi-step form for creating new purchase requests.
+ * It handles the complete PR creation workflow including basic information,
+ * line items, quotes, and approval routing based on organizational rules.
+ * 
+ * Architecture Notes:
+ * - Uses Material-UI for form components and layout
+ * - Integrates with Firestore for data persistence
+ * - Implements complex business logic for approver routing
+ * - Manages multiple form states and validation rules
+ * 
+ * Business Rules:
+ * - PRs over $1,000 require admin approval
+ * - PRs over $5,000 require multiple quotes
+ * - PRs over $50,000 require finance approval
+ * - Preferred vendors may bypass quote requirements
+ * - Department heads must be in approval chain
+ * 
+ * Related Modules:
+ * - src/services/referenceData.ts: Provides reference data
+ * - src/services/approver.ts: Handles approver logic
+ * - src/store/slices/prSlice.ts: Manages PR state
+ * 
+ * Form State Structure:
+ * {
+ *   basicInfo: { organization, requestor, etc. },
+ *   lineItems: [{ description, quantity, etc. }],
+ *   quotes: [{ vendor, amount, etc. }],
+ *   approvers: [{ id, role, etc. }]
+ * }
+ */
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
@@ -33,8 +74,10 @@ import { approverService } from '../../services/approver';
 import { ReferenceDataItem } from '../../types/referenceData';
 import { RootState } from '../../store/types';
 
+// Form steps definition
 const steps = ['Basic Information', 'Line Items', 'Review'];
 
+// Type definitions for form data structures
 interface ReferenceDataItem {
   id: string;
   name: string;
@@ -57,6 +100,7 @@ interface Quote {
   notes: string;
 }
 
+// Main form state interface
 interface FormState {
   organization: string;
   requestor: string;
@@ -76,6 +120,7 @@ interface FormState {
   quotes: Quote[];
 }
 
+// Initial form state with default values
 const initialState: FormState = {
   organization: '',
   requestor: '',
@@ -95,12 +140,25 @@ const initialState: FormState = {
   quotes: []
 };
 
+// Business rule thresholds
 const PR_AMOUNT_THRESHOLDS = {
-  ADMIN_APPROVAL: 1000,
-  QUOTES_REQUIRED: 5000,
-  FINANCE_APPROVAL: 50000
+  ADMIN_APPROVAL: 1000,    // Requires admin approval above this amount
+  QUOTES_REQUIRED: 5000,   // Requires multiple quotes above this amount
+  FINANCE_APPROVAL: 50000  // Requires finance approval above this amount
 };
 
+/**
+ * NewPRForm Component
+ * 
+ * A multi-step form component for creating new purchase requests.
+ * Handles form state, validation, and submission to Firestore.
+ * 
+ * @component
+ * @example
+ * return (
+ *   <NewPRForm />
+ * )
+ */
 export const NewPRForm = () => {
   console.log('NewPRForm: Component mounting');
   const navigate = useNavigate();
