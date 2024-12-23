@@ -1,14 +1,21 @@
 import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
 import { User } from '../types/user';
 
+// Valid approver roles
+const APPROVER_ROLES = ['ADMIN', 'FINANCE_APPROVER'];
+
 class ApproverService {
   private db = getFirestore();
 
   async getActiveApprovers(): Promise<User[]> {
     try {
       console.log('ApproverService: Getting active approvers');
-      const approversRef = collection(this.db, 'approvers');
-      const q = query(approversRef, where('isActive', '==', true));
+      const approversRef = collection(this.db, 'users');
+      const q = query(
+        approversRef,
+        where('isActive', '==', true),
+        where('role', 'in', APPROVER_ROLES)
+      );
       const querySnapshot = await getDocs(q);
       
       const approvers = querySnapshot.docs.map(doc => ({
@@ -27,12 +34,12 @@ class ApproverService {
   async getApprovers(organization: string): Promise<User[]> {
     try {
       console.log('ApproverService: Getting approvers for organization:', organization);
-      const approversRef = collection(this.db, 'users');  
+      const approversRef = collection(this.db, 'users');
       const q = query(
         approversRef, 
         where('isActive', '==', true),
         where('organization', '==', organization),
-        where('role', 'in', ['ADMIN', 'MANAGER', 'FINANCE'])  
+        where('role', 'in', APPROVER_ROLES)
       );
       const querySnapshot = await getDocs(q);
       
@@ -42,6 +49,7 @@ class ApproverService {
       } as User));
 
       console.log(`ApproverService: Found ${approvers.length} approvers for organization ${organization}`);
+      console.log('ApproverService: Approvers:', approvers);
       return approvers;
     } catch (error) {
       console.error('ApproverService: Error getting approvers:', error);
@@ -58,7 +66,7 @@ class ApproverService {
         where('isActive', '==', true),
         where('organization', '==', organization),
         where('department', '==', department),
-        where('role', '==', 'MANAGER')
+        where('role', 'in', APPROVER_ROLES)
       );
       const querySnapshot = await getDocs(q);
       
