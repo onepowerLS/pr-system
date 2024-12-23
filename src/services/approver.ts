@@ -5,10 +5,10 @@ interface Approver {
   id: string;
   name: string;
   email: string;
-  role: string;
-  department?: string;
-  organization: string;
+  department: string;
+  approvalLimit: number;
   isActive: boolean;
+  organization?: string;
 }
 
 class ApproverService {
@@ -21,12 +21,21 @@ class ApproverService {
       const q = query(approversRef, where('isActive', '==', true));
       const querySnapshot = await getDocs(q);
       
-      const approvers = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Approver));
+      const approvers = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.Name,
+          email: data.Email,
+          department: data.Department,
+          approvalLimit: data['Approval Limit'],
+          isActive: data['Active Status (Y/N)'] === 'Y',
+          organization: '1PWR LESOTHO'
+        } as Approver;
+      });
 
       console.log(`ApproverService: Found ${approvers.length} active approvers`);
+      console.log('ApproverService: Approvers:', approvers);
       return approvers;
     } catch (error) {
       console.error('ApproverService: Error getting active approvers:', error);
@@ -40,15 +49,22 @@ class ApproverService {
       const approversRef = collection(this.db, 'approverList');
       const q = query(
         approversRef, 
-        where('isActive', '==', true),
-        where('organization', '==', organization)
+        where('isActive', '==', true)
       );
       const querySnapshot = await getDocs(q);
       
-      const approvers = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Approver));
+      const approvers = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.Name,
+          email: data.Email,
+          department: data.Department,
+          approvalLimit: data['Approval Limit'],
+          isActive: data['Active Status (Y/N)'] === 'Y',
+          organization: '1PWR LESOTHO'
+        } as Approver;
+      }).filter(a => a.isActive);
 
       console.log(`ApproverService: Found ${approvers.length} approvers for organization ${organization}`);
       console.log('ApproverService: Approvers:', approvers);
@@ -63,20 +79,27 @@ class ApproverService {
     try {
       console.log('ApproverService: Getting approvers for department:', department);
       const approversRef = collection(this.db, 'approverList');
-      const q = query(
-        approversRef, 
-        where('isActive', '==', true),
-        where('organization', '==', organization),
-        where('department', '==', department)
-      );
+      const q = query(approversRef);
       const querySnapshot = await getDocs(q);
       
-      const approvers = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Approver));
+      const approvers = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.Name,
+          email: data.Email,
+          department: data.Department,
+          approvalLimit: data['Approval Limit'],
+          isActive: data['Active Status (Y/N)'] === 'Y',
+          organization: '1PWR LESOTHO'
+        } as Approver;
+      }).filter(a => 
+        a.isActive && 
+        a.department === department
+      );
 
       console.log(`ApproverService: Found ${approvers.length} approvers for department ${department}`);
+      console.log('ApproverService: Approvers:', approvers);
       return approvers;
     } catch (error) {
       console.error('ApproverService: Error getting department approvers:', error);
