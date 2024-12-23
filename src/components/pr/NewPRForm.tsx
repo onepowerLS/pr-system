@@ -163,18 +163,15 @@ export const NewPRForm = () => {
   console.log('NewPRForm: Component mounting');
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
-  const user = useSelector((state: RootState) => {
+  const { user, loading: authLoading } = useSelector((state: RootState) => {
     console.log('NewPRForm: Getting user from state:', state.auth);
-    return state.auth.user;
+    return {
+      user: state.auth.user,
+      loading: state.auth.loading
+    };
   });
 
   // Initialize state
-  console.log('NewPRForm: Initializing with user:', user);
-  if (!user) {
-    console.error('NewPRForm: No user found in state');
-    throw new Error('No user found');
-  }
-
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -195,7 +192,7 @@ export const NewPRForm = () => {
     console.log('NewPRForm: Initializing form state with user:', user);
     return {
       ...initialState,
-      organization: user?.organization || initialState.organization, // Use default if not set
+      organization: user?.organization || initialState.organization,
       requestor: user?.name || '',
       email: user?.email || '',
       department: user?.department || ''
@@ -207,17 +204,24 @@ export const NewPRForm = () => {
   const [requiresFinanceApproval, setRequiresFinanceApproval] = useState(false);
   const [isApprovedVendor, setIsApprovedVendor] = useState(false);
 
+  // Handle auth loading state
+  useEffect(() => {
+    if (authLoading) {
+      setLoading(true);
+    } else if (!user) {
+      navigate('/login');
+    }
+  }, [authLoading, user, navigate]);
+
   // Load reference data
   useEffect(() => {
     const loadReferenceData = async () => {
-      const organization = formState.organization; // Use form state organization
-      if (!organization) {
-        setError('No organization found');
-        setLoading(false);
+      if (authLoading || !formState.organization) {
         return;
       }
-      
+
       try {
+        setLoading(true);
         const [
           deptData,
           projectData,
@@ -227,13 +231,13 @@ export const NewPRForm = () => {
           vendorData,
           approverData
         ] = await Promise.all([
-          referenceDataService.getDepartments(organization),
-          referenceDataService.getProjectCategories(organization),
-          referenceDataService.getSites(organization),
-          referenceDataService.getExpenseTypes(organization),
-          referenceDataService.getVehicles(organization),
-          referenceDataService.getVendors(organization),
-          approverService.getApprovers(organization)
+          referenceDataService.getDepartments(formState.organization),
+          referenceDataService.getProjectCategories(formState.organization),
+          referenceDataService.getSites(formState.organization),
+          referenceDataService.getExpenseTypes(formState.organization),
+          referenceDataService.getVehicles(formState.organization),
+          referenceDataService.getVendors(formState.organization),
+          approverService.getApprovers(formState.organization)
         ]);
 
         setDepartments(deptData);
@@ -244,6 +248,7 @@ export const NewPRForm = () => {
         setVendors(vendorData);
         setAvailableApprovers(approverData);
       } catch (error) {
+        console.error('NewPRForm: Error loading reference data:', error);
         setError(error instanceof Error ? error.message : 'Failed to load form data');
         enqueueSnackbar('Error loading form data. Please try again.', { 
           variant: 'error',
@@ -255,16 +260,17 @@ export const NewPRForm = () => {
     };
 
     loadReferenceData();
-  }, [formState.organization, enqueueSnackbar]);
+  }, [formState.organization, authLoading, enqueueSnackbar]);
 
-  // Update user info when it changes
+  // Update form state when user changes
   useEffect(() => {
     if (user) {
       setFormState(prev => ({
         ...prev,
-        requestor: user.name || '',
-        email: user.email || '',
-        organization: user.organization || initialState.organization
+        requestor: user.name || prev.requestor,
+        email: user.email || prev.email,
+        department: user.department || prev.department,
+        organization: user.organization || prev.organization
       }));
     }
   }, [user]);
