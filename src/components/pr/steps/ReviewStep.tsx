@@ -45,6 +45,7 @@ interface ReviewStepProps {
     department?: string;
   }>;
   loading: boolean;
+  onSubmit: () => void;
 }
 
 export const ReviewStep: React.FC<ReviewStepProps> = ({
@@ -52,7 +53,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   setFormState,
   vendors,
   approvers,
-  loading
+  loading,
+  onSubmit
 }) => {
   // Add new quote
   const handleAddQuote = () => {
@@ -254,6 +256,22 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           )}
         />
       </Grid>
+
+      {/* Submit Button */}
+      <Grid item xs={12}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={onSubmit}
+            disabled={loading}
+          >
+            Submit Purchase Request
+          </Button>
+        </Box>
+      </Grid>
     </Grid>
   );
 };
+
+export default ReviewStep;

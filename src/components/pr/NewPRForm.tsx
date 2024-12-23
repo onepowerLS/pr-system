@@ -378,10 +378,11 @@ export const NewPRForm = () => {
             vendors={vendors}
             approvers={availableApprovers}
             loading={loading}
+            onSubmit={handleSubmit}
           />
         );
       default:
-        return 'Unknown step';
+        return null;
     }
   }, [formState, setFormState, departments, projectCategories, sites, expenseTypes, vehicles, vendors, availableApprovers, loading]);
 
@@ -1199,11 +1200,11 @@ export const NewPRForm = () => {
       ) : loading ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 3 }}>
           <CircularProgress />
-          <Typography sx={{ mt: 2 }}>Loading form data...</Typography>
+          <Typography sx={{ mt: 2 }}>Loading...</Typography>
         </Box>
       ) : (
         <>
-          <Stepper activeStep={activeStep}>
+          <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
             {steps.map((label) => (
               <Step key={label}>
                 <StepLabel>{label}</StepLabel>
@@ -1211,35 +1212,20 @@ export const NewPRForm = () => {
             ))}
           </Stepper>
 
-          <Box sx={{ mt: 4, mb: 2 }}>
-            {activeStep === 0 && renderBasicInfo()}
-            {activeStep === 1 && renderLineItems()}
-            {activeStep === 2 && renderReview()}
-          </Box>
+          {getStepContent(activeStep)}
 
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
             <Button
+              color="inherit"
+              disabled={activeStep === 0}
               onClick={handleBack}
               sx={{ mr: 1 }}
-              disabled={activeStep === 0}
             >
               Back
             </Button>
-            
-            {activeStep === steps.length - 1 ? (
-              <Button
-                variant="contained"
-                onClick={handleSubmit}
-                disabled={submitting}
-                endIcon={submitting ? <CircularProgress size={20} /> : null}
-              >
-                Submit
-              </Button>
-            ) : (
-              <Button
-                variant="contained"
-                onClick={handleNextStep}
-              >
+
+            {activeStep === steps.length - 1 ? null : (
+              <Button onClick={handleNext}>
                 Next
               </Button>
             )}
