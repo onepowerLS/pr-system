@@ -55,12 +55,13 @@ interface FormState {
     uom: string;
     notes: string;
   }[];
+  attachments: any[];
 }
 
 export const NewPRForm = () => {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
-  const user = useSelector((state: RootState) => state.auth.user) as User;
+  const { user } = useSelector((state: RootState) => state.auth);
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -75,8 +76,8 @@ export const NewPRForm = () => {
 
   // Form state
   const [formState, setFormState] = useState<FormState>({
-    organization: '1PWR LESOTHO',
-    requestor: user?.name || '',
+    organization: '',
+    requestor: user?.displayName || '',
     email: user?.email || '',
     department: '',
     projectCategory: '',
@@ -86,53 +87,66 @@ export const NewPRForm = () => {
     vehicle: '',
     vendor: '',
     estimatedAmount: 0,
-    requiredDate: new Date().toISOString().split('T')[0],
-    lineItems: [{
-      id: crypto.randomUUID(),
-      description: '',
-      quantity: 1,
-      uom: '',
-      notes: ''
-    }]
+    requiredDate: '',
+    lineItems: [],
+    attachments: []
   });
 
-  // Load reference data
   useEffect(() => {
     const loadReferenceData = async () => {
       try {
-        setLoading(true);
         const [
-          depts,
-          cats,
-          siteList,
-          expTypes,
-          vehicleList,
-          vendorList
+          deptData,
+          projectCatData,
+          siteData,
+          expenseTypeData,
+          vehicleData,
+          vendorData
         ] = await Promise.all([
-          referenceDataService.getDepartments(formState.organization),
+          referenceDataService.getDepartments(),
           referenceDataService.getProjectCategories(),
-          referenceDataService.getSites(formState.organization),
+          referenceDataService.getSites(),
           referenceDataService.getExpenseTypes(),
-          referenceDataService.getVehicles(formState.organization),
-          referenceDataService.getVendors(formState.organization)
+          referenceDataService.getVehicles(),
+          referenceDataService.getVendors()
         ]);
 
-        setDepartments(depts);
-        setProjectCategories(cats);
-        setSites(siteList);
-        setExpenseTypes(expTypes);
-        setVehicles(vehicleList);
-        setVendors(vendorList);
+        setDepartments(deptData);
+        setProjectCategories(projectCatData);
+        setSites(siteData);
+        setExpenseTypes(expenseTypeData);
+        setVehicles(vehicleData);
+        setVendors(vendorData);
       } catch (error) {
         console.error('Error loading reference data:', error);
-        enqueueSnackbar('Failed to load reference data', { variant: 'error' });
-      } finally {
-        setLoading(false);
+        enqueueSnackbar('Error loading form data', { variant: 'error' });
       }
     };
 
     loadReferenceData();
-  }, [formState.organization]);
+
+    // Cleanup function
+    return () => {
+      setFormState({
+        organization: '',
+        requestor: '',
+        email: '',
+        department: '',
+        projectCategory: '',
+        description: '',
+        site: '',
+        expenseType: '',
+        vehicle: '',
+        vendor: '',
+        estimatedAmount: 0,
+        requiredDate: '',
+        lineItems: [],
+        attachments: []
+      });
+      setActiveStep(0);
+      setLoading(false);
+    };
+  }, [user, enqueueSnackbar]);
 
   const validateBasicInfo = () => {
     const requiredFields = [
@@ -257,16 +271,40 @@ export const NewPRForm = () => {
   };
 
   const handleSubmit = async () => {
-    try {
-      setSubmitting(true);
-      const prId = await prService.createPR({
-        ...formState,
-        status: 'PENDING',
-        createdBy: user.id,
-      });
+    if (!validateForm()) return;
 
+    setSubmitting(true);
+    try {
+      const prData = {
+        ...formState,
+        createdBy: user?.id || '',
+        status: 'DRAFT',
+      };
+
+      await prService.createPR(prData);
       enqueueSnackbar('Purchase Request created successfully', { variant: 'success' });
-      navigate('/prs');
+      
+      // Reset form state before navigating
+      setFormState({
+        organization: '',
+        requestor: '',
+        email: '',
+        department: '',
+        projectCategory: '',
+        description: '',
+        site: '',
+        expenseType: '',
+        vehicle: '',
+        vendor: '',
+        estimatedAmount: 0,
+        requiredDate: '',
+        lineItems: [],
+        attachments: []
+      });
+      setActiveStep(0);
+      
+      // Navigate after state cleanup
+      navigate('/dashboard');
     } catch (error) {
       console.error('Error creating PR:', error);
       enqueueSnackbar('Failed to create Purchase Request', { variant: 'error' });
