@@ -61,8 +61,22 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     const value = event.target.value;
     setFormState(prev => {
       // If changing expense type from vehicle to non-vehicle, clear vehicle
-      if (field === 'expenseType' && prev.expenseType === '4' && value !== '4') {
-        return { ...prev, [field]: value, vehicle: undefined };
+      if (field === 'expenseType') {
+        if (value === '4' && !prev.vehicle) {
+          // If changing to vehicle type and no vehicle selected, select first available
+          return {
+            ...prev,
+            [field]: value,
+            vehicle: vehicles[0]?.id || ''
+          };
+        } else if (value !== '4' && prev.vehicle) {
+          // If changing from vehicle type, clear vehicle
+          return {
+            ...prev,
+            [field]: value,
+            vehicle: undefined
+          };
+        }
       }
       return { ...prev, [field]: value };
     });
@@ -203,7 +217,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
 
       {/* Expense Type */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required error={isVehicleExpense && !formState.vehicle}>
           <InputLabel>Expense Type</InputLabel>
           <Select
             value={formState.expenseType}
@@ -217,13 +231,13 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               </MenuItem>
             ))}
           </Select>
-          {isVehicleExpense && !formState.vehicle && (
-            <FormHelperText error>Please select a vehicle</FormHelperText>
+          {isVehicleExpense && (
+            <FormHelperText>Vehicle selection is required for this expense type</FormHelperText>
           )}
         </FormControl>
       </Grid>
 
-      {/* Vehicle (only if expense type is Vehicle) */}
+      {/* Vehicle Selection - Only shown for vehicle expense type */}
       {isVehicleExpense && (
         <Grid item xs={12} md={6}>
           <FormControl fullWidth required error={!formState.vehicle}>
@@ -241,7 +255,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               ))}
             </Select>
             {!formState.vehicle && (
-              <FormHelperText>Vehicle selection is required for vehicle expenses</FormHelperText>
+              <FormHelperText>Please select a vehicle</FormHelperText>
             )}
           </FormControl>
         </Grid>
