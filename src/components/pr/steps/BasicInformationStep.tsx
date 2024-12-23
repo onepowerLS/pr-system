@@ -33,6 +33,7 @@ interface BasicInformationStepProps {
   sites: ReferenceDataItem[];
   expenseTypes: ReferenceDataItem[];
   vehicles: ReferenceDataItem[];
+  vendors: ReferenceDataItem[];
   approvers: Array<{
     id: string;
     name: string;
@@ -52,6 +53,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   sites,
   expenseTypes,
   vehicles,
+  vendors,
   approvers,
   loading,
 }) => {
@@ -319,6 +321,31 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             min: new Date().toISOString().split('T')[0]
           }}
         />
+      </Grid>
+
+      {/* Preferred Vendor */}
+      <Grid item xs={12} md={6}>
+        <FormControl fullWidth>
+          <InputLabel>Preferred Vendor</InputLabel>
+          <Select
+            value={formState.preferredVendor || ''}
+            onChange={handleChange('preferredVendor')}
+            label="Preferred Vendor"
+            disabled={loading}
+          >
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
+            {vendors.map(vendor => (
+              <MenuItem key={vendor.id} value={vendor.id}>
+                {vendor.name}
+              </MenuItem>
+            ))}
+          </Select>
+          <FormHelperText>
+            Select if you have a preferred vendor for this purchase
+          </FormHelperText>
+        </FormControl>
       </Grid>
 
       {/* Approvers */}

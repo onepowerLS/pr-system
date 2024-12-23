@@ -44,6 +44,7 @@ interface ReviewStepProps {
 export const ReviewStep: React.FC<ReviewStepProps> = ({
   formState,
   approvers,
+  vendors,
   loading,
   onSubmit
 }) => {
@@ -56,6 +57,13 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       })
       .filter(Boolean)
       .join(', ');
+  };
+
+  // Get vendor name for display
+  const getVendorName = () => {
+    if (!formState.preferredVendor) return null;
+    const vendor = vendors.find(v => v.id === formState.preferredVendor);
+    return vendor ? vendor.name : '';
   };
 
   return (
@@ -114,6 +122,11 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             <Typography><strong>Expense Type:</strong> {formState.expenseType}</Typography>
             {formState.vehicle && (
               <Typography><strong>Vehicle:</strong> {formState.vehicle}</Typography>
+            )}
+            {formState.preferredVendor && (
+              <Typography>
+                <strong>Preferred Vendor:</strong> {getVendorName()}
+              </Typography>
             )}
           </Box>
         </Paper>

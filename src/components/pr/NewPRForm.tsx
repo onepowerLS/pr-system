@@ -358,6 +358,7 @@ export const NewPRForm = () => {
             sites={sites}
             expenseTypes={expenseTypes}
             vehicles={vehicles}
+            vendors={vendors}
             approvers={availableApprovers}
             loading={loading}
           />
