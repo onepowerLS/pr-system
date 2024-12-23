@@ -39,7 +39,7 @@
  * }
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSnackbar } from 'notistack';
 import { useSelector } from 'react-redux';
@@ -163,12 +163,17 @@ export const NewPRForm = () => {
   console.log('NewPRForm: Component mounting');
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
+
+  // Memoize selector to prevent unnecessary re-renders
   const { user, loading: authLoading } = useSelector((state: RootState) => {
     console.log('NewPRForm: Getting user from state:', state.auth);
     return {
       user: state.auth.user,
       loading: state.auth.loading
     };
+  }, (prev, next) => {
+    return prev.user?.id === next.user?.id && 
+           prev.loading === next.loading;
   });
 
   // Initialize state
@@ -187,80 +192,74 @@ export const NewPRForm = () => {
   const [approvers, setApprovers] = useState<any[]>([]);
   const [availableApprovers, setAvailableApprovers] = useState<any[]>([]);
 
-  // Form state
-  const [formState, setFormState] = useState<FormState>(() => {
-    console.log('NewPRForm: Initializing form state with user:', user);
-    return {
-      ...initialState,
-      organization: user?.organization || initialState.organization,
-      requestor: user?.name || '',
-      email: user?.email || '',
-      department: user?.department || ''
-    };
-  });
+  // Memoize initial form state
+  const initialFormState = useMemo(() => ({
+    ...initialState,
+    organization: user?.organization || initialState.organization,
+    requestor: user?.name || '',
+    email: user?.email || '',
+    department: user?.department || ''
+  }), [user]);
 
-  // Quote requirements state
-  const [requiresQuotes, setRequiresQuotes] = useState(false);
-  const [requiresFinanceApproval, setRequiresFinanceApproval] = useState(false);
-  const [isApprovedVendor, setIsApprovedVendor] = useState(false);
+  // Form state
+  const [formState, setFormState] = useState<FormState>(initialFormState);
+
+  // Memoize loadReferenceData function
+  const loadReferenceData = useCallback(async () => {
+    if (authLoading || !formState.organization) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const [
+        deptData,
+        projectData,
+        siteData,
+        expenseData,
+        vehicleData,
+        vendorData,
+        approverData
+      ] = await Promise.all([
+        referenceDataService.getDepartments(formState.organization),
+        referenceDataService.getProjectCategories(formState.organization),
+        referenceDataService.getSites(formState.organization),
+        referenceDataService.getExpenseTypes(formState.organization),
+        referenceDataService.getVehicles(formState.organization),
+        referenceDataService.getVendors(formState.organization),
+        approverService.getApprovers(formState.organization)
+      ]);
+
+      setDepartments(deptData);
+      setProjectCategories(projectData);
+      setSites(siteData);
+      setExpenseTypes(expenseData);
+      setVehicles(vehicleData);
+      setVendors(vendorData);
+      setAvailableApprovers(approverData);
+    } catch (error) {
+      console.error('NewPRForm: Error loading reference data:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load form data');
+      enqueueSnackbar('Error loading form data. Please try again.', { 
+        variant: 'error',
+        autoHideDuration: 5000
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [formState.organization, authLoading, enqueueSnackbar]);
 
   // Handle auth loading state
   useEffect(() => {
-    if (authLoading) {
-      setLoading(true);
-    } else if (!user) {
+    if (!authLoading && !user) {
       navigate('/login');
     }
   }, [authLoading, user, navigate]);
 
   // Load reference data
   useEffect(() => {
-    const loadReferenceData = async () => {
-      if (authLoading || !formState.organization) {
-        return;
-      }
-
-      try {
-        setLoading(true);
-        const [
-          deptData,
-          projectData,
-          siteData,
-          expenseData,
-          vehicleData,
-          vendorData,
-          approverData
-        ] = await Promise.all([
-          referenceDataService.getDepartments(formState.organization),
-          referenceDataService.getProjectCategories(formState.organization),
-          referenceDataService.getSites(formState.organization),
-          referenceDataService.getExpenseTypes(formState.organization),
-          referenceDataService.getVehicles(formState.organization),
-          referenceDataService.getVendors(formState.organization),
-          approverService.getApprovers(formState.organization)
-        ]);
-
-        setDepartments(deptData);
-        setProjectCategories(projectData);
-        setSites(siteData);
-        setExpenseTypes(expenseData);
-        setVehicles(vehicleData);
-        setVendors(vendorData);
-        setAvailableApprovers(approverData);
-      } catch (error) {
-        console.error('NewPRForm: Error loading reference data:', error);
-        setError(error instanceof Error ? error.message : 'Failed to load form data');
-        enqueueSnackbar('Error loading form data. Please try again.', { 
-          variant: 'error',
-          autoHideDuration: 5000
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadReferenceData();
-  }, [formState.organization, authLoading, enqueueSnackbar]);
+  }, [loadReferenceData]);
 
   // Update form state when user changes
   useEffect(() => {
@@ -615,7 +614,7 @@ export const NewPRForm = () => {
       enqueueSnackbar('Purchase Request submitted successfully!', { variant: 'success' });
       
       // Reset form and navigate back
-      setFormState(initialState);
+      setFormState(initialFormState);
       navigate('/purchase-requests');
     } catch (error) {
       console.error('Error submitting PR:', error);
