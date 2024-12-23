@@ -37,6 +37,7 @@ interface BasicInformationStepProps {
     email: string;
     role: string;
     department?: string;
+    approvalLimit?: number;
   }>;
   loading: boolean;
 }
@@ -226,14 +227,22 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
         <Autocomplete
           multiple
           options={approvers}
-          getOptionLabel={(option) => `${option.name} (${option.role})`}
+          getOptionLabel={(option) => {
+            if (option.department === 'Admin') {
+              return `${option.name} (${option.department}, limit: ${option.approvalLimit})`;
+            }
+            return `${option.name} (${option.department})`;
+          }}
           value={approvers.filter(a => formState.approvers.includes(a.id))}
           onChange={handleApproverChange}
           disabled={loading}
           renderTags={(value, getTagProps) =>
             value.map((option, index) => (
               <Chip
-                label={`${option.name} (${option.role})`}
+                label={option.department === 'Admin' ? 
+                  `${option.name} (${option.department}, limit: ${option.approvalLimit})` :
+                  `${option.name} (${option.department})`
+                }
                 {...getTagProps({ index })}
               />
             ))
