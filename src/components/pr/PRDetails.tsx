@@ -24,7 +24,7 @@ import {
   Close as RejectIcon,
   ArrowBack as BackIcon,
 } from '@mui/icons-material';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { RootState } from '../../store';
 import { prService } from '../../services/pr';
 import { setCurrentPR } from '../../store/slices/prSlice';
@@ -39,6 +39,16 @@ const statusColors: Record<PRStatus, 'default' | 'primary' | 'secondary' | 'erro
   [PRStatus.RECEIVED]: 'primary',
   [PRStatus.CANCELLED]: 'error',
   [PRStatus.REJECTED]: 'error',
+};
+
+const formatDate = (dateStr: string | null | undefined) => {
+  if (!dateStr) return 'N/A';
+  try {
+    return format(parseISO(dateStr), 'MMM dd, yyyy');
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return 'Invalid Date';
+  }
 };
 
 export const PRDetails = () => {
@@ -181,12 +191,7 @@ export const PRDetails = () => {
               Created Date
             </Typography>
             <Typography variant="body1">
-              {format(
-                currentPR.createdAt instanceof Date
-                  ? currentPR.createdAt
-                  : new Date(currentPR.createdAt),
-                'MMM dd, yyyy'
-              )}
+              {formatDate(currentPR.createdAt)}
             </Typography>
           </Grid>
           {currentPR.expectedLandingDate && (
@@ -195,12 +200,7 @@ export const PRDetails = () => {
                 Expected Landing Date
               </Typography>
               <Typography variant="body1">
-                {format(
-                  currentPR.expectedLandingDate instanceof Date
-                    ? currentPR.expectedLandingDate
-                    : new Date(currentPR.expectedLandingDate),
-                  'MMM dd, yyyy'
-                )}
+                {formatDate(currentPR.expectedLandingDate)}
               </Typography>
             </Grid>
           )}

@@ -1,11 +1,13 @@
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './slices/authSlice';
 import prReducer from './slices/prSlice';
+import snackbarReducer from './slices/snackbarSlice';
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
     pr: prReducer,
+    snackbar: snackbarReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

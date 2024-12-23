@@ -71,19 +71,19 @@ export const Layout = ({ children }: LayoutProps) => {
       <Toolbar />
       <Divider />
       <List>
-        <ListItem button onClick={() => navigate('/dashboard')}>
+        <ListItem onClick={() => navigate('/dashboard')}>
           <ListItemIcon>
             <Dashboard />
           </ListItemIcon>
           <ListItemText primary="Dashboard" />
         </ListItem>
-        <ListItem button onClick={() => navigate('/pr/new')}>
+        <ListItem onClick={() => navigate('/pr/new')}>
           <ListItemIcon>
             <AddCircle />
           </ListItemIcon>
           <ListItemText primary="New PR" />
         </ListItem>
-        <ListItem button onClick={() => navigate('/pr/list')}>
+        <ListItem onClick={() => navigate('/pr/list')}>
           <ListItemIcon>
             <ListIcon />
           </ListItemIcon>

@@ -1,383 +1,578 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useSnackbar } from 'notistack';
+import { useSelector } from 'react-redux';
 import {
   Box,
-  Stepper,
-  Step,
-  StepLabel,
   Button,
-  Typography,
-  TextField,
+  CircularProgress,
   Grid,
-  Paper,
   IconButton,
   MenuItem,
-  CircularProgress,
+  Paper,
+  Select,
+  Step,
+  StepLabel,
+  Stepper,
+  TextField,
+  Typography
 } from '@mui/material';
-import { Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import { PR } from '../../types/pr';
+import * as prService from '../../services/prService';
 import { RootState } from '../../store';
-import { prService } from '../../services/pr';
-import { setCurrentPR } from '../../store/slices/prSlice';
-import { PRRequest, PRItem } from '../../types/pr';
+import { User } from '../../types/user';
+import { referenceDataService } from '../../services/referenceData';
+import { ReferenceDataItem } from '../../types/referenceData';
 
-const steps = ['Basic Information', 'Items', 'Review'];
+const steps = ['Basic Information', 'Line Items', 'Review'];
 
-interface FormData {
-  department: string;
-  projectCategory: string;
-  site: string;
-  currency: string;
-  items: PRItem[];
+interface ReferenceDataItem {
+  id: string;
+  name: string;
+  code?: string;
+  isActive: boolean;
 }
 
-const currencies = ['USD', 'EUR', 'GBP', 'JPY'];
-const departments = ['Engineering', 'Marketing', 'Sales', 'Operations', 'HR'];
-const projectCategories = ['Hardware', 'Software', 'Office Supplies', 'Travel', 'Other'];
-const sites = ['HQ', 'Remote', 'Site A', 'Site B'];
+interface FormState {
+  organization: string;
+  requestor: string;
+  email: string;
+  department: string;
+  projectCategory: string;
+  description: string;
+  site: string;
+  expenseType: string;
+  vehicle: string;
+  vendor: string;
+  estimatedAmount: number;
+  requiredDate: string;
+  lineItems: {
+    id: string;
+    description: string;
+    quantity: number;
+    uom: string;
+    notes: string;
+  }[];
+}
 
 export const NewPRForm = () => {
   const navigate = useNavigate();
-  const dispatch = useDispatch();
+  const { enqueueSnackbar } = useSnackbar();
+  const user = useSelector((state: RootState) => state.auth.user) as User;
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
-  const { user } = useSelector((state: RootState) => state.auth);
+  const [submitting, setSubmitting] = useState(false);
 
-  const {
-    control,
-    handleSubmit,
-    watch,
-    formState: { errors },
-  } = useForm<FormData>({
-    defaultValues: {
-      department: '',
-      projectCategory: '',
-      site: '',
-      currency: 'USD',
-      items: [{ id: '', description: '', quantity: 1, unitPrice: 0, currency: 'USD', totalPrice: 0 }],
-    },
+  // Reference data state
+  const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
+  const [projectCategories, setProjectCategories] = useState<ReferenceDataItem[]>([]);
+  const [sites, setSites] = useState<ReferenceDataItem[]>([]);
+  const [expenseTypes, setExpenseTypes] = useState<ReferenceDataItem[]>([]);
+  const [vehicles, setVehicles] = useState<ReferenceDataItem[]>([]);
+  const [vendors, setVendors] = useState<ReferenceDataItem[]>([]);
+
+  // Form state
+  const [formState, setFormState] = useState<FormState>({
+    organization: '1PWR LESOTHO',
+    requestor: user?.name || '',
+    email: user?.email || '',
+    department: '',
+    projectCategory: '',
+    description: '',
+    site: '',
+    expenseType: '',
+    vehicle: '',
+    vendor: '',
+    estimatedAmount: 0,
+    requiredDate: new Date().toISOString().split('T')[0],
+    lineItems: [{
+      id: crypto.randomUUID(),
+      description: '',
+      quantity: 1,
+      uom: '',
+      notes: ''
+    }]
   });
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: 'items',
-  });
+  // Load reference data
+  useEffect(() => {
+    const loadReferenceData = async () => {
+      try {
+        setLoading(true);
+        const [
+          depts,
+          cats,
+          siteList,
+          expTypes,
+          vehicleList,
+          vendorList
+        ] = await Promise.all([
+          referenceDataService.getDepartments(formState.organization),
+          referenceDataService.getProjectCategories(),
+          referenceDataService.getSites(formState.organization),
+          referenceDataService.getExpenseTypes(),
+          referenceDataService.getVehicles(formState.organization),
+          referenceDataService.getVendors(formState.organization)
+        ]);
 
-  const watchItems = watch('items');
-  const totalAmount = watchItems?.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) || 0;
+        setDepartments(depts);
+        setProjectCategories(cats);
+        setSites(siteList);
+        setExpenseTypes(expTypes);
+        setVehicles(vehicleList);
+        setVendors(vendorList);
+      } catch (error) {
+        console.error('Error loading reference data:', error);
+        enqueueSnackbar('Failed to load reference data', { variant: 'error' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadReferenceData();
+  }, [formState.organization]);
+
+  const validateBasicInfo = () => {
+    const requiredFields = [
+      'organization',
+      'requestor',
+      'email',
+      'department',
+      'projectCategory',
+      'description',
+      'site',
+      'expenseType',
+      'estimatedAmount',
+      'requiredDate'
+    ];
+
+    const errors: string[] = [];
+
+    requiredFields.forEach(field => {
+      if (!formState[field]) {
+        errors.push(`${field} is required`);
+      }
+    });
+
+    if (formState.estimatedAmount <= 0) {
+      errors.push('Estimated amount must be greater than 0');
+    }
+
+    if (errors.length > 0) {
+      enqueueSnackbar(errors[0], { variant: 'error' });
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleLineItemChange = (index: number, field: string, value: any) => {
+    setFormState(prev => {
+      const newLineItems = [...prev.lineItems];
+      newLineItems[index] = {
+        ...newLineItems[index],
+        [field]: value
+      };
+      return {
+        ...prev,
+        lineItems: newLineItems
+      };
+    });
+  };
+
+  const handleAddLineItem = () => {
+    setFormState(prev => ({
+      ...prev,
+      lineItems: [
+        ...prev.lineItems,
+        {
+          id: crypto.randomUUID(),
+          description: '',
+          quantity: 1,
+          uom: '',
+          notes: ''
+        }
+      ]
+    }));
+  };
+
+  const handleRemoveLineItem = (index: number) => {
+    setFormState(prev => ({
+      ...prev,
+      lineItems: prev.lineItems.filter((_, i) => i !== index)
+    }));
+  };
+
+  const validateLineItems = () => {
+    const errors: string[] = [];
+    
+    if (formState.lineItems.length === 0) {
+      errors.push('At least one line item is required');
+      return false;
+    }
+
+    for (const item of formState.lineItems) {
+      if (!item.description) {
+        errors.push('Line item description is required');
+      }
+      if (item.quantity < 1) {
+        errors.push('Quantity must be at least 1');
+      }
+      if (!item.uom) {
+        errors.push('Unit of measure (UOM) is required');
+      }
+    }
+
+    if (errors.length > 0) {
+      enqueueSnackbar(errors[0], { variant: 'error' });
+      return false;
+    }
+
+    return true;
+  };
 
   const handleNext = () => {
-    setActiveStep((prevStep) => prevStep + 1);
+    if (activeStep === 0 && !validateBasicInfo()) {
+      return;
+    }
+
+    if (activeStep === 1 && !validateLineItems()) {
+      return;
+    }
+
+    setActiveStep(prevStep => prevStep + 1);
   };
 
   const handleBack = () => {
-    setActiveStep((prevStep) => prevStep - 1);
+    setActiveStep(prevStep => prevStep - 1);
   };
 
-  const onSubmit = async (data: FormData) => {
-    if (!user) return;
+  const handleInputChange = (field: string, value: any) => {
+    setFormState(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
 
-    setLoading(true);
+  const handleSubmit = async () => {
     try {
-      // Calculate total amount and prepare items
-      const items = data.items.map((item, index) => ({
-        ...item,
-        id: `item_${index}`,
-        totalPrice: item.quantity * item.unitPrice,
-        currency: data.currency,
-      }));
+      setSubmitting(true);
+      const response = await prService.createPR({
+        ...formState,
+        status: 'PENDING',
+        createdBy: user.id,
+        createdAt: new Date().toISOString(),
+      });
 
-      const prData: Omit<PRRequest, 'id' | 'createdAt' | 'updatedAt'> = {
-        requestor: user,
-        status: 'DRAFT',
-        items,
-        approvers: [], // Will be assigned based on amount and department
-        totalAmount,
-        currency: data.currency,
-        department: data.department,
-        projectCategory: data.projectCategory,
-        site: data.site,
-      };
-
-      const prId = await prService.createPR(prData);
-      const newPR = await prService.getPR(prId);
-      if (newPR) {
-        dispatch(setCurrentPR(newPR));
-        navigate(`/pr/${prId}`);
+      if (response.ok) {
+        enqueueSnackbar('Purchase Request created successfully', { variant: 'success' });
+        navigate('/prs');
+      } else {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message || 'Failed to create Purchase Request');
       }
     } catch (error) {
       console.error('Error creating PR:', error);
+      enqueueSnackbar(error instanceof Error ? error.message : 'Failed to create Purchase Request', { 
+        variant: 'error',
+        autoHideDuration: 5000
+      });
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
   const renderBasicInfo = () => (
     <Grid container spacing={3}>
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="department"
-          control={control}
-          rules={{ required: 'Department is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Department"
-              select
-              error={!!errors.department}
-              helperText={errors.department?.message}
-            >
-              {departments.map((dept) => (
-                <MenuItem key={dept} value={dept}>
-                  {dept}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
+      <Grid item xs={12}>
+        <TextField
+          fullWidth
+          label="Organization"
+          value={formState.organization}
+          onChange={(e) => handleInputChange('organization', e.target.value)}
+          disabled
         />
       </Grid>
       <Grid item xs={12} md={6}>
-        <Controller
-          name="projectCategory"
-          control={control}
-          rules={{ required: 'Project Category is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Project Category"
-              select
-              error={!!errors.projectCategory}
-              helperText={errors.projectCategory?.message}
-            >
-              {projectCategories.map((category) => (
-                <MenuItem key={category} value={category}>
-                  {category}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
+        <TextField
+          fullWidth
+          label="Requestor"
+          value={formState.requestor}
+          onChange={(e) => handleInputChange('requestor', e.target.value)}
+          required
         />
       </Grid>
       <Grid item xs={12} md={6}>
-        <Controller
-          name="site"
-          control={control}
-          rules={{ required: 'Site is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Site"
-              select
-              error={!!errors.site}
-              helperText={errors.site?.message}
-            >
-              {sites.map((site) => (
-                <MenuItem key={site} value={site}>
-                  {site}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
+        <TextField
+          fullWidth
+          label="Email"
+          type="email"
+          value={formState.email}
+          onChange={(e) => handleInputChange('email', e.target.value)}
+          required
         />
       </Grid>
       <Grid item xs={12} md={6}>
-        <Controller
-          name="currency"
-          control={control}
-          rules={{ required: 'Currency is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Currency"
-              select
-              error={!!errors.currency}
-              helperText={errors.currency?.message}
-            >
-              {currencies.map((currency) => (
-                <MenuItem key={currency} value={currency}>
-                  {currency}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
+        <TextField
+          fullWidth
+          label="Department"
+          select
+          value={formState.department}
+          onChange={(e) => handleInputChange('department', e.target.value)}
+          required
+        >
+          {departments.map((dept) => (
+            <MenuItem key={dept.id} value={dept.id}>
+              {dept.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Project Category"
+          select
+          value={formState.projectCategory}
+          onChange={(e) => handleInputChange('projectCategory', e.target.value)}
+          required
+        >
+          {projectCategories.map((cat) => (
+            <MenuItem key={cat.id} value={cat.id}>
+              {cat.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Grid>
+      <Grid item xs={12}>
+        <TextField
+          fullWidth
+          label="Description"
+          multiline
+          rows={4}
+          value={formState.description}
+          onChange={(e) => handleInputChange('description', e.target.value)}
+          required
+        />
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Site"
+          select
+          value={formState.site}
+          onChange={(e) => handleInputChange('site', e.target.value)}
+          required
+        >
+          {sites.map((site) => (
+            <MenuItem key={site.id} value={site.id}>
+              {site.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Expense Type"
+          select
+          value={formState.expenseType}
+          onChange={(e) => handleInputChange('expenseType', e.target.value)}
+          required
+        >
+          {expenseTypes.map((type) => (
+            <MenuItem key={type.id} value={type.id}>
+              {type.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Grid>
+      {formState.expenseType === 'vehicle' && (
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label="Vehicle"
+            select
+            value={formState.vehicle}
+            onChange={(e) => handleInputChange('vehicle', e.target.value)}
+          >
+            {vehicles.map((vehicle) => (
+              <MenuItem key={vehicle.id} value={vehicle.id}>
+                {vehicle.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        </Grid>
+      )}
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Preferred Vendor (Optional)"
+          select
+          value={formState.vendor}
+          onChange={(e) => handleInputChange('vendor', e.target.value)}
+        >
+          {vendors.map((vendor) => (
+            <MenuItem key={vendor.id} value={vendor.id}>
+              {vendor.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Estimated Amount"
+          type="number"
+          value={formState.estimatedAmount}
+          onChange={(e) => handleInputChange('estimatedAmount', parseFloat(e.target.value))}
+          required
+          InputProps={{
+            inputProps: { min: 0 }
+          }}
+        />
+      </Grid>
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          label="Required Date"
+          type="date"
+          value={formState.requiredDate}
+          onChange={(e) => handleInputChange('requiredDate', e.target.value)}
+          required
+          InputLabelProps={{
+            shrink: true,
+          }}
         />
       </Grid>
     </Grid>
   );
 
-  const renderItems = () => (
+  const renderLineItems = () => (
     <Box>
-      {fields.map((field, index) => (
-        <Paper key={field.id} sx={{ p: 2, mb: 2 }}>
-          <Grid container spacing={2} alignItems="center">
+      <Typography variant="h6" gutterBottom>
+        Line Items
+      </Typography>
+      <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+        Add items you need to purchase. Procurement will determine prices later.
+      </Typography>
+      
+      {formState.lineItems.map((item, index) => (
+        <Paper key={index} sx={{ p: 2, mb: 2 }}>
+          <Grid container spacing={2}>
             <Grid item xs={12}>
-              <Controller
-                name={`items.${index}.description`}
-                control={control}
-                rules={{ required: 'Description is required' }}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Description"
-                    error={!!errors.items?.[index]?.description}
-                    helperText={errors.items?.[index]?.description?.message}
-                  />
-                )}
+              <TextField
+                fullWidth
+                label="Description"
+                value={item.description}
+                onChange={(e) => handleLineItemChange(index, 'description', e.target.value)}
+                required
+                helperText="Detailed description of the item needed"
               />
             </Grid>
-            <Grid item xs={12} sm={4}>
-              <Controller
-                name={`items.${index}.quantity`}
-                control={control}
-                rules={{ required: 'Quantity is required', min: 1 }}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    type="number"
-                    label="Quantity"
-                    error={!!errors.items?.[index]?.quantity}
-                    helperText={errors.items?.[index]?.quantity?.message}
-                  />
-                )}
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Quantity"
+                type="number"
+                value={item.quantity}
+                onChange={(e) => handleLineItemChange(index, 'quantity', parseInt(e.target.value) || 0)}
+                required
+                InputProps={{
+                  inputProps: { min: 1 }
+                }}
               />
             </Grid>
-            <Grid item xs={12} sm={4}>
-              <Controller
-                name={`items.${index}.unitPrice`}
-                control={control}
-                rules={{ required: 'Unit Price is required', min: 0 }}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    type="number"
-                    label="Unit Price"
-                    error={!!errors.items?.[index]?.unitPrice}
-                    helperText={errors.items?.[index]?.unitPrice?.message}
-                  />
-                )}
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Unit of Measure"
+                value={item.uom}
+                onChange={(e) => handleLineItemChange(index, 'uom', e.target.value)}
+                required
+                helperText="e.g., kg, L, pieces"
               />
             </Grid>
-            <Grid item xs={12} sm={3}>
-              <Typography variant="body1">
-                Total: {watchItems[index]?.quantity * watchItems[index]?.unitPrice || 0}
-              </Typography>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Notes"
+                multiline
+                rows={2}
+                value={item.notes}
+                onChange={(e) => handleLineItemChange(index, 'notes', e.target.value)}
+                helperText="Any additional specifications or requirements"
+              />
             </Grid>
-            <Grid item xs={12} sm={1}>
-              <IconButton onClick={() => remove(index)} disabled={fields.length === 1}>
-                <DeleteIcon />
-              </IconButton>
+            <Grid item xs={12}>
+              <Box display="flex" justifyContent="flex-end">
+                <IconButton
+                  onClick={() => handleRemoveLineItem(index)}
+                  disabled={formState.lineItems.length === 1}
+                  color="error"
+                  title="Remove item"
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Box>
             </Grid>
           </Grid>
         </Paper>
       ))}
+      
       <Button
         startIcon={<AddIcon />}
-        onClick={() =>
-          append({
-            id: '',
-            description: '',
-            quantity: 1,
-            unitPrice: 0,
-            currency: watch('currency'),
-            totalPrice: 0,
-          })
-        }
+        onClick={handleAddLineItem}
+        variant="outlined"
+        sx={{ mt: 2 }}
       >
-        Add Item
+        Add Another Item
       </Button>
     </Box>
   );
 
   const renderReview = () => (
     <Box>
-      <Typography variant="h6" gutterBottom>
-        PR Summary
-      </Typography>
-      <Grid container spacing={2}>
+      <Typography variant="h6" gutterBottom>Review Your Request</Typography>
+      <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
-          <Typography variant="subtitle1">Department</Typography>
+          <Typography variant="subtitle1">Organization</Typography>
           <Typography variant="body1" color="textSecondary">
-            {watch('department')}
+            {formState.organization}
           </Typography>
         </Grid>
-        <Grid item xs={12} md={6}>
-          <Typography variant="subtitle1">Project Category</Typography>
-          <Typography variant="body1" color="textSecondary">
-            {watch('projectCategory')}
-          </Typography>
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <Typography variant="subtitle1">Site</Typography>
-          <Typography variant="body1" color="textSecondary">
-            {watch('site')}
-          </Typography>
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <Typography variant="subtitle1">Currency</Typography>
-          <Typography variant="body1" color="textSecondary">
-            {watch('currency')}
-          </Typography>
-        </Grid>
+        {/* ... other review fields ... */}
       </Grid>
 
       <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
-        Items
+        Line Items
       </Typography>
-      {watchItems.map((item, index) => (
+      {formState.lineItems.map((item, index) => (
         <Paper key={index} sx={{ p: 2, mb: 2 }}>
           <Typography variant="subtitle1">{item.description}</Typography>
           <Grid container spacing={2}>
-            <Grid item xs={4}>
+            <Grid item xs={12} md={4}>
               <Typography variant="body2" color="textSecondary">
-                Quantity: {item.quantity}
+                Quantity: {item.quantity} {item.uom}
               </Typography>
             </Grid>
-            <Grid item xs={4}>
-              <Typography variant="body2" color="textSecondary">
-                Unit Price: {item.unitPrice}
-              </Typography>
-            </Grid>
-            <Grid item xs={4}>
-              <Typography variant="body2" color="textSecondary">
-                Total: {item.quantity * item.unitPrice}
-              </Typography>
-            </Grid>
+            {item.notes && (
+              <Grid item xs={12}>
+                <Typography variant="body2" color="textSecondary">
+                  Notes: {item.notes}
+                </Typography>
+              </Grid>
+            )}
           </Grid>
         </Paper>
       ))}
-
-      <Typography variant="h6" sx={{ mt: 2 }}>
-        Total Amount: {watch('currency')} {totalAmount}
-      </Typography>
     </Box>
   );
 
-  const getStepContent = (step: number) => {
-    switch (step) {
-      case 0:
-        return renderBasicInfo();
-      case 1:
-        return renderItems();
-      case 2:
-        return renderReview();
-      default:
-        return 'Unknown step';
-    }
-  };
-
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        New Purchase Request
-      </Typography>
+    <Box sx={{ width: '100%' }}>
       <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
         {steps.map((label) => (
           <Step key={label}>
@@ -385,25 +580,41 @@ export const NewPRForm = () => {
           </Step>
         ))}
       </Stepper>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        {getStepContent(activeStep)}
+      
+      <form onSubmit={(e) => handleSubmit()} noValidate>
+        {loading ? (
+          <Box display="flex" justifyContent="center">
+            <CircularProgress />
+          </Box>
+        ) : (
+          <Box sx={{ mt: 2, mb: 2 }}>
+            {activeStep === 0 && renderBasicInfo()}
+            {activeStep === 1 && renderLineItems()}
+            {activeStep === 2 && renderReview()}
+          </Box>
+        )}
+
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 3 }}>
-          {activeStep !== 0 && (
-            <Button onClick={handleBack} sx={{ mr: 1 }}>
-              Back
-            </Button>
-          )}
+          <Button
+            disabled={activeStep === 0}
+            onClick={handleBack}
+            sx={{ mr: 1 }}
+          >
+            Back
+          </Button>
           {activeStep === steps.length - 1 ? (
             <Button
               variant="contained"
               type="submit"
-              disabled={loading}
-              startIcon={loading && <CircularProgress size={20} />}
+              disabled={submitting}
             >
-              Submit PR
+              {submitting ? 'Submitting...' : 'Submit'}
             </Button>
           ) : (
-            <Button variant="contained" onClick={handleNext}>
+            <Button
+              variant="contained"
+              onClick={handleNext}
+            >
               Next
             </Button>
           )}

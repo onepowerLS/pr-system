@@ -8,6 +8,7 @@ import { Dashboard } from './components/dashboard/Dashboard';
 import { NewPRForm } from './components/pr/NewPRForm';
 import { PRList } from './components/pr/PRList';
 import { PRDetails } from './components/pr/PRDetails';
+import { Snackbar } from './components/common/Snackbar';
 import { authService } from './services/auth';
 import { setUser, setLoading, setError, clearAuth } from './store/slices/authSlice';
 import { UserRole } from './types/pr';
@@ -107,6 +108,7 @@ function App() {
         />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      <Snackbar />
     </Router>
   );
 }

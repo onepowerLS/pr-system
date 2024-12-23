@@ -67,8 +67,7 @@ export const prService = {
     try {
       let q = query(
         collection(db, 'purchaseRequests'),
-        where('requestor.id', '==', userId),
-        orderBy('createdAt', 'desc')
+        where('requestor.id', '==', userId)
       );
 
       if (status) {
@@ -76,10 +75,13 @@ export const prService = {
       }
 
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({
+      const prs = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as PRRequest[];
+      
+      // Sort in memory instead of using orderBy to avoid needing a composite index
+      return prs.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
     } catch (error) {
       console.error('Error getting user PRs:', error);
       throw error;

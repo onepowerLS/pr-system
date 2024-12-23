@@ -2,6 +2,36 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Reference data collections
+    match /departments/{docId} {
+      allow read, write: if true;
+    }
+    
+    match /projectCategories/{docId} {
+      allow read, write: if true;
+    }
+    
+    match /sites/{docId} {
+      allow read, write: if true;
+    }
+    
+    match /expenseTypes/{docId} {
+      allow read, write: if true;
+    }
+    
+    match /vehicles/{docId} {
+      allow read, write: if true;
+    }
+    
+    match /vendors/{docId} {
+      allow read, write: if true;
+    }
+    
+    match /currencies/{docId} {
+      allow read, write: if true;
+    }
+
+    // All other collections
     match /{document=**} {
       allow read, write: if request.auth != null;
     }

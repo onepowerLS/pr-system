@@ -12,7 +12,9 @@ export interface PRRequest {
   department: string;
   projectCategory: string;
   site: string;
+  organization: string;
   attachments?: Attachment[];
+  metrics?: PRMetrics;
 }
 
 export interface PRItem {
@@ -48,13 +50,13 @@ export interface Attachment {
 
 export enum PRStatus {
   DRAFT = 'DRAFT',
-  PENDING_APPROVAL = 'PENDING_APPROVAL',
-  APPROVED = 'APPROVED',
+  SUBMITTED = 'SUBMITTED',
+  IN_QUEUE = 'IN_QUEUE',
   ORDERED = 'ORDERED',
-  PARTIALLY_RECEIVED = 'PARTIALLY_RECEIVED',
-  RECEIVED = 'RECEIVED',
-  CANCELLED = 'CANCELLED',
-  REJECTED = 'REJECTED'
+  COMPLETED = 'COMPLETED',
+  REVISION_REQUIRED = 'REVISION_REQUIRED',
+  REJECTED = 'REJECTED',
+  CANCELED = 'CANCELED'
 }
 
 export enum UserRole {
@@ -62,4 +64,15 @@ export enum UserRole {
   APPROVER = 'APPROVER',
   REQUESTOR = 'REQUESTOR',
   VIEWER = 'VIEWER'
+}
+
+export interface PRMetrics {
+  daysOpen: number;
+  isUrgent: boolean;
+  isOverdue: boolean;
+  quotesRequired: boolean;
+  adjudicationRequired: boolean;
+  customsClearanceRequired: boolean;
+  completionPercentage: number;
+  queuePosition?: number;
 }
