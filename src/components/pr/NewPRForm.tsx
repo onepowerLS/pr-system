@@ -556,14 +556,19 @@ export const NewPRForm = () => {
         return false;
       }
 
-      if (formState.estimatedAmount <= 0) {
-        console.log('Estimated amount must be greater than 0');
+      // Convert estimatedAmount to number if it's a string
+      const estimatedAmount = typeof formState.estimatedAmount === 'string' 
+        ? parseFloat(formState.estimatedAmount) 
+        : formState.estimatedAmount;
+
+      if (isNaN(estimatedAmount) || estimatedAmount <= 0) {
+        console.log('Invalid estimated amount:', estimatedAmount);
         enqueueSnackbar('Estimated amount must be greater than 0', { variant: 'error' });
         return false;
       }
 
       // Check for admin approval requirement
-      if (formState.estimatedAmount <= PR_AMOUNT_THRESHOLDS.ADMIN_APPROVAL) {
+      if (estimatedAmount <= PR_AMOUNT_THRESHOLDS.ADMIN_APPROVAL) {
         const hasAdmin = formState.approvers.some(a => a === 'admin@1pwrafrica.com');
         if (!hasAdmin) {
           console.log('PRs under LSL 1,000 must be approved by admin');
