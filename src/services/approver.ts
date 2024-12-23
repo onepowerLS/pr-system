@@ -1,27 +1,30 @@
 import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
 import { User } from '../types/user';
 
-// Valid approver roles
-const APPROVER_ROLES = ['ADMIN', 'FINANCE_APPROVER'];
+interface Approver {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  department?: string;
+  organization: string;
+  isActive: boolean;
+}
 
 class ApproverService {
   private db = getFirestore();
 
-  async getActiveApprovers(): Promise<User[]> {
+  async getActiveApprovers(): Promise<Approver[]> {
     try {
       console.log('ApproverService: Getting active approvers');
-      const approversRef = collection(this.db, 'users');
-      const q = query(
-        approversRef,
-        where('isActive', '==', true),
-        where('role', 'in', APPROVER_ROLES)
-      );
+      const approversRef = collection(this.db, 'approverList');
+      const q = query(approversRef, where('isActive', '==', true));
       const querySnapshot = await getDocs(q);
       
       const approvers = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      } as User));
+      } as Approver));
 
       console.log(`ApproverService: Found ${approvers.length} active approvers`);
       return approvers;
@@ -31,22 +34,21 @@ class ApproverService {
     }
   }
 
-  async getApprovers(organization: string): Promise<User[]> {
+  async getApprovers(organization: string): Promise<Approver[]> {
     try {
       console.log('ApproverService: Getting approvers for organization:', organization);
-      const approversRef = collection(this.db, 'users');
+      const approversRef = collection(this.db, 'approverList');
       const q = query(
         approversRef, 
         where('isActive', '==', true),
-        where('organization', '==', organization),
-        where('role', 'in', APPROVER_ROLES)
+        where('organization', '==', organization)
       );
       const querySnapshot = await getDocs(q);
       
       const approvers = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      } as User));
+      } as Approver));
 
       console.log(`ApproverService: Found ${approvers.length} approvers for organization ${organization}`);
       console.log('ApproverService: Approvers:', approvers);
@@ -57,23 +59,22 @@ class ApproverService {
     }
   }
 
-  async getDepartmentApprovers(organization: string, department: string): Promise<User[]> {
+  async getDepartmentApprovers(organization: string, department: string): Promise<Approver[]> {
     try {
       console.log('ApproverService: Getting approvers for department:', department);
-      const approversRef = collection(this.db, 'users');
+      const approversRef = collection(this.db, 'approverList');
       const q = query(
         approversRef, 
         where('isActive', '==', true),
         where('organization', '==', organization),
-        where('department', '==', department),
-        where('role', 'in', APPROVER_ROLES)
+        where('department', '==', department)
       );
       const querySnapshot = await getDocs(q);
       
       const approvers = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      } as User));
+      } as Approver));
 
       console.log(`ApproverService: Found ${approvers.length} approvers for department ${department}`);
       return approvers;
