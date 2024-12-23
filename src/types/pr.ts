@@ -4,9 +4,9 @@ export interface PRRequest {
   status: PRStatus;
   items: PRItem[];
   approvers: User[];
-  createdAt: Date;
-  updatedAt: Date;
-  expectedLandingDate?: Date;
+  createdAt: string; // ISO string in Redux
+  updatedAt: string; // ISO string in Redux
+  expectedLandingDate?: string; // ISO string in Redux
   totalAmount: number;
   currency: string;
   department: string;
@@ -44,7 +44,7 @@ export interface Attachment {
   url: string;
   type: string;
   size: number;
-  uploadedAt: Date;
+  uploadedAt: string; // ISO string in Redux
   uploadedBy: User;
 }
 

@@ -20,7 +20,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { PR } from '../../types/pr';
-import * as prService from '../../services/prService';
+import { prService } from '../../services/pr';
 import { RootState } from '../../store';
 import { User } from '../../types/user';
 import { referenceDataService } from '../../services/referenceData';
@@ -259,26 +259,17 @@ export const NewPRForm = () => {
   const handleSubmit = async () => {
     try {
       setSubmitting(true);
-      const response = await prService.createPR({
+      const prId = await prService.createPR({
         ...formState,
         status: 'PENDING',
         createdBy: user.id,
-        createdAt: new Date().toISOString(),
       });
 
-      if (response.ok) {
-        enqueueSnackbar('Purchase Request created successfully', { variant: 'success' });
-        navigate('/prs');
-      } else {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.message || 'Failed to create Purchase Request');
-      }
+      enqueueSnackbar('Purchase Request created successfully', { variant: 'success' });
+      navigate('/prs');
     } catch (error) {
       console.error('Error creating PR:', error);
-      enqueueSnackbar(error instanceof Error ? error.message : 'Failed to create Purchase Request', { 
-        variant: 'error',
-        autoHideDuration: 5000
-      });
+      enqueueSnackbar('Failed to create Purchase Request', { variant: 'error' });
     } finally {
       setSubmitting(false);
     }

@@ -43,6 +43,9 @@ export const Dashboard = () => {
         }
       } catch (error) {
         console.error('Error loading dashboard data:', error);
+        // Clear the data on error to avoid showing stale data
+        dispatch(setUserPRs([]));
+        dispatch(setPendingApprovals([]));
       } finally {
         dispatch(setLoading(false));
       }

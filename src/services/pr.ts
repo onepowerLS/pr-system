@@ -7,17 +7,39 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   Timestamp,
-  DocumentReference
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PRRequest, PRStatus, User } from '../types/pr';
 
+const PR_COLLECTION = 'purchaseRequests';
+
+// Convert Firestore timestamp to ISO string for Redux
+const convertTimestamps = (data: any): any => {
+  if (!data) return data;
+  
+  if (data instanceof Timestamp) {
+    return data.toDate().toISOString();
+  }
+  
+  if (Array.isArray(data)) {
+    return data.map(item => convertTimestamps(item));
+  }
+  
+  if (typeof data === 'object') {
+    return Object.keys(data).reduce((result, key) => ({
+      ...result,
+      [key]: convertTimestamps(data[key])
+    }), {});
+  }
+  
+  return data;
+};
+
 export const prService = {
   createPR: async (prData: Omit<PRRequest, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const prRef = await addDoc(collection(db, 'purchaseRequests'), {
+      const prRef = await addDoc(collection(db, PR_COLLECTION), {
         ...prData,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
@@ -33,7 +55,7 @@ export const prService = {
 
   updatePR: async (prId: string, updates: Partial<PRRequest>) => {
     try {
-      const prRef = doc(db, 'purchaseRequests', prId);
+      const prRef = doc(db, PR_COLLECTION, prId);
       await updateDoc(prRef, {
         ...updates,
         updatedAt: Timestamp.now()
@@ -46,16 +68,17 @@ export const prService = {
 
   getPR: async (prId: string): Promise<PRRequest | null> => {
     try {
-      const prRef = doc(db, 'purchaseRequests', prId);
+      const prRef = doc(db, PR_COLLECTION, prId);
       const prSnap = await getDoc(prRef);
       
       if (!prSnap.exists()) {
         return null;
       }
 
+      const data = prSnap.data();
       return {
         id: prSnap.id,
-        ...prSnap.data()
+        ...convertTimestamps(data)
       } as PRRequest;
     } catch (error) {
       console.error('Error getting PR:', error);
@@ -63,61 +86,62 @@ export const prService = {
     }
   },
 
-  getUserPRs: async (userId: string, status?: PRStatus) => {
+  getUserPRs: async (userId: string, organization?: string): Promise<PRRequest[]> => {
     try {
-      let q = query(
-        collection(db, 'purchaseRequests'),
-        where('requestor.id', '==', userId)
+      const q = query(
+        collection(db, PR_COLLECTION),
+        where('createdBy', '==', userId)
       );
-
-      if (status) {
-        q = query(q, where('status', '==', status));
-      }
 
       const querySnapshot = await getDocs(q);
       const prs = querySnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...convertTimestamps(doc.data())
       })) as PRRequest[];
-      
-      // Sort in memory instead of using orderBy to avoid needing a composite index
-      return prs.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+
+      // Filter by organization if provided and sort by ISO date string
+      return prs
+        .filter(pr => !organization || pr.organization === organization)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (error) {
       console.error('Error getting user PRs:', error);
       throw error;
     }
   },
 
-  getPendingApprovals: async (approverId: string) => {
+  getPendingApprovals: async (approverId: string, organization?: string): Promise<PRRequest[]> => {
     try {
       const q = query(
-        collection(db, 'purchaseRequests'),
-        where('approvers', 'array-contains', approverId),
-        where('status', '==', PRStatus.PENDING_APPROVAL),
-        orderBy('createdAt', 'desc')
+        collection(db, PR_COLLECTION),
+        where('status', '==', PRStatus.PENDING)
       );
 
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({
+      const prs = querySnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...convertTimestamps(doc.data())
       })) as PRRequest[];
+
+      // Filter by approver and organization, sort by ISO date string
+      return prs
+        .filter(pr => 
+          pr.approvers?.includes(approverId) && 
+          (!organization || pr.organization === organization)
+        )
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } catch (error) {
       console.error('Error getting pending approvals:', error);
       throw error;
     }
   },
 
-  updateStatus: async (prId: string, status: PRStatus, updatedBy: User) => {
+  updateStatus: async (prId: string, status: PRStatus, updatedBy: User): Promise<void> => {
     try {
-      const prRef = doc(db, 'purchaseRequests', prId);
+      const prRef = doc(db, PR_COLLECTION, prId);
       await updateDoc(prRef, {
         status,
-        updatedAt: Timestamp.now(),
-        [`statusHistory.${status}`]: {
-          timestamp: Timestamp.now(),
-          updatedBy
-        }
+        updatedBy: updatedBy.id,
+        updatedAt: Timestamp.now()
       });
     } catch (error) {
       console.error('Error updating PR status:', error);
