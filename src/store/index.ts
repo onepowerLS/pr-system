@@ -3,7 +3,7 @@ import authReducer from './slices/authSlice';
 import prReducer from './slices/prSlice';
 import snackbarReducer from './slices/snackbarSlice';
 
-console.log('store/index.ts: Initializing Redux store');
+console.log('=== Initializing Redux Store ===');
 
 let store: ReturnType<typeof configureStore>;
 
@@ -27,32 +27,45 @@ try {
       }),
   });
 
-  console.log('store/index.ts: Redux store initialized successfully');
+  console.log('Redux store initialized successfully');
 
   // Subscribe to store changes
   store.subscribe(() => {
     try {
       const state = store.getState();
-      console.log('store/index.ts: Store state updated:', {
-        auth: {
-          loading: state.auth.loading,
-          error: state.auth.error,
-          userPresent: !!state.auth.user,
-        },
-        snackbar: {
-          message: state.snackbar.message,
-          severity: state.snackbar.severity,
-        },
+      const { auth } = state;
+      
+      console.log('=== Store State Updated ===');
+      console.log('Auth State:', {
+        loading: auth.loading,
+        error: auth.error,
+        isAuthenticated: !!auth.user,
+        user: auth.user ? {
+          id: auth.user.id,
+          email: auth.user.email,
+          role: auth.user.role,
+        } : null,
       });
+      
+      // Log action that caused the update
+      const action = store.getState().__lastAction;
+      if (action) {
+        console.log('Last Action:', {
+          type: action.type,
+          payload: action.payload,
+        });
+      }
     } catch (error) {
-      console.error('store/index.ts: Error in store subscription:', error);
+      console.error('Error in store subscription:', error);
     }
   });
 } catch (error) {
-  console.error('store/index.ts: Failed to initialize Redux store:', error);
-  throw new Error(`Failed to initialize application state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  console.error('Failed to initialize Redux store:', error);
+  throw error;
 }
 
+// Define RootState type from store
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
+
 export { store };

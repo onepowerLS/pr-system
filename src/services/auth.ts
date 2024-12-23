@@ -1,7 +1,6 @@
 import { 
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -13,12 +12,14 @@ import { setUser, clearUser, setLoading, setError } from '../store/slices/authSl
 export const signIn = async (email: string, password: string): Promise<void> => {
   console.log('auth.ts: Attempting sign in');
   try {
-    setLoading(true);
+    store.dispatch(setLoading(true));
+    store.dispatch(setError(null));
+
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
     
     if (!userDoc.exists()) {
-      throw new Error('User document not found');
+      throw new Error('User account not found. Please contact support.');
     }
 
     const userData = userDoc.data() as Omit<User, 'id'>;
@@ -31,8 +32,30 @@ export const signIn = async (email: string, password: string): Promise<void> => 
     console.log('auth.ts: Sign in successful');
   } catch (error) {
     console.error('auth.ts: Sign in failed:', error);
-    store.dispatch(setError(error instanceof Error ? error.message : 'Failed to sign in'));
-    throw error;
+    let errorMessage = 'Failed to sign in';
+    
+    if (error instanceof Error) {
+      // Handle specific Firebase Auth errors
+      switch (error.message) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/user-disabled':
+          errorMessage = 'This account has been disabled';
+          break;
+        default:
+          errorMessage = error.message;
+      }
+    }
+    
+    store.dispatch(setError(errorMessage));
+    throw new Error(errorMessage);
   } finally {
     store.dispatch(setLoading(false));
   }
@@ -46,7 +69,29 @@ export const signOut = async (): Promise<void> => {
     console.log('auth.ts: Sign out successful');
   } catch (error) {
     console.error('auth.ts: Sign out failed:', error);
-    store.dispatch(setError(error instanceof Error ? error.message : 'Failed to sign out'));
+    const errorMessage = error instanceof Error ? error.message : 'Failed to sign out';
+    store.dispatch(setError(errorMessage));
+    throw new Error(errorMessage);
+  }
+};
+
+export const getUserDetails = async (uid: string): Promise<User | null> => {
+  console.log('auth.ts: Getting user details for:', uid);
+  try {
+    const userDoc = await getDoc(doc(db, 'users', uid));
+    
+    if (!userDoc.exists()) {
+      console.error('auth.ts: No user document found for:', uid);
+      return null;
+    }
+
+    const userData = userDoc.data() as Omit<User, 'id'>;
+    return {
+      id: uid,
+      ...userData
+    };
+  } catch (error) {
+    console.error('auth.ts: Failed to get user details:', error);
     throw error;
   }
 };

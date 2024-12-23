@@ -25,8 +25,8 @@ import {
   Person,
 } from '@mui/icons-material';
 import { RootState } from '../../store';
-import { authService } from '../../services/auth';
-import { clearAuth } from '../../store/slices/authSlice';
+import { signOut } from '../../services/auth';
+import { clearUser } from '../../store/slices/authSlice';
 import { clearPRState } from '../../store/slices/prSlice';
 
 const drawerWidth = 240;
@@ -57,12 +57,15 @@ export const Layout = ({ children }: LayoutProps) => {
 
   const handleLogout = async () => {
     try {
-      await authService.logout();
-      dispatch(clearAuth());
+      handleMenuClose();
+      console.log('Layout: Starting logout');
+      await signOut();
+      console.log('Layout: Logout successful');
+      dispatch(clearUser());
       dispatch(clearPRState());
-      navigate('/login');
+      navigate('/login', { replace: true });
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('Layout: Logout error:', error);
     }
   };
 
@@ -71,19 +74,19 @@ export const Layout = ({ children }: LayoutProps) => {
       <Toolbar />
       <Divider />
       <List>
-        <ListItem onClick={() => navigate('/dashboard')}>
+        <ListItem button onClick={() => navigate('/dashboard')}>
           <ListItemIcon>
             <Dashboard />
           </ListItemIcon>
           <ListItemText primary="Dashboard" />
         </ListItem>
-        <ListItem onClick={() => navigate('/pr/new')}>
+        <ListItem button onClick={() => navigate('/pr/new')}>
           <ListItemIcon>
             <AddCircle />
           </ListItemIcon>
           <ListItemText primary="New PR" />
         </ListItem>
-        <ListItem onClick={() => navigate('/pr/list')}>
+        <ListItem button onClick={() => navigate('/pr/list')}>
           <ListItemIcon>
             <ListIcon />
           </ListItemIcon>
@@ -114,26 +117,41 @@ export const Layout = ({ children }: LayoutProps) => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            1PWR Procurement System
+            PR System
           </Typography>
-          <IconButton
-            color="inherit"
-            onClick={handleMenuOpen}
-            sx={{ ml: 2 }}
-          >
-            <Person />
-          </IconButton>
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleMenuClose}
-          >
-            <MenuItem disabled>
-              {user?.name} ({user?.role.toLowerCase()})
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={handleLogout}>Logout</MenuItem>
-          </Menu>
+          {user && (
+            <>
+              <IconButton
+                color="inherit"
+                onClick={handleMenuOpen}
+                aria-controls="user-menu"
+                aria-haspopup="true"
+              >
+                <Person />
+              </IconButton>
+              <Menu
+                id="user-menu"
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleMenuClose}
+                anchorOrigin={{
+                  vertical: 'bottom',
+                  horizontal: 'right',
+                }}
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'right',
+                }}
+              >
+                <MenuItem disabled>
+                  {user.email}
+                </MenuItem>
+                <MenuItem onClick={handleLogout}>
+                  Logout
+                </MenuItem>
+              </Menu>
+            </>
+          )}
         </Toolbar>
       </AppBar>
       <Box
@@ -149,10 +167,7 @@ export const Layout = ({ children }: LayoutProps) => {
           }}
           sx={{
             display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': {
-              boxSizing: 'border-box',
-              width: drawerWidth,
-            },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
           }}
         >
           {drawer}
@@ -161,10 +176,7 @@ export const Layout = ({ children }: LayoutProps) => {
           variant="permanent"
           sx={{
             display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': {
-              boxSizing: 'border-box',
-              width: drawerWidth,
-            },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
           }}
           open
         >
@@ -177,9 +189,9 @@ export const Layout = ({ children }: LayoutProps) => {
           flexGrow: 1,
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
+          mt: '64px',
         }}
       >
-        <Toolbar />
         {children}
       </Box>
     </Box>

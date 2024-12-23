@@ -9,7 +9,7 @@ interface AuthState {
 
 const initialState: AuthState = {
   user: null,
-  loading: false,
+  loading: true,
   error: null,
 };
 
@@ -17,23 +17,19 @@ const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    setUser: (state, action: PayloadAction<User>) => {
-      console.log('Auth: Setting user:', action.payload);
+    setUser: (state, action: PayloadAction<User | null>) => {
       state.user = action.payload;
       state.loading = false;
       state.error = null;
     },
     setLoading: (state, action: PayloadAction<boolean>) => {
-      console.log('Auth: Setting loading:', action.payload);
       state.loading = action.payload;
     },
     setError: (state, action: PayloadAction<string | null>) => {
-      console.log('Auth: Setting error:', action.payload);
       state.error = action.payload;
       state.loading = false;
     },
-    clearAuth: (state) => {
-      console.log('Auth: Clearing auth state');
+    clearUser: (state) => {
       state.user = null;
       state.loading = false;
       state.error = null;
@@ -41,5 +37,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setUser, setLoading, setError, clearAuth } = authSlice.actions;
+export const { setUser, setLoading, setError, clearUser } = authSlice.actions;
 export default authSlice.reducer;

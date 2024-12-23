@@ -1,11 +1,11 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
-import { getAuth, Auth } from 'firebase/auth';
-import { getStorage, FirebaseStorage } from 'firebase/storage';
-import { getFunctions, Functions } from 'firebase/functions';
+import { getFirestore, Firestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getAuth, Auth, connectAuthEmulator } from 'firebase/auth';
+import { getStorage, FirebaseStorage, connectStorageEmulator } from 'firebase/storage';
+import { getFunctions, Functions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAnalytics } from 'firebase/analytics';
 
-console.log('firebase.ts: Starting Firebase initialization');
+console.log('=== Firebase Initialization Starting ===');
 
 // Log environment variable presence (not values for security)
 const envVars = {
@@ -18,30 +18,22 @@ const envVars = {
   VITE_FIREBASE_MEASUREMENT_ID: !!import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-console.log('firebase.ts: Environment variables present:', envVars);
+console.log('Environment variables present:', envVars);
 
 // Validate required environment variables
 const requiredEnvVars = [
   'VITE_FIREBASE_API_KEY',
   'VITE_FIREBASE_AUTH_DOMAIN',
   'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_APP_ID',
 ] as const;
 
-// Check environment variables
 const missingVars = requiredEnvVars.filter(envVar => !import.meta.env[envVar]);
 if (missingVars.length > 0) {
   const error = `Missing required environment variables: ${missingVars.join(', ')}`;
-  console.error('firebase.ts:', error);
+  console.error('Firebase initialization error:', error);
   throw new Error(error);
 }
-
-// Log config (excluding sensitive data)
-console.log('firebase.ts: Firebase config:', {
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  // Excluding apiKey and other sensitive data
-});
 
 let app: FirebaseApp;
 let auth: Auth;
@@ -51,6 +43,8 @@ let storage: FirebaseStorage;
 let analytics: any;
 
 try {
+  // Step 1: Initialize Firebase App
+  console.log('Creating Firebase config...');
   const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -61,60 +55,91 @@ try {
     measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
   };
 
-  // Check for required config
-  const requiredConfig = [
-    'apiKey',
-    'authDomain',
-    'projectId',
-    'storageBucket',
-    'messagingSenderId',
-    'appId',
-  ];
+  console.log('Initializing Firebase app...');
+  app = initializeApp(firebaseConfig);
+  console.log('Firebase app initialized successfully');
 
-  const missingConfig = requiredConfig.filter(key => !firebaseConfig[key as keyof typeof firebaseConfig]);
-  if (missingConfig.length > 0) {
-    throw new Error(`Missing required Firebase configuration: ${missingConfig.join(', ')}`);
+  // Step 2: Initialize Auth
+  console.log('Initializing Firebase Auth...');
+  auth = getAuth(app);
+  
+  // Connect to emulators in development
+  if (import.meta.env.DEV) {
+    console.log('Development environment detected, connecting to emulators...');
+    try {
+      connectAuthEmulator(auth, 'http://localhost:9099');
+      console.log('Connected to Auth emulator');
+    } catch (error) {
+      console.warn('Failed to connect to Auth emulator:', error);
+    }
   }
 
-  console.log('firebase.ts: All required configuration present');
-  console.log('firebase.ts: Initializing Firebase app');
-  app = initializeApp(firebaseConfig);
-
-  console.log('firebase.ts: Initializing Firebase Auth');
-  auth = getAuth(app);
-
-  console.log('firebase.ts: Initializing Firestore');
+  // Step 3: Initialize Firestore
+  console.log('Initializing Firestore...');
   db = getFirestore(app);
+  
+  if (import.meta.env.DEV) {
+    try {
+      connectFirestoreEmulator(db, 'localhost', 8080);
+      console.log('Connected to Firestore emulator');
+    } catch (error) {
+      console.warn('Failed to connect to Firestore emulator:', error);
+    }
+  }
 
-  console.log('firebase.ts: Initializing Firebase Functions');
+  // Step 4: Initialize Functions
+  console.log('Initializing Firebase Functions...');
   functions = getFunctions(app);
+  
+  if (import.meta.env.DEV) {
+    try {
+      connectFunctionsEmulator(functions, 'localhost', 5001);
+      console.log('Connected to Functions emulator');
+    } catch (error) {
+      console.warn('Failed to connect to Functions emulator:', error);
+    }
+  }
 
-  console.log('firebase.ts: Initializing Firebase Storage');
+  // Step 5: Initialize Storage
+  console.log('Initializing Firebase Storage...');
   storage = getStorage(app);
+  
+  if (import.meta.env.DEV) {
+    try {
+      connectStorageEmulator(storage, 'localhost', 9199);
+      console.log('Connected to Storage emulator');
+    } catch (error) {
+      console.warn('Failed to connect to Storage emulator:', error);
+    }
+  }
 
+  // Step 6: Initialize Analytics (optional)
   if (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID) {
-    console.log('firebase.ts: Initializing Analytics');
-    analytics = getAnalytics(app);
-    console.log('firebase.ts: Analytics initialized');
+    console.log('Initializing Analytics...');
+    try {
+      analytics = getAnalytics(app);
+      console.log('Analytics initialized successfully');
+    } catch (error) {
+      console.warn('Failed to initialize Analytics:', error);
+      analytics = null;
+    }
   } else {
-    console.log('firebase.ts: Skipping Analytics initialization (no measurement ID)');
+    console.log('Skipping Analytics initialization (no measurement ID)');
     analytics = null;
   }
 
-  console.log('firebase.ts: Firebase initialization complete');
+  console.log('=== Firebase Initialization Complete ===');
 } catch (error) {
-  console.error('firebase.ts: Firebase initialization failed:', error);
-  // Try to provide more specific error messages
+  console.error('=== Firebase Initialization Failed ===');
+  console.error('Error details:', error);
+  
   if (error instanceof Error) {
-    if (error.message.includes('API key')) {
-      throw new Error('Invalid Firebase API key. Please check your environment variables.');
-    } else if (error.message.includes('project')) {
-      throw new Error('Invalid Firebase project configuration. Please check your environment variables.');
-    } else {
-      throw new Error(`Firebase initialization failed: ${error.message}`);
-    }
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
   }
+  
   throw error;
 }
 
-export { app, db, auth, storage, functions, analytics };
+export { app, auth, db, functions, storage, analytics };

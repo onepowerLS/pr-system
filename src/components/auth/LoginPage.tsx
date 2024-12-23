@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Box, Button, TextField, Typography, CircularProgress } from '@mui/material';
-import { authService } from '../../services/auth';
-import { setUser, setError } from '../../store/slices/authSlice';
+import { signIn } from '../../services/auth';
+import { setError } from '../../store/slices/authSlice';
+import { RootState } from '../../store';
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -11,32 +12,32 @@ export const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setLocalError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const globalError = useSelector((state: RootState) => state.auth.error);
+  const isAuthenticated = useSelector((state: RootState) => !!state.auth.user);
+
+  // Redirect if already authenticated
+  if (isAuthenticated) {
+    navigate('/dashboard', { replace: true });
+    return null;
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('LoginPage: Starting login attempt');
     setLoading(true);
     setLocalError(null);
+    dispatch(setError(null));
 
     try {
       console.log('LoginPage: Attempting login with email:', email);
-      const firebaseUser = await authService.login(email, password);
-      console.log('LoginPage: Login successful, getting user details');
-      
-      const userDetails = await authService.getUserDetails(firebaseUser.uid);
-      if (userDetails) {
-        console.log('LoginPage: User details loaded, setting user');
-        dispatch(setUser(userDetails));
-        navigate('/dashboard');
-      } else {
-        console.error('LoginPage: No user details found after login');
-        setLocalError('User account not found. Please contact support.');
-      }
+      await signIn(email, password);
+      console.log('LoginPage: Login successful, redirecting to dashboard');
+      navigate('/dashboard', { replace: true });
     } catch (error) {
       console.error('LoginPage: Login error:', error);
-      setLocalError(error instanceof Error ? error.message : 'Login failed');
-      dispatch(setError(error instanceof Error ? error.message : 'Login failed'));
+      const errorMessage = error instanceof Error ? error.message : 'Login failed';
+      setLocalError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -67,12 +68,12 @@ export const LoginPage = () => {
         }}
       >
         <Typography variant="h4" component="h1" gutterBottom align="center">
-          Login
+          PR System Login
         </Typography>
 
-        {error && (
-          <Typography color="error" align="center" gutterBottom>
-            {error}
+        {(localError || globalError) && (
+          <Typography color="error" align="center" sx={{ mb: 2 }}>
+            {localError || globalError}
           </Typography>
         )}
 
@@ -84,6 +85,9 @@ export const LoginPage = () => {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={loading}
+          required
+          autoFocus
+          autoComplete="email"
         />
 
         <TextField
@@ -94,18 +98,25 @@ export const LoginPage = () => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={loading}
+          required
+          autoComplete="current-password"
         />
 
         <Button
           type="submit"
-          variant="contained"
-          color="primary"
           fullWidth
-          size="large"
+          variant="contained"
           disabled={loading}
-          sx={{ mt: 3 }}
+          sx={{ mt: 3, mb: 2 }}
         >
-          {loading ? <CircularProgress size={24} /> : 'Login'}
+          {loading ? (
+            <>
+              <CircularProgress size={24} sx={{ mr: 1 }} />
+              Signing in...
+            </>
+          ) : (
+            'Sign In'
+          )}
         </Button>
       </Box>
     </Box>
