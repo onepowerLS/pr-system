@@ -73,6 +73,9 @@ import { referenceDataService } from '../../services/referenceData';
 import { approverService } from '../../services/approver';
 import { ReferenceDataItem } from '../../types/referenceData';
 import { RootState } from '../../store/types';
+import { BasicInformationStep } from './steps/BasicInformationStep';
+import { LineItemsStep } from './steps/LineItemsStep';
+import { ReviewStep } from './steps/ReviewStep';
 
 // Form steps definition
 const steps = ['Basic Information', 'Line Items', 'Review'];
@@ -355,6 +358,7 @@ export const NewPRForm = () => {
             sites={sites}
             expenseTypes={expenseTypes}
             vehicles={vehicles}
+            approvers={availableApprovers}
             loading={loading}
           />
         );
