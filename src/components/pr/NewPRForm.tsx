@@ -300,14 +300,95 @@ export const NewPRForm = () => {
     }
   }, [formState.estimatedAmount, formState.preferredVendor]);
 
+  // Form navigation handlers
+  const handleNext = useCallback(() => {
+    setActiveStep((prevStep) => prevStep + 1);
+  }, []);
+
+  const handleBack = useCallback(() => {
+    setActiveStep((prevStep) => prevStep - 1);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setActiveStep(0);
+    setFormState(initialFormState);
+  }, [initialFormState]);
+
+  // Handle step validation
+  const isStepValid = useCallback((step: number): boolean => {
+    switch (step) {
+      case 0: // Basic Information
+        return !!(
+          formState.organization &&
+          formState.requestor &&
+          formState.email &&
+          formState.department &&
+          formState.projectCategory &&
+          formState.description &&
+          formState.site &&
+          formState.expenseType
+        );
+      case 1: // Line Items
+        return formState.lineItems.length > 0 && formState.lineItems.every(item => 
+          item.description && 
+          item.quantity > 0 && 
+          item.uom
+        );
+      case 2: // Review
+        const needsQuotes = formState.estimatedAmount >= PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED;
+        return !needsQuotes || (needsQuotes && formState.quotes.length >= 2);
+      default:
+        return true;
+    }
+  }, [formState]);
+
+  // Get step content
+  const getStepContent = useCallback((step: number) => {
+    switch (step) {
+      case 0:
+        return (
+          <BasicInformationStep
+            formState={formState}
+            setFormState={setFormState}
+            departments={departments}
+            projectCategories={projectCategories}
+            sites={sites}
+            expenseTypes={expenseTypes}
+            vehicles={vehicles}
+            loading={loading}
+          />
+        );
+      case 1:
+        return (
+          <LineItemsStep
+            formState={formState}
+            setFormState={setFormState}
+            loading={loading}
+          />
+        );
+      case 2:
+        return (
+          <ReviewStep
+            formState={formState}
+            setFormState={setFormState}
+            vendors={vendors}
+            approvers={availableApprovers}
+            loading={loading}
+          />
+        );
+      default:
+        return 'Unknown step';
+    }
+  }, [formState, setFormState, departments, projectCategories, sites, expenseTypes, vehicles, vendors, availableApprovers, loading]);
+
   // Handle next step
-  const handleNext = () => {
+  const handleNextStep = () => {
     console.log('Current step:', activeStep);
     console.log('Current form state:', formState);
     
     if (activeStep === 0) {
       console.log('Validating basic info...');
-      const isValid = validateBasicInfo();
+      const isValid = isStepValid(0);
       console.log('Basic info validation result:', isValid);
       if (!isValid) {
         console.log('Basic info validation failed');
@@ -316,7 +397,7 @@ export const NewPRForm = () => {
       console.log('Basic info validation passed, moving to next step');
     } else if (activeStep === 1) {
       console.log('Validating line items...');
-      const isValid = validateLineItems();
+      const isValid = isStepValid(1);
       console.log('Line items validation result:', isValid);
       if (!isValid) {
         console.log('Line items validation failed');
@@ -325,11 +406,7 @@ export const NewPRForm = () => {
       console.log('Line items validation passed, moving to next step');
     }
 
-    setActiveStep(prevStep => {
-      const nextStep = prevStep + 1;
-      console.log('Moving from step', prevStep, 'to', nextStep);
-      return nextStep;
-    });
+    handleNext();
   };
 
   // Validation functions
@@ -1157,10 +1234,7 @@ export const NewPRForm = () => {
             ) : (
               <Button
                 variant="contained"
-                onClick={() => {
-                  console.log('Next button clicked');
-                  handleNext();
-                }}
+                onClick={handleNextStep}
               >
                 Next
               </Button>
