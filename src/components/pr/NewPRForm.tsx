@@ -162,34 +162,28 @@ export const NewPRForm = () => {
     }
   }, [user]);
 
-  const validateBasicInfo = () => {
+  const validateForm = () => {
     const requiredFields = [
       'organization',
       'requestor',
       'email',
       'department',
-      'projectCategory',
       'description',
       'site',
-      'expenseType',
-      'estimatedAmount',
-      'requiredDate'
+      'expenseType'
     ];
 
-    const errors: string[] = [];
-
-    requiredFields.forEach(field => {
-      if (!formState[field]) {
-        errors.push(`${field} is required`);
-      }
-    });
-
-    if (formState.estimatedAmount <= 0) {
-      errors.push('Estimated amount must be greater than 0');
+    const missingFields = requiredFields.filter(field => !formState[field as keyof FormState]);
+    
+    if (missingFields.length > 0) {
+      enqueueSnackbar(`Please fill in all required fields: ${missingFields.join(', ')}`, {
+        variant: 'error'
+      });
+      return false;
     }
 
-    if (errors.length > 0) {
-      enqueueSnackbar(errors[0], { variant: 'error' });
+    if (formState.estimatedAmount <= 0) {
+      enqueueSnackbar('Estimated amount must be greater than 0', { variant: 'error' });
       return false;
     }
 
@@ -233,58 +227,9 @@ export const NewPRForm = () => {
     }));
   };
 
-  const validateLineItems = () => {
-    const errors: string[] = [];
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     
-    if (formState.lineItems.length === 0) {
-      errors.push('At least one line item is required');
-      return false;
-    }
-
-    for (const item of formState.lineItems) {
-      if (!item.description) {
-        errors.push('Line item description is required');
-      }
-      if (item.quantity < 1) {
-        errors.push('Quantity must be at least 1');
-      }
-      if (!item.uom) {
-        errors.push('Unit of measure (UOM) is required');
-      }
-    }
-
-    if (errors.length > 0) {
-      enqueueSnackbar(errors[0], { variant: 'error' });
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleNext = () => {
-    if (activeStep === 0 && !validateBasicInfo()) {
-      return;
-    }
-
-    if (activeStep === 1 && !validateLineItems()) {
-      return;
-    }
-
-    setActiveStep(prevStep => prevStep + 1);
-  };
-
-  const handleBack = () => {
-    setActiveStep(prevStep => prevStep - 1);
-  };
-
-  const handleInputChange = (field: string, value: any) => {
-    setFormState(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleSubmit = async () => {
     if (!validateForm()) return;
 
     setSubmitting(true);
@@ -298,26 +243,7 @@ export const NewPRForm = () => {
       await prService.createPR(prData);
       enqueueSnackbar('Purchase Request created successfully', { variant: 'success' });
       
-      // Reset form state before navigating
-      setFormState({
-        organization: '1PWR LESOTHO',
-        requestor: '',
-        email: '',
-        department: '',
-        projectCategory: '',
-        description: '',
-        site: '',
-        expenseType: '',
-        vehicle: '',
-        vendor: '',
-        estimatedAmount: 0,
-        requiredDate: new Date().toISOString().split('T')[0],
-        lineItems: [],
-        attachments: []
-      });
-      setActiveStep(0);
-      
-      // Navigate after state cleanup
+      // Navigate after successful submission
       navigate('/dashboard');
     } catch (error) {
       console.error('Error creating PR:', error);
@@ -325,6 +251,22 @@ export const NewPRForm = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleNext = () => {
+    if (activeStep === 0 && !validateForm()) return;
+    setActiveStep((prevStep) => prevStep + 1);
+  };
+
+  const handleBack = () => {
+    setActiveStep((prevStep) => prevStep - 1);
+  };
+
+  const handleInputChange = (field: string, value: any) => {
+    setFormState(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   const renderBasicInfo = () => (
@@ -624,7 +566,7 @@ export const NewPRForm = () => {
         ))}
       </Stepper>
       
-      <form onSubmit={(e) => handleSubmit()} noValidate>
+      <form onSubmit={handleSubmit} noValidate>
         {loading ? (
           <Box display="flex" justifyContent="center">
             <CircularProgress />
