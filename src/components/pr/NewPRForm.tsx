@@ -122,7 +122,7 @@ interface FormState {
 
 // Initial form state with default values
 const initialState: FormState = {
-  organization: '',
+  organization: '1PWR LESOTHO', // Default organization
   requestor: '',
   email: '',
   department: '',
@@ -195,9 +195,10 @@ export const NewPRForm = () => {
     console.log('NewPRForm: Initializing form state with user:', user);
     return {
       ...initialState,
-      organization: user?.organization || '1PWR LESOTHO',
+      organization: user?.organization || initialState.organization, // Use default if not set
       requestor: user?.name || '',
-      email: user?.email || ''
+      email: user?.email || '',
+      department: user?.department || ''
     };
   });
 
@@ -209,7 +210,8 @@ export const NewPRForm = () => {
   // Load reference data
   useEffect(() => {
     const loadReferenceData = async () => {
-      if (!user?.organization) {
+      const organization = formState.organization; // Use form state organization
+      if (!organization) {
         setError('No organization found');
         setLoading(false);
         return;
@@ -225,13 +227,13 @@ export const NewPRForm = () => {
           vendorData,
           approverData
         ] = await Promise.all([
-          referenceDataService.getDepartments(user.organization),
-          referenceDataService.getProjectCategories(user.organization),
-          referenceDataService.getSites(user.organization),
-          referenceDataService.getExpenseTypes(user.organization),
-          referenceDataService.getVehicles(user.organization),
-          referenceDataService.getVendors(user.organization),
-          approverService.getApprovers(user.organization)
+          referenceDataService.getDepartments(organization),
+          referenceDataService.getProjectCategories(organization),
+          referenceDataService.getSites(organization),
+          referenceDataService.getExpenseTypes(organization),
+          referenceDataService.getVehicles(organization),
+          referenceDataService.getVendors(organization),
+          approverService.getApprovers(organization)
         ]);
 
         setDepartments(deptData);
@@ -253,7 +255,7 @@ export const NewPRForm = () => {
     };
 
     loadReferenceData();
-  }, [user?.organization, enqueueSnackbar]);
+  }, [formState.organization, enqueueSnackbar]);
 
   // Update user info when it changes
   useEffect(() => {
@@ -262,7 +264,7 @@ export const NewPRForm = () => {
         ...prev,
         requestor: user.name || '',
         email: user.email || '',
-        organization: '1PWR LESOTHO'
+        organization: user.organization || initialState.organization
       }));
     }
   }, [user]);
