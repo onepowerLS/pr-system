@@ -12,24 +12,16 @@ import {
   Grid,
   Typography,
   Paper,
+  Box,
+  Button,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Button,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Chip,
-  Box,
-  Autocomplete,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
 
@@ -43,6 +35,7 @@ interface ReviewStepProps {
     email: string;
     role: string;
     department?: string;
+    approvalLimit?: number;
   }>;
   loading: boolean;
   onSubmit: () => void;
@@ -50,221 +43,135 @@ interface ReviewStepProps {
 
 export const ReviewStep: React.FC<ReviewStepProps> = ({
   formState,
-  setFormState,
-  vendors,
   approvers,
   loading,
   onSubmit
 }) => {
-  // Add new quote
-  const handleAddQuote = () => {
-    setFormState(prev => ({
-      ...prev,
-      quotes: [...prev.quotes, { vendor: '', amount: 0, notes: '' }]
-    }));
-  };
-
-  // Remove quote
-  const handleRemoveQuote = (index: number) => {
-    setFormState(prev => ({
-      ...prev,
-      quotes: prev.quotes.filter((_, i) => i !== index)
-    }));
-  };
-
-  // Update quote
-  const handleQuoteChange = (index: number, field: 'vendor' | 'amount' | 'notes') => (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = field === 'amount' ? Number(event.target.value) : event.target.value;
-    setFormState(prev => ({
-      ...prev,
-      quotes: prev.quotes.map((quote, i) =>
-        i === index ? { ...quote, [field]: value } : quote
-      )
-    }));
-  };
-
-  // Handle approver changes
-  const handleApproverChange = (_event: any, value: any) => {
-    setFormState(prev => ({
-      ...prev,
-      approvers: value.map((approver: any) => approver.id)
-    }));
+  // Get approver names for display
+  const getApproverNames = () => {
+    return formState.approvers
+      .map(id => {
+        const approver = approvers.find(a => a.id === id);
+        return approver ? `${approver.name} (${approver.department})` : '';
+      })
+      .filter(Boolean)
+      .join(', ');
   };
 
   return (
     <Grid container spacing={3}>
-      {/* Basic Information Summary */}
+      {/* PR Header */}
       <Grid item xs={12}>
-        <Typography variant="h6" gutterBottom>
-          Basic Information
-        </Typography>
-        <Paper sx={{ p: 2 }}>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="subtitle2">Organization</Typography>
-              <Typography>{formState.organization}</Typography>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Typography variant="subtitle2">Department</Typography>
-              <Typography>{formState.department}</Typography>
-            </Grid>
-            <Grid item xs={12}>
-              <Typography variant="subtitle2">Description</Typography>
-              <Typography>{formState.description}</Typography>
-            </Grid>
-          </Grid>
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h5" gutterBottom>
+            Review Purchase Request
+          </Typography>
+          <Typography color="textSecondary" gutterBottom>
+            Please review all information before submitting
+          </Typography>
         </Paper>
       </Grid>
 
-      {/* Line Items Summary */}
-      <Grid item xs={12}>
-        <Typography variant="h6" gutterBottom>
-          Line Items
-        </Typography>
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Description</TableCell>
-                <TableCell align="right">Quantity</TableCell>
-                <TableCell>UOM</TableCell>
-                <TableCell>Notes</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {formState.lineItems.map((item, index) => (
-                <TableRow key={index}>
-                  <TableCell>{item.description}</TableCell>
-                  <TableCell align="right">{item.quantity}</TableCell>
-                  <TableCell>{item.uom}</TableCell>
-                  <TableCell>{item.notes}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+      {/* Requestor Information */}
+      <Grid item xs={12} md={6}>
+        <Paper sx={{ p: 3, height: '100%' }}>
+          <Typography variant="h6" gutterBottom>
+            Requestor Information
+          </Typography>
+          <Box sx={{ mt: 2 }}>
+            <Typography><strong>Name:</strong> {formState.requestor}</Typography>
+            <Typography><strong>Email:</strong> {formState.email}</Typography>
+            <Typography><strong>Department:</strong> {formState.department}</Typography>
+            <Typography><strong>Organization:</strong> {formState.organization}</Typography>
+          </Box>
+        </Paper>
       </Grid>
 
-      {/* Quotes */}
-      <Grid item xs={12}>
-        <Typography variant="h6" gutterBottom>
-          Quotes
-        </Typography>
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Vendor</TableCell>
-                <TableCell align="right">Amount</TableCell>
-                <TableCell>Notes</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {formState.quotes.map((quote, index) => (
-                <TableRow key={index}>
-                  <TableCell>
-                    <FormControl fullWidth>
-                      <Select
-                        value={quote.vendor}
-                        onChange={(e) => handleQuoteChange(index, 'vendor')(e as any)}
-                        disabled={loading}
-                      >
-                        {vendors.map(vendor => (
-                          <MenuItem key={vendor.id} value={vendor.id}>
-                            {vendor.name}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </TableCell>
-                  <TableCell align="right">
-                    <TextField
-                      type="number"
-                      value={quote.amount}
-                      onChange={handleQuoteChange(index, 'amount')}
-                      disabled={loading}
-                      inputProps={{ min: 0 }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <TextField
-                      fullWidth
-                      value={quote.notes}
-                      onChange={handleQuoteChange(index, 'notes')}
-                      disabled={loading}
-                      placeholder="Additional notes"
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <Button
-                      variant="contained"
-                      color="error"
-                      onClick={() => handleRemoveQuote(index)}
-                      disabled={loading}
-                      startIcon={<DeleteIcon />}
-                    >
-                      Remove
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        <Box sx={{ mt: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
-            onClick={handleAddQuote}
-            disabled={loading}
-          >
-            Add Quote
-          </Button>
-        </Box>
+      {/* Project Details */}
+      <Grid item xs={12} md={6}>
+        <Paper sx={{ p: 3, height: '100%' }}>
+          <Typography variant="h6" gutterBottom>
+            Project Details
+          </Typography>
+          <Box sx={{ mt: 2 }}>
+            <Typography><strong>Project Category:</strong> {formState.projectCategory}</Typography>
+            <Typography><strong>Site:</strong> {formState.site}</Typography>
+            <Typography><strong>Description:</strong> {formState.description}</Typography>
+          </Box>
+        </Paper>
       </Grid>
 
-      {/* Approvers */}
+      {/* Financial Details */}
+      <Grid item xs={12} md={6}>
+        <Paper sx={{ p: 3, height: '100%' }}>
+          <Typography variant="h6" gutterBottom>
+            Financial Details
+          </Typography>
+          <Box sx={{ mt: 2 }}>
+            <Typography>
+              <strong>Estimated Amount:</strong> {formState.estimatedAmount} {formState.currency}
+            </Typography>
+            <Typography><strong>Expense Type:</strong> {formState.expenseType}</Typography>
+            {formState.vehicle && (
+              <Typography><strong>Vehicle:</strong> {formState.vehicle}</Typography>
+            )}
+          </Box>
+        </Paper>
+      </Grid>
+
+      {/* Approval Details */}
+      <Grid item xs={12} md={6}>
+        <Paper sx={{ p: 3, height: '100%' }}>
+          <Typography variant="h6" gutterBottom>
+            Approval Details
+          </Typography>
+          <Box sx={{ mt: 2 }}>
+            <Typography><strong>Required Date:</strong> {formState.requiredDate}</Typography>
+            <Typography><strong>Approvers:</strong> {getApproverNames()}</Typography>
+          </Box>
+        </Paper>
+      </Grid>
+
+      {/* Line Items */}
       <Grid item xs={12}>
-        <Typography variant="h6" gutterBottom>
-          Approval Chain
-        </Typography>
-        <Autocomplete
-          multiple
-          options={approvers}
-          getOptionLabel={(option) => `${option.name} (${option.role})`}
-          value={approvers.filter(a => formState.approvers.includes(a.id))}
-          onChange={handleApproverChange}
-          disabled={loading}
-          renderTags={(value, getTagProps) =>
-            value.map((option, index) => (
-              <Chip
-                label={`${option.name} (${option.role})`}
-                {...getTagProps({ index })}
-              />
-            ))
-          }
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="Approvers"
-              placeholder="Select approvers"
-              required
-            />
-          )}
-        />
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Line Items
+          </Typography>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Description</TableCell>
+                  <TableCell align="right">Quantity</TableCell>
+                  <TableCell>Unit of Measure</TableCell>
+                  <TableCell>Notes</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {formState.lineItems.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{item.description}</TableCell>
+                    <TableCell align="right">{item.quantity}</TableCell>
+                    <TableCell>{item.uom}</TableCell>
+                    <TableCell>{item.notes}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
       </Grid>
 
       {/* Submit Button */}
       <Grid item xs={12}>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
           <Button
             variant="contained"
             color="primary"
             onClick={onSubmit}
             disabled={loading}
+            size="large"
           >
             Submit Purchase Request
           </Button>
