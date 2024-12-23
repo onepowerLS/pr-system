@@ -62,7 +62,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     setFormState(prev => {
       // Handle expense type changes
       if (field === 'expenseType') {
-        if (value === '4') {
+        if (value === 'vehicle') {
           // When switching to vehicle expense type
           return {
             ...prev,
@@ -70,7 +70,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             // Don't auto-select vehicle - user must explicitly choose
             vehicle: undefined
           };
-        } else if (prev.expenseType === '4') {
+        } else if (prev.expenseType === 'vehicle') {
           // When switching from vehicle expense type, clear vehicle
           return {
             ...prev,
@@ -90,8 +90,8 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     }));
   };
 
-  // Check if expense type is vehicle (type 4)
-  const isVehicleExpense = formState.expenseType === '4';
+  // Check if expense type is vehicle
+  const isVehicleExpense = formState.expenseType === 'vehicle';
 
   // Validate that vehicle is selected if expense type is vehicle
   React.useEffect(() => {
