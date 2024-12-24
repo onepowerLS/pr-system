@@ -89,41 +89,9 @@ export const Dashboard = () => {
       <MetricsPanel prs={filteredPRs} />
 
       <Grid container spacing={3}>
-        {/* Recent PRs */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Recent PRs
-            </Typography>
-            {filteredPRs.length === 0 ? (
-              <Typography color="textSecondary">No recent PRs</Typography>
-            ) : (
-              filteredPRs.slice(0, 5).map((pr) => (
-                <Box
-                  key={pr.id}
-                  sx={{
-                    p: 1,
-                    mb: 1,
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
-                  onClick={() => navigate(`/pr/${pr.id}`)}
-                >
-                  <Typography variant="subtitle1">
-                    PR #{pr.id.slice(-6)} - {pr.status}
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Total: {pr.currency} {pr.totalAmount}
-                  </Typography>
-                </Box>
-              ))
-            )}
-          </Paper>
-        </Grid>
-
         {/* Pending Approvals */}
         {(user?.role === UserRole.APPROVER || user?.role === UserRole.ADMIN) && (
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12}>
             <Paper sx={{ p: 2 }}>
               <Typography variant="h6" gutterBottom>
                 Pending Approvals
@@ -170,14 +138,18 @@ export const Dashboard = () => {
                   <Grid item xs={6} sm={4} md={3} key={status}>
                     <Paper
                       sx={{
-                        p: 2,
-                        textAlign: 'center',
+                        p: 1.5,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
                         bgcolor: 'grey.100',
                       }}
                     >
-                      <Typography variant="h4">{count}</Typography>
-                      <Typography variant="body2" color="textSecondary">
+                      <Typography variant="body1" color="textSecondary">
                         {status}
+                      </Typography>
+                      <Typography variant="h6" sx={{ ml: 1 }}>
+                        {count}
                       </Typography>
                     </Paper>
                   </Grid>

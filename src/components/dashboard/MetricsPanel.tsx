@@ -32,10 +32,17 @@ export const MetricsPanel = ({ prs }: MetricsPanelProps) => {
 
   const MetricItem = ({ label, value }: { label: string; value: number | string }) => (
     <Grid item xs={12} sm={6} md={3}>
-      <Paper sx={{ p: 2, textAlign: 'center' }}>
-        <Typography variant="h4">{value}</Typography>
-        <Typography variant="body2" color="textSecondary">
+      <Paper sx={{ 
+        p: 1.5, 
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        <Typography variant="body1" color="textSecondary">
           {label}
+        </Typography>
+        <Typography variant="h6" sx={{ ml: 1 }}>
+          {value}
         </Typography>
       </Paper>
     </Grid>
