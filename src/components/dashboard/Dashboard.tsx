@@ -37,11 +37,14 @@ export const Dashboard = () => {
   useEffect(() => {
     if (!user) return;
 
+    console.log('Dashboard: Loading data for user:', user.id);
     const loadDashboardData = async () => {
       dispatch(setLoading(true));
       try {
         // Load user's PRs with organization filter
+        console.log('Dashboard: Fetching PRs for org:', selectedOrg);
         const userPRsData = await prService.getUserPRs(user.id, selectedOrg);
+        console.log('Dashboard: Received PRs:', userPRsData);
         dispatch(setUserPRs(userPRsData));
 
         // Load pending approvals if user is an approver
@@ -66,11 +69,14 @@ export const Dashboard = () => {
 
   // Add dependency on location to refresh when navigating back
   useEffect(() => {
+    console.log('Dashboard: Location changed:', location.pathname);
     if (user) {
       const loadData = async () => {
         dispatch(setLoading(true));
         try {
+          console.log('Dashboard: Reloading data after navigation');
           const userPRsData = await prService.getUserPRs(user.id, selectedOrg);
+          console.log('Dashboard: Received updated PRs:', userPRsData);
           dispatch(setUserPRs(userPRsData));
 
           if (user.role === UserRole.APPROVER || user.role === UserRole.ADMIN) {

@@ -790,16 +790,19 @@ export const NewPRForm = () => {
         variant: 'success',
         autoHideDuration: 5000 
       });
-      
+
       // Refresh PR data before navigating
       if (user) {
+        console.log('Refreshing PR data for user:', user.id);
         const updatedPRs = await prService.getUserPRs(user.id, formState.organization);
+        console.log('Updated PRs:', updatedPRs);
         dispatch(setUserPRs(updatedPRs));
       }
 
       // Reset form and navigate back
       setFormState(initialFormState);
-      navigate('/purchase-requests');
+      console.log('Navigating to dashboard...');
+      navigate('/dashboard');
     } catch (error) {
       console.error('Error submitting PR:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

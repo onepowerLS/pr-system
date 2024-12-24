@@ -7,6 +7,7 @@ import {
   getDocs,
   query,
   where,
+  orderBy,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -103,11 +104,17 @@ export const prService = {
   },
 
   getUserPRs: async (userId: string, organization?: string): Promise<PRRequest[]> => {
+    console.log('PR Service: Getting PRs for user:', userId, 'org:', organization);
     try {
-      const q = query(
+      let q = query(
         collection(db, PR_COLLECTION),
-        where('createdBy', '==', userId)
+        where('submittedBy', '==', userId),
+        orderBy('createdAt', 'desc')
       );
+
+      if (organization) {
+        q = query(q, where('organization', '==', organization));
+      }
 
       const querySnapshot = await getDocs(q);
       const prs = querySnapshot.docs.map(doc => ({
@@ -115,10 +122,8 @@ export const prService = {
         ...convertTimestamps(doc.data())
       })) as PRRequest[];
 
-      // Filter by organization if provided and sort by ISO date string
-      return prs
-        .filter(pr => !organization || pr.organization === organization)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      console.log('PR Service: Found PRs:', prs);
+      return prs;
     } catch (error) {
       console.error('Error getting user PRs:', error);
       throw error;
