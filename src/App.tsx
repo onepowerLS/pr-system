@@ -16,20 +16,26 @@ import { getUserDetails } from './services/auth';
 import './App.css';
 
 function App() {
+  console.log('App: Component rendering');
   const dispatch = useDispatch();
-  const { user, loading } = useSelector((state: RootState) => state.auth);
+  const { user, loading, error } = useSelector((state: RootState) => {
+    console.log('App: Checking auth state:', state.auth);
+    return state.auth;
+  });
 
   useEffect(() => {
     console.log('App: Setting up auth state listener');
+    dispatch(setLoading(true));
     
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('App: Auth state changed:', { email: firebaseUser?.email, loading });
+      
       try {
-        console.log('App: Auth state changed:', firebaseUser?.email);
-        
         if (firebaseUser) {
+          console.log('App: Getting user details for:', firebaseUser.uid);
           const userDetails = await getUserDetails(firebaseUser.uid);
           if (userDetails) {
-            console.log('App: User details loaded');
+            console.log('App: User details loaded:', userDetails);
             dispatch(setUser(userDetails));
           } else {
             console.error('App: No user details found');
@@ -43,6 +49,7 @@ function App() {
         console.error('App: Error handling auth state change:', error);
         dispatch(setError(error instanceof Error ? error.message : 'Authentication error'));
       } finally {
+        console.log('App: Setting loading to false');
         dispatch(setLoading(false));
       }
     });
@@ -53,7 +60,7 @@ function App() {
     };
   }, [dispatch]);
 
-  console.log('App: Current state:', { user, loading });
+  console.log('App: Current state:', { user, loading, error });
 
   return (
     <ErrorBoundary>

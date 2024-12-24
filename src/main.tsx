@@ -1,3 +1,14 @@
+// Add error handler for uncaught errors
+window.onerror = function(message, source, lineno, colno, error) {
+  console.error('Global error:', { message, source, lineno, colno, error });
+  return false;
+};
+
+// Add handler for unhandled promise rejections
+window.onunhandledrejection = function(event) {
+  console.error('Unhandled promise rejection:', event.reason);
+};
+
 console.log('=== Application Starting ===');
 
 import { StrictMode } from 'react';
@@ -12,7 +23,11 @@ import App from './App';
 
 console.log('main.tsx: Starting application initialization');
 
+// Wrap the entire initialization in a try-catch
 try {
+  // Log initial store state
+  console.log('main.tsx: Initial store state:', store.getState());
+
   console.log('main.tsx: Creating theme');
   const theme = createTheme({
     palette: {
@@ -49,20 +64,40 @@ try {
           </SnackbarProvider>
         </ThemeProvider>
       </Provider>
-    </StrictMode>,
+    </StrictMode>
   );
-  console.log('main.tsx: App rendered successfully');
+  console.log('main.tsx: Initial render complete');
 } catch (error) {
-  console.error('main.tsx: Failed to initialize application:', error);
+  console.error('main.tsx: Fatal error during initialization:', error);
+  
+  // Try to render a basic error message
   const rootElement = document.getElementById('root');
   if (rootElement) {
     rootElement.innerHTML = `
-      <div style="color: red; margin: 20px; font-family: sans-serif;">
-        <h1>Application Error</h1>
-        <p>Sorry, the application failed to load. Please check the console for more details.</p>
-        <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; overflow: auto;">${error instanceof Error ? error.stack : 'Unknown error'}</pre>
+      <div style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        font-family: sans-serif;
+        color: #666;
+        text-align: center;
+      ">
+        <h1>Something went wrong</h1>
+        <p>Please check the console for more details.</p>
+        <pre style="
+          margin-top: 20px;
+          padding: 20px;
+          background: #f5f5f5;
+          border-radius: 4px;
+          max-width: 800px;
+          overflow: auto;
+        ">${error instanceof Error ? error.message : 'Unknown error'}</pre>
       </div>
     `;
   }
+  
+  // Re-throw the error for debugging
   throw error;
 }

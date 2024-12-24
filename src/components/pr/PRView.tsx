@@ -17,12 +17,12 @@ import {
   Chip,
 } from '@mui/material';
 import { Edit as EditIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
-import { RootState } from '../../store/store';
+import { RootState } from '../../store';
 import { prService } from '../../services/pr';
-import { PRRequest, PRStatus, LineItem } from '../../types/pr';
+import { PRRequest } from '../../types/pr';
 import { formatCurrency } from '../../utils/formatters';
 
-const PRView: React.FC = () => {
+export function PRView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [pr, setPr] = useState<PRRequest | null>(null);
@@ -34,15 +34,18 @@ const PRView: React.FC = () => {
     const fetchPR = async () => {
       if (!id) return;
       try {
+        console.log('Fetching PR with ID:', id);
         const prData = await prService.getPR(id);
         if (!prData) {
+          console.error('PR not found');
           setError('PR not found');
           return;
         }
+        console.log('PR data received:', prData);
         setPr(prData);
       } catch (err) {
-        setError('Failed to load PR');
         console.error('Error fetching PR:', err);
+        setError('Failed to load PR');
       } finally {
         setLoading(false);
       }
@@ -61,180 +64,213 @@ const PRView: React.FC = () => {
 
   if (error || !pr) {
     return (
-      <Box p={3}>
-        <Typography color="error">{error || 'PR not found'}</Typography>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/dashboard')}>
+      <Paper sx={{ p: 3, m: 2 }}>
+        <Typography color="error" variant="h6" gutterBottom>
+          {error || 'PR not found'}
+        </Typography>
+        <Button
+          startIcon={<ArrowBackIcon />}
+          onClick={() => navigate('/dashboard')}
+          variant="outlined"
+          sx={{ mt: 2 }}
+        >
           Back to Dashboard
         </Button>
-      </Box>
+      </Paper>
     );
   }
 
-  const canEdit = currentUser?.id === pr.requestorId && pr.status === PRStatus.SUBMITTED;
-
-  const getStatusColor = (status: PRStatus) => {
-    switch (status) {
-      case PRStatus.SUBMITTED:
-        return 'primary';
-      case PRStatus.IN_QUEUE:
-        return 'info';
-      case PRStatus.ORDERED:
-        return 'warning';
-      case PRStatus.COMPLETED:
-        return 'success';
-      case PRStatus.REVISION_REQUIRED:
-        return 'error';
-      case PRStatus.REJECTED:
-        return 'error';
-      case PRStatus.CANCELED:
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
+  const canEdit = currentUser?.role === 'ADMIN' || currentUser?.uid === pr.requestorId;
 
   return (
-    <Box p={3}>
+    <Box sx={{ p: 3 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box display="flex" alignItems="center" gap={2}>
-          <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/dashboard')}>
+        <Typography variant="h4" component="h1">
+          PR #{pr.prNumber}
+        </Typography>
+        <Box>
+          {canEdit && (
+            <Button
+              startIcon={<EditIcon />}
+              variant="contained"
+              color="primary"
+              onClick={() => navigate(`/pr/${id}/edit`)}
+              sx={{ mr: 2 }}
+            >
+              Edit
+            </Button>
+          )}
+          <Button
+            startIcon={<ArrowBackIcon />}
+            variant="outlined"
+            onClick={() => navigate('/dashboard')}
+          >
             Back
           </Button>
-          <Typography variant="h4">
-            Purchase Request {pr.prNumber}
-          </Typography>
-          <Chip
-            label={pr.status}
-            color={getStatusColor(pr.status)}
-            sx={{ ml: 2 }}
-          />
         </Box>
-        {canEdit && (
-          <Button
-            variant="contained"
-            startIcon={<EditIcon />}
-            onClick={() => navigate(`/pr/edit/${id}`)}
-          >
-            Edit PR
-          </Button>
-        )}
       </Box>
 
       <Grid container spacing={3}>
-        <Grid item xs={12}>
+        <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
               Basic Information
             </Typography>
+            <Divider sx={{ mb: 2 }} />
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <Typography variant="subtitle2">Organization</Typography>
-                <Typography>{pr.organization}</Typography>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Status</Typography>
+                <Chip
+                  label={pr.status || 'UNKNOWN'}
+                  color={pr.status === 'SUBMITTED' ? 'primary' : 'default'}
+                  sx={{ mt: 1 }}
+                />
               </Grid>
-              <Grid item xs={12} sm={6}>
-                <Typography variant="subtitle2">Submitted By</Typography>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Total Amount</Typography>
+                <Typography variant="h6">
+                  {formatCurrency(pr.estimatedAmount || 0, pr.currency)}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Requestor</Typography>
                 <Typography>{pr.requestor}</Typography>
               </Grid>
-              <Grid item xs={12} sm={6}>
-                <Typography variant="subtitle2">Department</Typography>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Department</Typography>
                 <Typography>{pr.department}</Typography>
               </Grid>
-              <Grid item xs={12} sm={6}>
-                <Typography variant="subtitle2">Project Category</Typography>
-                <Typography>{pr.projectCategory}</Typography>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Submitted Date</Typography>
+                <Typography>
+                  {new Date(pr.createdAt).toLocaleString()}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Last Updated</Typography>
+                <Typography>
+                  {new Date(pr.updatedAt).toLocaleString()}
+                </Typography>
               </Grid>
               <Grid item xs={12}>
-                <Typography variant="subtitle2">Description</Typography>
+                <Typography color="textSecondary">Description</Typography>
                 <Typography>{pr.description}</Typography>
               </Grid>
             </Grid>
           </Paper>
         </Grid>
 
-        <Grid item xs={12}>
+        <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
-              Line Items
+              Additional Information
             </Typography>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Description</TableCell>
-                  <TableCell align="right">Quantity</TableCell>
-                  <TableCell>UOM</TableCell>
-                  <TableCell align="right">Unit Price</TableCell>
-                  <TableCell align="right">Total</TableCell>
-                  <TableCell>Notes</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {pr.lineItems?.map((item: LineItem, index: number) => (
-                  <TableRow key={index}>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell align="right">{item.quantity}</TableCell>
-                    <TableCell>{item.uom}</TableCell>
-                    <TableCell align="right">{formatCurrency(item.unitPrice)}</TableCell>
-                    <TableCell align="right">
-                      {formatCurrency(item.quantity * item.unitPrice)}
-                    </TableCell>
-                    <TableCell>{item.notes}</TableCell>
-                  </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell colSpan={4} align="right">
-                    <Typography variant="subtitle1">Total Amount:</Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography variant="subtitle1">
-                      {formatCurrency(
-                        pr.lineItems?.reduce(
-                          (sum, item) => sum + item.quantity * item.unitPrice,
-                          0
-                        ) || 0
-                      )}
-                    </Typography>
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableBody>
-            </Table>
+            <Divider sx={{ mb: 2 }} />
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Project Category</Typography>
+                <Typography>{pr.projectCategory}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Site</Typography>
+                <Typography>{pr.site}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Organization</Typography>
+                <Typography>{pr.organization}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Required Date</Typography>
+                <Typography>
+                  {pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'N/A'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Expense Type</Typography>
+                <Typography>{pr.expenseType}</Typography>
+              </Grid>
+              {pr.vehicle && (
+                <Grid item xs={6}>
+                  <Typography color="textSecondary">Vehicle</Typography>
+                  <Typography>{pr.vehicle}</Typography>
+                </Grid>
+              )}
+            </Grid>
           </Paper>
         </Grid>
 
-        {pr.status !== PRStatus.SUBMITTED && (
+        {pr.lineItems && pr.lineItems.length > 0 && (
           <Grid item xs={12}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" gutterBottom>
-                Processing Information
+                Line Items
               </Typography>
-              <Grid container spacing={2}>
-                {pr.procComments && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2">PROC Comments</Typography>
-                    <Typography>{pr.procComments}</Typography>
-                  </Grid>
-                )}
-                {pr.metrics && (
-                  <>
-                    <Grid item xs={12} sm={6}>
-                      <Typography variant="subtitle2">Days Open</Typography>
-                      <Typography>{pr.metrics.daysOpen}</Typography>
-                    </Grid>
-                    {pr.metrics.completionPercentage !== undefined && (
-                      <Grid item xs={12} sm={6}>
-                        <Typography variant="subtitle2">Completion Percentage</Typography>
-                        <Typography>{pr.metrics.completionPercentage}%</Typography>
-                      </Grid>
-                    )}
-                  </>
-                )}
-              </Grid>
+              <Divider sx={{ mb: 2 }} />
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Description</TableCell>
+                    <TableCell>Quantity</TableCell>
+                    <TableCell>UOM</TableCell>
+                    <TableCell>Notes</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pr.lineItems.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell>{item.quantity}</TableCell>
+                      <TableCell>{item.uom}</TableCell>
+                      <TableCell>{item.notes || 'N/A'}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow>
+                    <TableCell colSpan={3} align="right">
+                      <Typography variant="subtitle1" fontWeight="bold">
+                        Total Amount
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="subtitle1" fontWeight="bold">
+                        {formatCurrency(pr.estimatedAmount || 0, pr.currency)}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </Paper>
+          </Grid>
+        )}
+
+        {pr.quotes && pr.quotes.length > 0 && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Quotes
+              </Typography>
+              <Divider sx={{ mb: 2 }} />
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Vendor</TableCell>
+                    <TableCell>Amount</TableCell>
+                    <TableCell>Notes</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pr.quotes.map((quote, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{quote.vendor}</TableCell>
+                      <TableCell>{formatCurrency(quote.amount, pr.currency)}</TableCell>
+                      <TableCell>{quote.notes || 'N/A'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </Paper>
           </Grid>
         )}
       </Grid>
     </Box>
   );
-};
-
-export default PRView;
+}

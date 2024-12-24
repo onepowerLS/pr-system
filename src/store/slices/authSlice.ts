@@ -44,7 +44,7 @@ interface AuthState {
 // Initial state when the application loads
 const initialState: AuthState = {
   user: null,
-  loading: true,
+  loading: true,  // Start with loading true
   error: null,
 };
 
@@ -53,48 +53,23 @@ const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    /**
-     * Updates the current user in the state
-     * @param state - Current auth state
-     * @param action - Action containing the user payload
-     */
-    setUser: (state, action: PayloadAction<User | null>) => {
+    setUser(state, action: PayloadAction<User | null>) {
       state.user = action.payload;
-      state.loading = false;
       state.error = null;
-      console.log('authSlice: User state updated:', !!action.payload);
+      console.log('Auth: User state updated:', action.payload ? 'User set' : 'User cleared');
     },
-
-    /**
-     * Updates the loading state during auth operations
-     * @param state - Current auth state
-     * @param action - Action containing the loading state
-     */
-    setLoading: (state, action: PayloadAction<boolean>) => {
+    setLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;
-      console.log('authSlice: Loading state updated:', action.payload);
+      console.log('Auth: Loading state updated:', action.payload);
     },
-
-    /**
-     * Updates the error state when auth operations fail
-     * @param state - Current auth state
-     * @param action - Action containing the error message
-     */
-    setError: (state, action: PayloadAction<string | null>) => {
+    setError(state, action: PayloadAction<string | null>) {
       state.error = action.payload;
-      state.loading = false;
-      console.log('authSlice: Error state updated:', action.payload);
+      console.log('Auth: Error state updated:', action.payload);
     },
-
-    /**
-     * Clears the user state during logout
-     * @param state - Current auth state
-     */
-    clearUser: (state) => {
+    clearUser(state) {
       state.user = null;
-      state.loading = false;
       state.error = null;
-      console.log('authSlice: User state cleared');
+      console.log('Auth: User state cleared');
     },
   },
 });
@@ -102,7 +77,7 @@ const authSlice = createSlice({
 // Export actions for use in components and services
 export const { setUser, setLoading, setError, clearUser } = authSlice.actions;
 
-// Export the reducer for store configuration
+// Export reducer for store configuration
 export default authSlice.reducer;
 
 // Export type for use in components
