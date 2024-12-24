@@ -454,13 +454,21 @@ export const NewPRForm = () => {
         return false;
       }
 
-      // Check vehicle if expense type is vehicle
-      if (formState.expenseType === 'vehicle' && !formState.vehicle) {
+      // Convert estimatedAmount to number if it's a string
+      const estimatedAmount = typeof formState.estimatedAmount === 'string' 
+        ? parseFloat(formState.estimatedAmount) 
+        : formState.estimatedAmount;
+
+      if (isNaN(estimatedAmount) || estimatedAmount <= 0) {
+        console.log('Invalid estimated amount:', estimatedAmount);
+        enqueueSnackbar('Estimated amount must be greater than 0', { variant: 'error' });
+        return false;
+      }
+
+      // Check vehicle if expense type is "4 - Vehicle"
+      if (formState.expenseType === '4' && !formState.vehicle) {
         console.log('Vehicle not selected for vehicle expense type');
-        enqueueSnackbar('Please select a vehicle', { 
-          variant: 'error',
-          autoHideDuration: 5000
-        });
+        enqueueSnackbar('Please select a vehicle for vehicle expense', { variant: 'error' });
         return false;
       }
 
@@ -568,8 +576,8 @@ export const NewPRForm = () => {
         return false;
       }
 
-      // Check vehicle if expense type is vehicle
-      if (formState.expenseType === 'vehicle' && !formState.vehicle) {
+      // Check vehicle if expense type is "4 - Vehicle"
+      if (formState.expenseType === '4' && !formState.vehicle) {
         console.log('Vehicle not selected for vehicle expense type');
         enqueueSnackbar('Please select a vehicle for vehicle expense', { variant: 'error' });
         return false;
@@ -822,7 +830,7 @@ export const NewPRForm = () => {
           </Select>
         </FormControl>
       </Grid>
-      {formState.expenseType === 'vehicle' && (
+      {formState.expenseType === '4' && (
         <Grid item xs={12} md={6}>
           <FormControl fullWidth required>
             <InputLabel>Vehicle</InputLabel>
