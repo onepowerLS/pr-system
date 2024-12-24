@@ -47,14 +47,118 @@ export const prService = {
       if (!prData.requestorId) {
         throw new Error('requestorId is required');
       }
+      if (!prData.organization) {
+        throw new Error('organization is required');
+      }
+
+      // Generate PR number
+      const prNumber = await prService.generatePRNumber(prData.organization);
 
       const finalPRData = {
         ...prData,
         status: PRStatus.SUBMITTED,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-        submittedBy: prData.requestorId, // Use requestorId as submittedBy
-        requestorId: prData.requestorId  // Ensure requestorId is included
+        submittedBy: prData.requestorId,
+        requestorId: prData.requestorId,
+        prNumber: prNumber
+      };
+
+      console.log('Final PR data:', finalPRData);
+
+      const docRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
+
+      // Create status change notification
+      await notificationService.handleStatusChange(
+        docRef.id,
+        '',
+        PRStatus.SUBMITTED,
+        { id: prData.requestorId, name: prData.requestor } as User
+      );
+
+      return docRef.id;
+    } catch (error) {
+      console.error('Error creating PR:', error);
+      throw error;
+    }
+  },
+
+  async generatePRNumber(organization: string): Promise<string> {
+    try {
+      // Get current year and month in YYYYMM format
+      const now = new Date();
+      const yearMonth = now.getFullYear().toString() + 
+                       (now.getMonth() + 1).toString().padStart(2, '0');
+      
+      console.log('Generating PR number for yearMonth:', yearMonth);
+
+      // Query for all PRs for this organization and filter client-side
+      const q = query(
+        collection(db, PR_COLLECTION),
+        where('organization', '==', organization)
+      );
+
+      const querySnapshot = await getDocs(q);
+      
+      // Filter for current month client-side
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      const thisMonthPRs = querySnapshot.docs.filter(doc => {
+        const data = doc.data();
+        const createdAt = data.createdAt?.toDate();
+        return createdAt >= startOfMonth && createdAt <= endOfMonth;
+      });
+
+      const count = thisMonthPRs.length + 1;
+      console.log('Current PR count for month:', count);
+
+      // Format: PR-YYYYMM-XXX where XXX is sequential number
+      const prNumber = `PR-${yearMonth}-${count.toString().padStart(3, '0')}`;
+      console.log('Generated PR number:', prNumber);
+
+      // Validate uniqueness
+      const existingQ = query(
+        collection(db, PR_COLLECTION),
+        where('prNumber', '==', prNumber)
+      );
+      const existingDocs = await getDocs(existingQ);
+      
+      if (!existingDocs.empty) {
+        console.error('PR number collision detected:', prNumber);
+        throw new Error('Failed to generate unique PR number');
+      }
+
+      return prNumber;
+    } catch (error) {
+      console.error('Error generating PR number:', error);
+      throw error;
+    }
+  },
+
+  async createPRWithNumber(prData: Partial<PRRequest>): Promise<string> {
+    try {
+      console.log('Creating PR with data:', prData);
+      
+      // Ensure required fields are present
+      if (!prData.requestorId) {
+        throw new Error('requestorId is required');
+      }
+      if (!prData.organization) {
+        throw new Error('organization is required');
+      }
+
+      // Generate PR number
+      const prNumber = await this.generatePRNumber(prData.organization);
+
+      const finalPRData = {
+        ...prData,
+        status: PRStatus.SUBMITTED,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        submittedBy: prData.requestorId,
+        requestorId: prData.requestorId,
+        prNumber: prNumber  // Add PR number
       };
 
       console.log('Final PR data:', finalPRData);

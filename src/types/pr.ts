@@ -1,5 +1,6 @@
 export interface PRRequest {
   id: string;
+  prNumber: string;  // Add PR number field
   requestorId: string;
   requestor: User;
   submittedBy: string;

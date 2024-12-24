@@ -21,6 +21,7 @@ import { setUserPRs, setPendingApprovals, setLoading } from '../../store/slices/
 import { UserRole, PRStatus } from '../../types/pr';
 import { OrganizationSelector } from '../common/OrganizationSelector';
 import { MetricsPanel } from './MetricsPanel';
+import { Link } from 'react-router-dom';
 
 export const Dashboard = () => {
   const navigate = useNavigate();
@@ -126,220 +127,265 @@ export const Dashboard = () => {
 
   const statusPRs = getStatusPRs();
 
-  // Get status-specific columns
-  const getStatusColumns = () => {
-    const commonColumns = [
-      { id: 'prNumber', label: 'PR #', align: 'left' as const },
-      { id: 'description', label: 'Description', align: 'left' as const },
-      { id: 'requestor', label: 'Submitted By', align: 'left' as const },
-      { id: 'createdAt', label: 'Submitted Date', align: 'right' as const },
+  const getColumns = (status: PRStatus): GridColDef[] => {
+    const baseColumns: GridColDef[] = [
+      {
+        field: 'prNumber',
+        headerName: 'PR Number',
+        width: 130,
+        renderCell: (params) => (
+          <Link to={`/pr/${params.row.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+            {params.value || `#${params.row.id.slice(-6)}`}
+          </Link>
+        ),
+      },
+      {
+        field: 'description',
+        headerName: 'Description',
+        width: 300,
+      },
+      {
+        field: 'requestor',
+        headerName: 'Submitted By',
+        width: 150,
+        valueGetter: (params) => {
+          if (typeof params.row.requestor === 'string') {
+            return params.row.requestor;
+          }
+          return params.row.requestor?.name || '';
+        },
+      },
+      {
+        field: 'createdAt',
+        headerName: 'Submitted Date',
+        width: 150,
+        valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+      },
     ];
 
-    switch (selectedStatus) {
+    // Add status-specific columns
+    switch (status) {
       case PRStatus.SUBMITTED:
         return [
-          ...commonColumns,
-          { id: 'resubmittedAt', label: 'Resubmitted Date', align: 'right' as const },
-          { id: 'daysOpen', label: 'Days Open', align: 'right' as const },
-          { id: 'daysResubmission', label: 'Days Since Resubmission', align: 'right' as const },
+          ...baseColumns,
+          {
+            field: 'resubmittedAt',
+            headerName: 'Resubmitted Date',
+            width: 150,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'metrics.daysOpen',
+            headerName: 'Days Open',
+            width: 100,
+            valueGetter: (params) => params.row.metrics?.daysOpen || 0,
+          },
+          {
+            field: 'metrics.daysResubmission',
+            headerName: 'Days Since Resubmission',
+            width: 180,
+            valueGetter: (params) => params.row.metrics?.daysResubmission || 0,
+          },
         ];
+      
       case PRStatus.IN_QUEUE:
         return [
-          { id: 'queuePosition', label: 'Queue Position', align: 'right' as const },
-          ...commonColumns,
-          { id: 'confirmedAt', label: 'Confirmed Date', align: 'right' as const },
-          { id: 'daysOpen', label: 'Days Open', align: 'right' as const },
-          { id: 'completionPercentage', label: '% Completed', align: 'right' as const },
+          {
+            field: 'metrics.queuePosition',
+            headerName: 'Queue Position',
+            width: 130,
+            valueGetter: (params) => params.row.metrics?.queuePosition || '',
+          },
+          ...baseColumns,
+          {
+            field: 'confirmedAt',
+            headerName: 'Confirmed Date',
+            width: 150,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'metrics.daysOpen',
+            headerName: 'Days Open',
+            width: 100,
+            valueGetter: (params) => params.row.metrics?.daysOpen || 0,
+          },
+          {
+            field: 'metrics.completionPercentage',
+            headerName: '% Completed',
+            width: 120,
+            valueGetter: (params) => params.row.metrics?.completionPercentage || 0,
+            valueFormatter: (params) => `${params.value}%`,
+          },
         ];
+
       case PRStatus.ORDERED:
         return [
-          ...commonColumns,
-          { id: 'orderedAt', label: 'Ordered Date', align: 'right' as const },
-          { id: 'daysOrdered', label: 'Days Since Ordered', align: 'right' as const },
-          { id: 'expectedLandingDate', label: 'Expected Landing Date', align: 'right' as const },
-          { id: 'daysOverdue', label: 'Days Overdue', align: 'right' as const },
-          { id: 'completionPercentage', label: '% Completed', align: 'right' as const },
+          ...baseColumns,
+          {
+            field: 'orderedAt',
+            headerName: 'Ordered Date',
+            width: 150,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'metrics.daysOrdered',
+            headerName: 'Days Since Ordered',
+            width: 150,
+            valueGetter: (params) => params.row.metrics?.daysOrdered || 0,
+          },
+          {
+            field: 'metrics.expectedLandingDate',
+            headerName: 'Expected Landing Date',
+            width: 180,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'metrics.daysOverdue',
+            headerName: 'Days Overdue',
+            width: 120,
+            valueGetter: (params) => params.row.metrics?.daysOverdue || 0,
+          },
+          {
+            field: 'metrics.completionPercentage',
+            headerName: '% Completed',
+            width: 120,
+            valueGetter: (params) => params.row.metrics?.completionPercentage || 0,
+            valueFormatter: (params) => `${params.value}%`,
+          },
         ];
+
       case PRStatus.COMPLETED:
         return [
-          ...commonColumns,
-          { id: 'completedAt', label: 'Completed Date', align: 'right' as const },
-          { id: 'timeToClose', label: 'Time to Close [Days]', align: 'right' as const },
+          ...baseColumns,
+          {
+            field: 'completedAt',
+            headerName: 'Completed Date',
+            width: 150,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'metrics.timeToClose',
+            headerName: 'Time to Close [Days]',
+            width: 180,
+            valueGetter: (params) => params.row.metrics?.timeToClose || 0,
+          },
         ];
+
       case PRStatus.REVISION_REQUIRED:
         return [
-          ...commonColumns,
-          { id: 'revisionAt', label: 'R&R Date', align: 'right' as const },
-          { id: 'procComments', label: 'PROC Comments', align: 'left' as const },
-          { id: 'daysOpen', label: 'Days Open', align: 'right' as const },
+          ...baseColumns,
+          {
+            field: 'revisionAt',
+            headerName: 'R&R Date',
+            width: 150,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'procComments',
+            headerName: 'PROC Comments',
+            width: 300,
+          },
+          {
+            field: 'metrics.daysOpen',
+            headerName: 'Days Open',
+            width: 100,
+            valueGetter: (params) => params.row.metrics?.daysOpen || 0,
+          },
         ];
+
       case PRStatus.REJECTED:
         return [
-          ...commonColumns,
-          { id: 'rejectedAt', label: 'Rejected Date', align: 'right' as const },
-          { id: 'procComments', label: 'PROC Comments', align: 'left' as const },
+          ...baseColumns,
+          {
+            field: 'rejectedAt',
+            headerName: 'Rejected Date',
+            width: 150,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'procComments',
+            headerName: 'PROC Comments',
+            width: 300,
+          },
         ];
+
       case PRStatus.CANCELED:
         return [
-          ...commonColumns,
-          { id: 'canceledAt', label: 'Canceled Date', align: 'right' as const },
-          { id: 'comments', label: 'Comments', align: 'left' as const },
+          ...baseColumns,
+          {
+            field: 'canceledAt',
+            headerName: 'Canceled Date',
+            width: 150,
+            valueFormatter: (params) => params.value ? new Date(params.value).toLocaleDateString() : '',
+          },
+          {
+            field: 'comments',
+            headerName: 'Comments',
+            width: 300,
+          },
         ];
+
       default:
-        return commonColumns;
+        return baseColumns;
     }
   };
 
-  const columns = getStatusColumns();
-
-  // Get cell value based on column ID
-  const getCellValue = (pr: PR, columnId: string) => {
-    switch (columnId) {
-      case 'prNumber':
-        return `#${pr.id.slice(-6)}`;
-      case 'description':
-        return pr.description;
-      case 'requestor':
-        return pr.requestor.name;
-      case 'createdAt':
-        return new Date(pr.createdAt).toLocaleDateString();
-      case 'resubmittedAt':
-        return pr.resubmittedAt ? new Date(pr.resubmittedAt).toLocaleDateString() : 'N/A';
-      case 'daysOpen':
-        return Math.ceil((Date.now() - new Date(pr.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-      case 'daysResubmission':
-        return pr.resubmittedAt
-          ? Math.ceil((Date.now() - new Date(pr.resubmittedAt).getTime()) / (1000 * 60 * 60 * 24))
-          : 'N/A';
-      case 'queuePosition':
-        return pr.metrics?.queuePosition || 'N/A';
-      case 'confirmedAt':
-        return pr.confirmedAt ? new Date(pr.confirmedAt).toLocaleDateString() : 'N/A';
-      case 'completionPercentage':
-        return pr.metrics?.completionPercentage ? `${pr.metrics.completionPercentage}%` : 'N/A';
-      case 'orderedAt':
-        return pr.orderedAt ? new Date(pr.orderedAt).toLocaleDateString() : 'N/A';
-      case 'daysOrdered':
-        return pr.orderedAt
-          ? Math.ceil((Date.now() - new Date(pr.orderedAt).getTime()) / (1000 * 60 * 60 * 24))
-          : 'N/A';
-      case 'expectedLandingDate':
-        return pr.metrics?.expectedLandingDate
-          ? new Date(pr.metrics.expectedLandingDate).toLocaleDateString()
-          : 'N/A';
-      case 'daysOverdue':
-        return pr.metrics?.expectedLandingDate && new Date(pr.metrics.expectedLandingDate) < new Date()
-          ? Math.ceil(
-              (Date.now() - new Date(pr.metrics.expectedLandingDate).getTime()) /
-                (1000 * 60 * 60 * 24)
-            )
-          : 'N/A';
-      case 'completedAt':
-        return pr.completedAt ? new Date(pr.completedAt).toLocaleDateString() : 'N/A';
-      case 'timeToClose':
-        return pr.completedAt
-          ? Math.ceil(
-              (new Date(pr.completedAt).getTime() - new Date(pr.createdAt).getTime()) /
-                (1000 * 60 * 60 * 24)
-            )
-          : 'N/A';
-      case 'revisionAt':
-        return pr.revisionAt ? new Date(pr.revisionAt).toLocaleDateString() : 'N/A';
-      case 'procComments':
-        return pr.procComments || 'N/A';
-      case 'rejectedAt':
-        return pr.rejectedAt ? new Date(pr.rejectedAt).toLocaleDateString() : 'N/A';
-      case 'canceledAt':
-        return pr.canceledAt ? new Date(pr.canceledAt).toLocaleDateString() : 'N/A';
-      case 'comments':
-        return pr.comments || 'N/A';
-      default:
-        return 'N/A';
-    }
-  };
+  const columns = getColumns(selectedStatus);
 
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Dashboard</Typography>
+        <Typography variant="h4" component="h1">
+          Purchase Requests
+        </Typography>
         <Box display="flex" gap={2}>
-          <Box width={200}>
-            <OrganizationSelector
-              value={selectedOrg}
-              onChange={setSelectedOrg}
-            />
-          </Box>
+          <OrganizationSelector
+            value={selectedOrg}
+            onChange={setSelectedOrg}
+          />
           <Button
             variant="contained"
-            startIcon={<AddIcon />}
+            color="primary"
             onClick={() => navigate('/pr/new')}
+            startIcon={<AddIcon />}
           >
             New PR
           </Button>
         </Box>
       </Box>
 
-      {/* Metrics Panel */}
-      <MetricsPanel prs={filteredPRs} />
-
       <Grid container spacing={3}>
-        {/* PR Status Summary */}
         <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              PR Status Summary
-            </Typography>
-            <Grid container spacing={2}>
-              {Object.values(PRStatus).map((status) => {
-                const count = filteredPRs.filter((pr) => pr.status === status).length;
-                return (
-                  <Grid item xs={6} sm={4} md={3} key={status}>
-                    <Paper
-                      sx={{
-                        p: 1.5,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        bgcolor: status === selectedStatus ? 'primary.main' : 'grey.100',
-                        color: status === selectedStatus ? 'primary.contrastText' : 'text.primary',
-                        cursor: 'pointer',
-                        '&:hover': {
-                          bgcolor: status === selectedStatus ? 'primary.dark' : 'action.hover',
-                        },
-                      }}
-                      onClick={() => setSelectedStatus(status as PRStatus)}
-                    >
-                      <Typography variant="body1" color="inherit">
-                        {status}
-                      </Typography>
-                      <Typography variant="h6" sx={{ ml: 1 }} color="inherit">
-                        {count}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                );
-              })}
-            </Grid>
-          </Paper>
+          <MetricsPanel prs={filteredPRs} />
         </Grid>
 
-        {/* PR List */}
         <Grid item xs={12}>
-          <Paper sx={{ p: 2, maxHeight: 400, overflow: 'auto' }}>
-            <Typography variant="h6" gutterBottom>
-              {selectedStatus} PRs
-            </Typography>
-            {statusPRs.length === 0 ? (
-              <Typography color="textSecondary">
+          <Paper sx={{ p: 2 }}>
+            <Box display="flex" gap={2} mb={2}>
+              {Object.values(PRStatus).map((status) => (
+                <Button
+                  key={status}
+                  variant={selectedStatus === status ? 'contained' : 'outlined'}
+                  onClick={() => setSelectedStatus(status)}
+                >
+                  {status}
+                </Button>
+              ))}
+            </Box>
+
+            {loading ? (
+              <CircularProgress />
+            ) : statusPRs.length === 0 ? (
+              <Typography variant="body1" color="textSecondary">
                 No PRs with status: {selectedStatus}
               </Typography>
             ) : (
-              <Table size="small">
+              <Table>
                 <TableHead>
                   <TableRow>
                     {columns.map((column) => (
-                      <TableCell key={column.id} align={column.align}>
-                        {column.label}
+                      <TableCell key={column.field}>
+                        {column.headerName}
                       </TableCell>
                     ))}
                   </TableRow>
@@ -353,8 +399,17 @@ export const Dashboard = () => {
                       onClick={() => navigate(`/pr/${pr.id}`)}
                     >
                       {columns.map((column) => (
-                        <TableCell key={column.id} align={column.align}>
-                          {getCellValue(pr, column.id)}
+                        <TableCell key={column.field}>
+                          {column.renderCell ? 
+                            column.renderCell({ row: pr, value: pr[column.field] }) :
+                            column.valueGetter ?
+                              column.valueFormatter ?
+                                column.valueFormatter({ value: column.valueGetter({ row: pr }) }) :
+                                column.valueGetter({ row: pr }) :
+                            column.valueFormatter ? 
+                              column.valueFormatter({ value: pr[column.field] }) :
+                              pr[column.field]
+                          }
                         </TableCell>
                       ))}
                     </TableRow>
@@ -364,42 +419,6 @@ export const Dashboard = () => {
             )}
           </Paper>
         </Grid>
-
-        {/* Pending Approvals */}
-        {(user?.role === UserRole.APPROVER || user?.role === UserRole.ADMIN) && (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 2 }}>
-              <Typography variant="h6" gutterBottom>
-                Pending Approvals
-              </Typography>
-              {pendingApprovals.length === 0 ? (
-                <Typography color="textSecondary">
-                  No pending approvals
-                </Typography>
-              ) : (
-                pendingApprovals.slice(0, 5).map((pr) => (
-                  <Box
-                    key={pr.id}
-                    sx={{
-                      p: 1,
-                      mb: 1,
-                      cursor: 'pointer',
-                      '&:hover': { bgcolor: 'action.hover' },
-                    }}
-                    onClick={() => navigate(`/pr/${pr.id}`)}
-                  >
-                    <Typography variant="subtitle1">
-                      PR #{pr.id.slice(-6)} - {pr.requestor.name}
-                    </Typography>
-                    <Typography variant="body2" color="textSecondary">
-                      Total: {pr.currency} {pr.totalAmount}
-                    </Typography>
-                  </Box>
-                ))
-              )}
-            </Paper>
-          </Grid>
-        )}
       </Grid>
     </Box>
   );

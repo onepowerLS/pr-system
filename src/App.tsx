@@ -8,8 +8,7 @@ import { RootState } from './store';
 import { LoginPage } from './components/auth/LoginPage';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { NewPRForm } from './components/pr/NewPRForm';
-import { PRList } from './components/pr/PRList';
-import { PRDetails } from './components/pr/PRDetails';
+import { PRView } from './components/pr/PRView';
 import { PrivateRoute } from './components/common/PrivateRoute';
 import { Layout } from './components/common/Layout';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -58,63 +57,14 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <Layout>
-                  <Navigate to="/dashboard" replace />
-                </Layout>
-              </PrivateRoute>
-            }
-          />
-
-          <Route
-            path="/dashboard"
-            element={
-              <PrivateRoute>
-                <Layout>
-                  <Dashboard />
-                </Layout>
-              </PrivateRoute>
-            }
-          />
-
-          <Route
-            path="/pr/new"
-            element={
-              <PrivateRoute>
-                <Layout>
-                  <NewPRForm />
-                </Layout>
-              </PrivateRoute>
-            }
-          />
-
-          <Route
-            path="/pr/list"
-            element={
-              <PrivateRoute>
-                <Layout>
-                  <PRList />
-                </Layout>
-              </PrivateRoute>
-            }
-          />
-
-          <Route
-            path="/pr/:id"
-            element={
-              <PrivateRoute>
-                <Layout>
-                  <PRDetails />
-                </Layout>
-              </PrivateRoute>
-            }
-          />
-
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route element={<PrivateRoute />}>
+            <Route element={<Layout />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/pr/new" element={<NewPRForm />} />
+              <Route path="/pr/:id" element={<PRView />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            </Route>
+          </Route>
         </Routes>
       </Router>
     </ErrorBoundary>
