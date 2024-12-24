@@ -17,6 +17,16 @@ export interface PRRequest {
   metrics?: PRMetrics;
   quotes?: Quote[];
   workflow?: PRWorkflow;
+  description: string;
+  resubmittedAt?: string;
+  confirmedAt?: string;
+  orderedAt?: string;
+  completedAt?: string;
+  revisionAt?: string;
+  rejectedAt?: string;
+  canceledAt?: string;
+  procComments?: string;
+  comments?: string;
 }
 
 export interface PRItem {
@@ -136,4 +146,9 @@ export interface PRMetrics {
   isApprovedVendor: boolean;
   completionPercentage: number;
   queuePosition?: number;
+  daysResubmission?: number;
+  daysOrdered?: number;
+  daysOverdue?: number;
+  timeToClose?: number;
+  expectedLandingDate?: string;
 }

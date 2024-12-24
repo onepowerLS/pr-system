@@ -48,12 +48,18 @@ export const prService = {
       });
       
       // Send notification for new PR submission
-      const user = prData.requestor;
+      const submitter: User = {
+        id: prData.submittedBy,
+        name: prData.requestor,
+        email: prData.email,
+        role: 'SUBMITTER' // Default role for notification purposes
+      };
+
       await notificationService.handleStatusChange(
         prRef.id,
         '', // No previous status for new PR
         PRStatus.SUBMITTED,
-        user
+        submitter
       );
       
       return prRef.id;

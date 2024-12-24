@@ -53,16 +53,21 @@ class NotificationService {
       notes
     };
 
-    // For now, just log the notification
-    await this.logNotification(
-      NotificationType.STATUS_CHANGE,
-      prId,
-      [user.email], // We'll expand recipients based on roles later
-      'pending'
-    );
-
-    // TODO: Implement email sending via Firebase Functions
     console.log('Status change notification:', notification);
+
+    try {
+      await addDoc(collection(db, this.notificationsCollection), {
+        type: 'STATUS_CHANGE',
+        prId,
+        recipients: [], // Will be determined by the notification worker
+        sentAt: new Date(),
+        status: 'pending',
+        data: notification
+      });
+    } catch (error) {
+      console.error('Error logging status change notification:', error);
+      throw error;
+    }
   }
 }
 

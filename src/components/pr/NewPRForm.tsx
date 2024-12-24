@@ -39,40 +39,25 @@
  * }
  */
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { useSnackbar } from 'notistack';
-import { useSelector } from 'react-redux';
 import {
   Box,
   Button,
-  Card,
-  CardActions,
-  CardContent,
-  Chip,
-  CircularProgress,
-  FormControl,
-  FormHelperText,
-  Grid,
-  IconButton,
-  InputLabel,
-  MenuItem,
+  Container,
   Paper,
-  Select,
   Step,
   StepLabel,
   Stepper,
-  TextField,
   Typography,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../config/firebase';
-import { referenceDataService } from '../../services/referenceData';
-import { approverService } from '../../services/approver';
-import { ReferenceDataItem } from '../../types/referenceData';
+import { PRStatus } from '../../types/pr';
 import { RootState } from '../../store/types';
+import { setUserPRs } from '../../store/slices/prSlice';
+import { prService } from '../../services/pr';
+import { ReferenceDataItem } from '../../types/referenceData';
 import { BasicInformationStep } from './steps/BasicInformationStep';
 import { LineItemsStep } from './steps/LineItemsStep';
 import { ReviewStep } from './steps/ReviewStep';
@@ -165,6 +150,7 @@ const PR_AMOUNT_THRESHOLDS = {
 export const NewPRForm = () => {
   console.log('NewPRForm: Component mounting');
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const { enqueueSnackbar } = useSnackbar();
 
   // Memoize selector to prevent unnecessary re-renders
@@ -704,40 +690,214 @@ export const NewPRForm = () => {
   const handleSubmit = async () => {
     console.log('Submitting form...', formState);
     setSubmitting(true);
+    setError(null);
 
     try {
-      if (!validateForm()) {
+      // Validate all form sections before submitting
+      const basicInfoValid = await validateBasicInfo();
+      console.log('Basic info validation:', basicInfoValid);
+      
+      const lineItemsValid = await validateLineItems();
+      console.log('Line items validation:', lineItemsValid);
+      
+      const quotesValid = await validateQuotes();
+      console.log('Quotes validation:', quotesValid);
+      
+      if (!basicInfoValid || !lineItemsValid || !quotesValid) {
+        console.log('Form validation failed:', { basicInfoValid, lineItemsValid, quotesValid });
         setSubmitting(false);
         return;
       }
 
-      // Create PR document in Firestore
-      const prRef = await addDoc(collection(db, 'purchaseRequests'), {
-        ...formState,
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formState.email)) {
+        enqueueSnackbar('Please enter a valid email address', { variant: 'error' });
+        setSubmitting(false);
+        return;
+      }
 
-      console.log('PR created with ID:', prRef.id);
-      enqueueSnackbar('Purchase Request submitted successfully!', { variant: 'success' });
+      // Validate and convert estimated amount
+      let amount: number;
+      try {
+        amount = typeof formState.estimatedAmount === 'string' 
+          ? parseFloat(formState.estimatedAmount) 
+          : formState.estimatedAmount;
+          
+        if (isNaN(amount) || amount <= 0) {
+          throw new Error('Invalid amount');
+        }
+      } catch (err) {
+        console.error('Amount validation error:', err);
+        enqueueSnackbar('Please enter a valid estimated amount', { variant: 'error' });
+        setSubmitting(false);
+        return;
+      }
+
+      // Prepare PR data with proper type conversions
+      const prData = {
+        organization: formState.organization.trim(),
+        requestor: formState.requestor.trim(),
+        email: formState.email.trim().toLowerCase(),
+        department: formState.department.trim(),
+        projectCategory: formState.projectCategory.trim(),
+        description: formState.description.trim(),
+        site: formState.site.trim(),
+        expenseType: formState.expenseType.trim(),
+        estimatedAmount: amount,
+        currency: formState.currency.trim(),
+        requiredDate: formState.requiredDate,
+        status: PRStatus.SUBMITTED,
+        submittedBy: user?.id || '',
+        lineItems: formState.lineItems.map(item => ({
+          description: item.description.trim(),
+          quantity: Number(item.quantity),
+          uom: item.uom.trim(),
+          notes: item.notes?.trim() || ''
+        })),
+        quotes: formState.quotes.map(quote => ({
+          vendorName: quote.vendorName.trim(),
+          amount: Number(quote.amount),
+          currency: quote.currency.trim(),
+          notes: quote.notes?.trim() || ''
+        }))
+      };
+
+      // Add optional fields only if they exist and are not undefined/null/empty
+      if (formState.vehicle && formState.vehicle.trim() !== '') {
+        prData.vehicle = formState.vehicle.trim();
+      }
+      
+      if (formState.preferredVendor && formState.preferredVendor.trim() !== '') {
+        prData.preferredVendor = formState.preferredVendor.trim();
+      }
+
+      if (formState.approvers?.length > 0) {
+        prData.approvers = formState.approvers;
+      }
+
+      console.log('Submitting PR data:', prData);
+
+      // Create the PR
+      const prId = await prService.createPR(prData);
+      console.log('PR created successfully');
+      
+      // Show success message
+      enqueueSnackbar('Purchase Request submitted successfully!', { 
+        variant: 'success',
+        autoHideDuration: 5000 
+      });
+      
+      // Refresh PR data
+      if (user) {
+        const updatedPRs = await prService.getUserPRs(user.id, formState.organization);
+        dispatch(setUserPRs(updatedPRs));
+      }
       
       // Reset form and navigate back
       setFormState(initialFormState);
       navigate('/purchase-requests');
     } catch (error) {
       console.error('Error submitting PR:', error);
-      enqueueSnackbar('Error submitting Purchase Request. Please try again.', { variant: 'error' });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setError(`Failed to submit Purchase Request: ${errorMessage}. Please try again or contact support.`);
+      enqueueSnackbar('Error submitting Purchase Request. Please try again.', { 
+        variant: 'error',
+        autoHideDuration: 5000 
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
+  const validateQuotes = async () => {
+    try {
+      console.log('Validating quotes...');
+      
+      // Convert estimated amount to number for comparison
+      let amount: number;
+      try {
+        amount = typeof formState.estimatedAmount === 'string' 
+          ? parseFloat(formState.estimatedAmount) 
+          : formState.estimatedAmount;
+          
+        if (isNaN(amount)) {
+          throw new Error('Invalid amount');
+        }
+      } catch (err) {
+        console.error('Amount conversion error:', err);
+        enqueueSnackbar('Invalid estimated amount', { variant: 'error' });
+        return false;
+      }
+      
+      // Check if quotes are required based on amount threshold
+      const quotesRequired = amount >= PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED;
+      console.log('Quotes required:', quotesRequired, 'Amount:', amount, 'Threshold:', PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED);
+      
+      if (quotesRequired) {
+        if (!formState.quotes || formState.quotes.length < 3) {
+          console.log('Three quotes required but not provided');
+          enqueueSnackbar('Three quotes are required for this amount', { 
+            variant: 'error',
+            autoHideDuration: 5000 
+          });
+          return false;
+        }
+
+        // Validate each quote
+        const invalidQuotes = formState.quotes.filter(quote => {
+          const quoteAmount = typeof quote.amount === 'string' ? parseFloat(quote.amount) : quote.amount;
+          return !quote.vendorName?.trim() || 
+                 !quote.amount || 
+                 isNaN(quoteAmount) ||
+                 quoteAmount <= 0 || 
+                 !quote.currency?.trim();
+        });
+
+        if (invalidQuotes.length > 0) {
+          console.log('Invalid quotes found:', invalidQuotes);
+          enqueueSnackbar(
+            'All quotes must have a vendor name, valid amount, and currency', 
+            { variant: 'error', autoHideDuration: 5000 }
+          );
+          return false;
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error in validateQuotes:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      enqueueSnackbar(`Quote validation error: ${errorMessage}`, { 
+        variant: 'error',
+        autoHideDuration: 5000
+      });
+      return false;
+    }
+  };
+
   const handleInputChange = (field: string, value: any) => {
-    setFormState(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setFormState(prev => {
+      // If changing expense type from vehicle to something else, clear the vehicle field
+      if (field === 'expenseType') {
+        const isVehicleExpense = value === '4' || value === '4 - Vehicle';
+        const wasVehicleExpense = prev.expenseType === '4' || prev.expenseType === '4 - Vehicle';
+        
+        if (wasVehicleExpense && !isVehicleExpense) {
+          console.log('Clearing vehicle field as expense type changed from vehicle');
+          return {
+            ...prev,
+            [field]: value,
+            vehicle: undefined // Clear vehicle when changing from vehicle expense type
+          };
+        }
+      }
+      
+      return {
+        ...prev,
+        [field]: value
+      };
+    });
   };
 
   const renderBasicInfo = () => (
