@@ -568,6 +568,33 @@ export const NewPRForm = () => {
         return false;
       }
 
+      // Check vehicle if expense type is vehicle
+      if (formState.expenseType === 'vehicle' && !formState.vehicle) {
+        console.log('Vehicle not selected for vehicle expense type');
+        enqueueSnackbar('Please select a vehicle for vehicle expense', { variant: 'error' });
+        return false;
+      }
+
+      // Check for line items
+      if (!formState.lineItems || formState.lineItems.length === 0) {
+        console.log('No line items found');
+        enqueueSnackbar('Please add at least one line item', { variant: 'error' });
+        return false;
+      }
+
+      // Check if all line items have required fields
+      const invalidItems = formState.lineItems.filter(item => {
+        return !item.description || !item.quantity || item.quantity <= 0 || !item.uom;
+      });
+
+      if (invalidItems.length > 0) {
+        console.log('Invalid line items found:', invalidItems);
+        enqueueSnackbar('All line items must have a description, quantity > 0, and unit of measure', { 
+          variant: 'error' 
+        });
+        return false;
+      }
+
       // Check for admin approval requirement
       if (estimatedAmount <= PR_AMOUNT_THRESHOLDS.ADMIN_APPROVAL) {
         const hasAdmin = formState.approvers.some(a => a === 'admin@1pwrafrica.com');
