@@ -595,24 +595,10 @@ export const NewPRForm = () => {
         return false;
       }
 
-      // Check for admin approval requirement
-      if (estimatedAmount <= PR_AMOUNT_THRESHOLDS.ADMIN_APPROVAL) {
-        const hasAdmin = formState.approvers.some(a => a === 'admin@1pwrafrica.com');
-        if (!hasAdmin) {
-          console.log('PRs under LSL 1,000 must be approved by admin');
-          enqueueSnackbar('PRs under LSL 1,000 must be approved by admin', { variant: 'error' });
-          return false;
-        }
-      }
-
-      // Validate quotes if required
-      if (requiresQuotes && (!formState.quotes || formState.quotes.length < 3)) {
-        console.log('Three quotes are required for this amount');
-        enqueueSnackbar(
-          `Three quotes are required for amounts over LSL ${PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED.toLocaleString()}` +
-          (isApprovedVendor ? ' (unless using an approved vendor)' : ''),
-          { variant: 'error' }
-        );
+      // Check that at least one approver is selected
+      if (!formState.approvers || formState.approvers.length === 0) {
+        console.log('No approvers selected');
+        enqueueSnackbar('Please select at least one approver', { variant: 'error' });
         return false;
       }
 
