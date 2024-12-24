@@ -46,24 +46,30 @@ class NotificationService {
   ): Promise<void> {
     const notification: StatusChangeNotification = {
       prId,
-      oldStatus: oldStatus as any,
-      newStatus: newStatus as any,
+      oldStatus,
+      newStatus,
       changedBy: user,
-      timestamp: new Date(),
-      notes
+      timestamp: new Date()
     };
+
+    // Only add notes if they exist
+    if (notes) {
+      notification.notes = notes;
+    }
 
     console.log('Status change notification:', notification);
 
     try {
-      await addDoc(collection(db, this.notificationsCollection), {
+      const notificationData = {
         type: 'STATUS_CHANGE',
         prId,
         recipients: [], // Will be determined by the notification worker
         sentAt: new Date(),
         status: 'pending',
         data: notification
-      });
+      };
+
+      await addDoc(collection(db, this.notificationsCollection), notificationData);
     } catch (error) {
       console.error('Error logging status change notification:', error);
       throw error;
