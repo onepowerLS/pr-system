@@ -41,13 +41,16 @@ const convertTimestamps = (data: any): any => {
 export const prService = {
   createPR: async (prData: Omit<PRRequest, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const prRef = await addDoc(collection(db, PR_COLLECTION), {
+      const finalPRData = {
         ...prData,
+        status: PRStatus.SUBMITTED,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-        status: PRStatus.SUBMITTED
-      });
-      
+        submittedBy: prData.requestorId,
+      };
+
+      const prRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
+
       // Send notification for new PR submission
       const submitter: User = {
         id: prData.submittedBy,
@@ -106,14 +109,19 @@ export const prService = {
   getUserPRs: async (userId: string, organization?: string): Promise<PRRequest[]> => {
     console.log('PR Service: Getting PRs for user:', userId, 'org:', organization);
     try {
+      // Start with basic query
       let q = query(
         collection(db, PR_COLLECTION),
-        where('submittedBy', '==', userId),
-        orderBy('createdAt', 'desc')
+        where('submittedBy', '==', userId)
       );
 
+      // Add organization filter if provided
       if (organization) {
-        q = query(q, where('organization', '==', organization));
+        q = query(
+          collection(db, PR_COLLECTION),
+          where('submittedBy', '==', userId),
+          where('organization', '==', organization)
+        );
       }
 
       const querySnapshot = await getDocs(q);
@@ -121,6 +129,13 @@ export const prService = {
         id: doc.id,
         ...convertTimestamps(doc.data())
       })) as PRRequest[];
+
+      // Sort client-side for now until we create the index
+      prs.sort((a, b) => {
+        const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
+        const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
+        return dateB.getTime() - dateA.getTime();
+      });
 
       console.log('PR Service: Found PRs:', prs);
       return prs;
