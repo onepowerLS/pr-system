@@ -39,34 +39,37 @@ const convertTimestamps = (data: any): any => {
 };
 
 export const prService = {
-  createPR: async (prData: Omit<PRRequest, 'id' | 'createdAt' | 'updatedAt'>) => {
+  createPR: async (prData: Partial<PRRequest>): Promise<string> => {
     try {
+      console.log('Creating PR with data:', prData);
+      
+      // Ensure required fields are present
+      if (!prData.requestorId) {
+        throw new Error('requestorId is required');
+      }
+
       const finalPRData = {
         ...prData,
         status: PRStatus.SUBMITTED,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
-        submittedBy: prData.requestorId,
+        submittedBy: prData.requestorId, // Use requestorId as submittedBy
+        requestorId: prData.requestorId  // Ensure requestorId is included
       };
 
-      const prRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
+      console.log('Final PR data:', finalPRData);
 
-      // Send notification for new PR submission
-      const submitter: User = {
-        id: prData.submittedBy,
-        name: prData.requestor,
-        email: prData.email,
-        role: 'SUBMITTER' // Default role for notification purposes
-      };
+      const docRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
 
+      // Create status change notification
       await notificationService.handleStatusChange(
-        prRef.id,
-        '', // No previous status for new PR
+        docRef.id,
+        '',
         PRStatus.SUBMITTED,
-        submitter
+        { id: prData.requestorId, name: prData.requestor } as User
       );
-      
-      return prRef.id;
+
+      return docRef.id;
     } catch (error) {
       console.error('Error creating PR:', error);
       throw error;

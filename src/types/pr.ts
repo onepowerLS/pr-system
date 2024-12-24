@@ -1,6 +1,8 @@
 export interface PRRequest {
   id: string;
+  requestorId: string;
   requestor: User;
+  submittedBy: string;
   status: PRStatus;
   items: PRItem[];
   approvers: ApprovalInfo[];

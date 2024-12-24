@@ -740,7 +740,9 @@ export const NewPRForm = () => {
       // Prepare PR data with proper type conversions
       const prData = {
         organization: formState.organization.trim(),
-        requestor: formState.requestor.trim(),
+        requestorId: user.id,  // Add this explicitly
+        submittedBy: user.id,  // Add this explicitly
+        requestor: user.name,
         email: formState.email.trim().toLowerCase(),
         department: formState.department.trim(),
         projectCategory: formState.projectCategory.trim(),
@@ -751,7 +753,6 @@ export const NewPRForm = () => {
         currency: formState.currency.trim(),
         requiredDate: formState.requiredDate,
         status: PRStatus.SUBMITTED,
-        submittedBy: user?.id || '',
         lineItems: formState.lineItems.map(item => ({
           description: item.description.trim(),
           quantity: Number(item.quantity),
