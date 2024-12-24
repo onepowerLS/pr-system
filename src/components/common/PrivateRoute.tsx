@@ -1,14 +1,13 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, Outlet } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { CircularProgress, Box, Typography, Button } from '@mui/material';
+import { CircularProgress, Box, Typography } from '@mui/material';
 import { RootState } from '../../store';
 
 interface PrivateRouteProps {
-  children: React.ReactNode;
   requiredRoles?: string[];
 }
 
-export const PrivateRoute = ({ children, requiredRoles }: PrivateRouteProps) => {
+export const PrivateRoute = ({ requiredRoles }: PrivateRouteProps) => {
   const location = useLocation();
   const { user, loading, error } = useSelector((state: RootState) => {
     console.log('PrivateRoute: Checking auth state:', state.auth);
@@ -49,36 +48,45 @@ export const PrivateRoute = ({ children, requiredRoles }: PrivateRouteProps) => 
           alignItems: 'center', 
           justifyContent: 'center', 
           height: '100vh',
-          bgcolor: 'background.default',
-          p: 3
+          bgcolor: 'background.default'
         }}
       >
-        <Typography variant="h5" color="error" gutterBottom>
-          Authentication Error
-        </Typography>
-        <Typography color="textSecondary" align="center" sx={{ mb: 3 }}>
+        <Typography variant="h6" color="error" gutterBottom>
           {error}
         </Typography>
-        <Button 
-          variant="contained" 
-          onClick={() => window.location.reload()}
-        >
-          Try Again
-        </Button>
+        <Typography color="textSecondary" sx={{ mb: 2 }}>
+          Please try logging in again
+        </Typography>
+        <Navigate to="/login" state={{ from: location }} replace />
       </Box>
     );
   }
 
   if (!user) {
-    console.log('PrivateRoute: No user found, redirecting to login');
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (requiredRoles && !requiredRoles.includes(user.role)) {
-    console.log('PrivateRoute: User lacks required role:', { userRole: user.role, requiredRoles });
-    return <Navigate to="/unauthorized" replace />;
+  if (requiredRoles && !requiredRoles.some(role => user.roles?.includes(role))) {
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          height: '100vh',
+          bgcolor: 'background.default'
+        }}
+      >
+        <Typography variant="h6" color="error" gutterBottom>
+          Access Denied
+        </Typography>
+        <Typography color="textSecondary">
+          You don't have the required permissions to access this page
+        </Typography>
+      </Box>
+    );
   }
 
-  console.log('PrivateRoute: Access granted');
-  return <>{children}</>;
+  return <Outlet />;
 };

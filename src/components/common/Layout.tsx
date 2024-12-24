@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { Outlet } from 'react-router-dom';
 import {
   AppBar,
   Box,
@@ -31,11 +32,9 @@ import { clearPRState } from '../../store/slices/prSlice';
 
 const drawerWidth = 240;
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
+interface LayoutProps {}
 
-export const Layout = ({ children }: LayoutProps) => {
+export const Layout = ({}: LayoutProps) => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.auth.user);
@@ -189,10 +188,13 @@ export const Layout = ({ children }: LayoutProps) => {
           flexGrow: 1,
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
-          mt: '64px',
+          ml: { sm: `${drawerWidth}px` },
+          minHeight: '100vh',
+          bgcolor: 'background.default',
         }}
       >
-        {children}
+        <Toolbar />
+        <Outlet />
       </Box>
     </Box>
   );
