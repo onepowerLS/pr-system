@@ -791,12 +791,12 @@ export const NewPRForm = () => {
         autoHideDuration: 5000 
       });
       
-      // Refresh PR data
+      // Refresh PR data before navigating
       if (user) {
         const updatedPRs = await prService.getUserPRs(user.id, formState.organization);
         dispatch(setUserPRs(updatedPRs));
       }
-      
+
       // Reset form and navigate back
       setFormState(initialFormState);
       navigate('/purchase-requests');

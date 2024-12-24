@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Grid,
   Paper,
@@ -25,6 +25,7 @@ import { MetricsPanel } from './MetricsPanel';
 export const Dashboard = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const location = useLocation();
   const { user } = useSelector((state: RootState) => state.auth);
   const { userPRs, pendingApprovals, loading } = useSelector(
     (state: RootState) => state.pr
@@ -62,6 +63,29 @@ export const Dashboard = () => {
 
     return () => clearInterval(refreshInterval);
   }, [dispatch, user, selectedOrg]);
+
+  // Add dependency on location to refresh when navigating back
+  useEffect(() => {
+    if (user) {
+      const loadData = async () => {
+        dispatch(setLoading(true));
+        try {
+          const userPRsData = await prService.getUserPRs(user.id, selectedOrg);
+          dispatch(setUserPRs(userPRsData));
+
+          if (user.role === UserRole.APPROVER || user.role === UserRole.ADMIN) {
+            const pendingApprovalsData = await prService.getPendingApprovals(user.id, selectedOrg);
+            dispatch(setPendingApprovals(pendingApprovalsData));
+          }
+        } catch (error) {
+          console.error('Error loading dashboard data:', error);
+        } finally {
+          dispatch(setLoading(false));
+        }
+      };
+      loadData();
+    }
+  }, [location.pathname, user, selectedOrg]);
 
   if (loading) {
     return (
