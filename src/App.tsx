@@ -17,12 +17,11 @@ import './App.css';
 
 function App() {
   const dispatch = useDispatch();
-  const { user } = useSelector((state: RootState) => state.auth);
+  const { user, loading } = useSelector((state: RootState) => state.auth);
 
   useEffect(() => {
     console.log('App: Setting up auth state listener');
-    dispatch(setLoading(true));
-
+    
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         console.log('App: Auth state changed:', firebaseUser?.email);
@@ -43,6 +42,8 @@ function App() {
       } catch (error) {
         console.error('App: Error handling auth state change:', error);
         dispatch(setError(error instanceof Error ? error.message : 'Authentication error'));
+      } finally {
+        dispatch(setLoading(false));
       }
     });
 
@@ -52,11 +53,26 @@ function App() {
     };
   }, [dispatch]);
 
+  console.log('App: Current state:', { user, loading });
+
   return (
     <ErrorBoundary>
       <Router>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login" element={
+            loading ? (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                height: '100vh' 
+              }}>
+                Loading...
+              </div>
+            ) : (
+              user ? <Navigate to="/dashboard" replace /> : <LoginPage />
+            )
+          } />
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<Dashboard />} />
@@ -65,6 +81,7 @@ function App() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     </ErrorBoundary>

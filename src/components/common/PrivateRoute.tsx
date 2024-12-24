@@ -28,15 +28,17 @@ export const PrivateRoute = ({ requiredRoles }: PrivateRouteProps) => {
           bgcolor: 'background.default'
         }}
       >
-        <CircularProgress size={40} />
+        <CircularProgress />
         <Typography variant="h6" sx={{ mt: 2 }}>
           Loading...
         </Typography>
-        <Typography color="textSecondary" sx={{ mt: 1 }}>
-          Please wait while we verify your credentials
-        </Typography>
       </Box>
     );
+  }
+
+  if (!user) {
+    console.log('PrivateRoute: No user, redirecting to login');
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (error) {
@@ -60,10 +62,6 @@ export const PrivateRoute = ({ requiredRoles }: PrivateRouteProps) => {
         <Navigate to="/login" state={{ from: location }} replace />
       </Box>
     );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (requiredRoles && !requiredRoles.some(role => user.roles?.includes(role))) {
