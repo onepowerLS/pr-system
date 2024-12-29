@@ -186,6 +186,14 @@ export function PRView() {
                 </Typography>
               </Grid>
               <Grid item xs={6}>
+                <Typography color="textSecondary">Urgency</Typography>
+                <Chip
+                  label={pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
+                  color={pr.metrics?.isUrgent ? 'error' : 'default'}
+                  sx={{ mt: 1 }}
+                />
+              </Grid>
+              <Grid item xs={6}>
                 <Typography color="textSecondary">Expense Type</Typography>
                 <Typography>{pr.expenseType}</Typography>
               </Grid>

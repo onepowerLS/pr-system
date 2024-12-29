@@ -765,6 +765,9 @@ export const NewPRForm = () => {
         currency: formState.currency.trim(),
         requiredDate: formState.requiredDate,
         status: PRStatus.SUBMITTED,
+        metrics: {
+          isUrgent: formState.isUrgent
+        },
         lineItems: formState.lineItems.map(item => ({
           description: item.description.trim(),
           quantity: Number(item.quantity),
