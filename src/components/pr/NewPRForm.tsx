@@ -109,6 +109,7 @@ interface FormState {
   preferredVendor?: string;
   lineItems: LineItem[];
   quotes: Quote[];
+  isUrgent: boolean;
 }
 
 // Initial form state with default values
@@ -128,7 +129,8 @@ const initialState: FormState = {
   approvers: [],
   preferredVendor: '',
   lineItems: [],
-  quotes: []
+  quotes: [],
+  isUrgent: false,
 };
 
 // Business rule thresholds

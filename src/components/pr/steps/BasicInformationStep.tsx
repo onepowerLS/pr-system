@@ -323,6 +323,25 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
         />
       </Grid>
 
+      {/* Urgency */}
+      <Grid item xs={12} md={6}>
+        <FormControl fullWidth required>
+          <InputLabel>Is this request urgent?</InputLabel>
+          <Select
+            value={formState.isUrgent}
+            onChange={handleChange('isUrgent')}
+            label="Is this request urgent?"
+            disabled={loading}
+          >
+            <MenuItem value={false}>No</MenuItem>
+            <MenuItem value={true}>Yes</MenuItem>
+          </Select>
+          <FormHelperText>
+            Urgent requests may require immediate attention from approvers
+          </FormHelperText>
+        </FormControl>
+      </Grid>
+
       {/* Preferred Vendor */}
       <Grid item xs={12} md={6}>
         <FormControl fullWidth>
