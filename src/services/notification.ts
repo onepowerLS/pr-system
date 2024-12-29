@@ -24,19 +24,6 @@ class NotificationService {
     return docRef.id;
   }
 
-  async getNotificationsByPR(prId: string): Promise<NotificationLog[]> {
-    const q = query(
-      collection(db, this.notificationsCollection),
-      where('prId', '==', prId)
-    );
-
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as NotificationLog));
-  }
-
   async handleStatusChange(
     prId: string,
     oldStatus: string,
@@ -60,20 +47,30 @@ class NotificationService {
     console.log('Status change notification:', notification);
 
     try {
-      const notificationData = {
-        type: 'STATUS_CHANGE',
+      // Log the notification in Firestore
+      await this.logNotification(
+        'STATUS_CHANGE',
         prId,
-        recipients: [], // Will be determined by the notification worker
-        sentAt: new Date(),
-        status: 'pending',
-        data: notification
-      };
-
-      await addDoc(collection(db, this.notificationsCollection), notificationData);
+        ['procurement@1pwrafrica.com', user.email], // Include both procurement and user email
+        'pending'
+      );
     } catch (error) {
-      console.error('Error logging status change notification:', error);
+      console.error('Error logging notification:', error);
       throw error;
     }
+  }
+
+  async getNotificationsByPR(prId: string): Promise<NotificationLog[]> {
+    const q = query(
+      collection(db, this.notificationsCollection),
+      where('prId', '==', prId)
+    );
+
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as NotificationLog[];
   }
 }
 

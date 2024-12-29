@@ -50,6 +50,9 @@ export const prService = {
       if (!prData.organization) {
         throw new Error('organization is required');
       }
+      if (!prData.requestorEmail) {
+        throw new Error('requestorEmail is required');
+      }
 
       // Generate PR number
       const prNumber = await prService.generatePRNumber(prData.organization);
@@ -61,6 +64,7 @@ export const prService = {
         updatedAt: Timestamp.now(),
         submittedBy: prData.requestorId,
         requestorId: prData.requestorId,
+        requestorEmail: prData.requestorEmail,
         prNumber: prNumber
       };
 
@@ -73,7 +77,11 @@ export const prService = {
         docRef.id,
         '',
         PRStatus.SUBMITTED,
-        { id: prData.requestorId, name: prData.requestor } as User
+        { 
+          id: prData.requestorId, 
+          name: prData.requestor,
+          email: prData.requestorEmail 
+        } as User
       );
 
       return docRef.id;
