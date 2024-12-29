@@ -13,6 +13,7 @@ import {
 import { db } from '../config/firebase';
 import { PRRequest, PRStatus, User } from '../types/pr';
 import { notificationService } from './notification';
+import { calculateDaysOpen } from '../utils/formatters';
 
 const PR_COLLECTION = 'purchaseRequests';
 
@@ -52,6 +53,18 @@ const convertTimestamps = (data: any): any => {
   }
   
   return data;
+};
+
+// Calculate PR metrics
+const calculatePRMetrics = (pr: PRRequest) => {
+  return {
+    ...pr,
+    metrics: {
+      ...pr.metrics,
+      daysOpen: calculateDaysOpen(pr.createdAt),
+      daysResubmission: pr.resubmittedAt ? calculateDaysOpen(pr.resubmittedAt) : 0
+    }
+  };
 };
 
 export const prService = {
@@ -244,7 +257,9 @@ export const prService = {
       const querySnapshot = await getDocs(q);
       console.log('Raw Firestore data:', querySnapshot.docs.map(doc => ({
         id: doc.id,
-        data: doc.data()
+        createdAt: doc.data().createdAt,
+        createdAtType: doc.data().createdAt?.constructor?.name,
+        timestamp: doc.data().createdAt?.toDate?.()
       })));
 
       const prs = querySnapshot.docs.map(doc => {
@@ -256,11 +271,13 @@ export const prService = {
           timestamp: data.createdAt?.toDate?.()
         });
         
-        return {
+        const pr = {
           id: doc.id,
           ...convertTimestamps(data)
-        };
-      }) as PRRequest[];
+        } as PRRequest;
+
+        return calculatePRMetrics(pr);
+      });
 
       // Sort by created date descending
       prs.sort((a, b) => {
@@ -272,7 +289,7 @@ export const prService = {
       console.log('Processed PRs:', prs.map(pr => ({
         id: pr.id,
         createdAt: pr.createdAt,
-        createdAtType: typeof pr.createdAt
+        metrics: pr.metrics
       })));
       
       return prs;
