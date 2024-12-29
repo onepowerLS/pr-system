@@ -184,6 +184,11 @@ export const NewPRForm = () => {
   const [approvers, setApprovers] = useState<any[]>([]);
   const [availableApprovers, setAvailableApprovers] = useState<any[]>([]);
 
+  // State for form requirements
+  const [requiresQuotes, setRequiresQuotes] = useState(false);
+  const [requiresFinanceApproval, setRequiresFinanceApproval] = useState(false);
+  const [isApprovedVendor, setIsApprovedVendor] = useState(false);
+
   // Memoize initial form state
   const initialFormState = useMemo(() => ({
     ...initialState,
@@ -266,7 +271,7 @@ export const NewPRForm = () => {
     }
   }, [user]);
 
-  // Update requirements based on amount and vendor
+  // Effect to update requirements based on amount and vendor
   useEffect(() => {
     console.log('NewPRForm: Updating requirements based on amount and vendor');
     try {
@@ -739,11 +744,16 @@ export const NewPRForm = () => {
 
       // Prepare PR data with proper type conversions
       const prData = {
+        requestorId: user?.id || '',
+        requestorEmail: user?.email || '',
+        requestor: {
+          id: user?.id || '',
+          name: user?.name || '',
+          email: user?.email || '',
+          role: user?.role || '',
+          department: user?.department || ''
+        },
         organization: formState.organization.trim(),
-        requestorId: user.id,  // Add this explicitly
-        submittedBy: user.id,  // Add this explicitly
-        requestor: user.name,
-        email: formState.email.trim().toLowerCase(),
         department: formState.department.trim(),
         projectCategory: formState.projectCategory.trim(),
         description: formState.description.trim(),

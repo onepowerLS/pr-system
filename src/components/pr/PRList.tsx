@@ -32,6 +32,7 @@ import { prService } from '../../services/pr';
 import { setUserPRs, setLoading } from '../../store/slices/prSlice';
 import { PRRequest, PRStatus } from '../../types/pr';
 import { format } from 'date-fns';
+import { formatCurrency, calculateDaysOpen } from '../../utils/formatters';
 
 const statusColors: Record<PRStatus, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
   [PRStatus.SUBMITTED]: 'warning',
@@ -175,6 +176,8 @@ export const PRList = () => {
             <TableRow>
               <TableCell>PR ID</TableCell>
               <TableCell>Created Date</TableCell>
+              <TableCell>Days Open</TableCell>
+              <TableCell>Requestor</TableCell>
               <TableCell>Department</TableCell>
               <TableCell>Category</TableCell>
               <TableCell>Status</TableCell>
@@ -185,42 +188,54 @@ export const PRList = () => {
           <TableBody>
             {filteredPRs
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-              .map((pr) => (
-                <TableRow key={pr.id} hover>
-                  <TableCell>#{pr.id.slice(-6)}</TableCell>
-                  <TableCell>
-                    {format(
-                      pr.createdAt instanceof Date ? pr.createdAt : new Date(pr.createdAt),
-                      'MMM dd, yyyy'
-                    )}
-                  </TableCell>
-                  <TableCell>{pr.department}</TableCell>
-                  <TableCell>{pr.projectCategory}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={pr.status.replace(/_/g, ' ')}
-                      color={statusColors[pr.status]}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    {formatCurrency(pr.totalAmount, pr.currency)}
-                  </TableCell>
-                  <TableCell align="center">
-                    <Tooltip title="View Details">
-                      <IconButton
+              .map((pr) => {
+                console.log('PR dates:', {
+                  id: pr.id,
+                  createdAt: pr.createdAt,
+                  completedAt: pr.completedAt
+                });
+                const daysOpen = calculateDaysOpen(pr.createdAt, pr.completedAt);
+                return (
+                  <TableRow key={pr.id} hover>
+                    <TableCell>#{pr.id.slice(-6)}</TableCell>
+                    <TableCell>
+                      {format(
+                        pr.createdAt instanceof Date ? pr.createdAt : new Date(pr.createdAt),
+                        'MMM dd, yyyy'
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {daysOpen} days
+                    </TableCell>
+                    <TableCell>{pr.requestor?.name || 'Unknown'}</TableCell>
+                    <TableCell>{pr.department}</TableCell>
+                    <TableCell>{pr.projectCategory}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={pr.status.replace(/_/g, ' ')}
+                        color={statusColors[pr.status]}
                         size="small"
-                        onClick={() => navigate(`/pr/${pr.id}`)}
-                      >
-                        <ViewIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      {formatCurrency(pr.totalAmount, pr.currency)}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Tooltip title="View Details">
+                        <IconButton
+                          size="small"
+                          onClick={() => navigate(`/pr/${pr.id}`)}
+                        >
+                          <ViewIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             {filteredPRs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} align="center">
+                <TableCell colSpan={9} align="center">
                   No purchase requests found
                 </TableCell>
               </TableRow>

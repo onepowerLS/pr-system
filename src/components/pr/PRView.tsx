@@ -134,7 +134,7 @@ export function PRView() {
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Requestor</Typography>
-                <Typography>{pr.requestor}</Typography>
+                <Typography>{pr.requestor?.name || 'Unknown'}</Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Department</Typography>

@@ -363,15 +363,20 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           onChange={handleApproverChange}
           disabled={loading}
           renderTags={(value, getTagProps) =>
-            value.map((option, index) => (
-              <Chip
-                label={option.department === 'Admin' ? 
-                  `${option.name} (${option.department}, limit: ${option.approvalLimit})` :
-                  `${option.name} (${option.department})`
-                }
-                {...getTagProps({ index })}
-              />
-            ))
+            value.map((option, index) => {
+              const props = getTagProps({ index });
+              const { key, ...chipProps } = props;
+              return (
+                <Chip
+                  key={key}
+                  label={option.department === 'Admin' ? 
+                    `${option.name} (${option.department}, limit: ${option.approvalLimit})` :
+                    `${option.name} (${option.department})`
+                  }
+                  {...chipProps}
+                />
+              );
+            })
           }
           renderInput={(params) => (
             <TextField
