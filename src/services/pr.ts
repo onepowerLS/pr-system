@@ -10,6 +10,7 @@ import {
   orderBy,
   Timestamp,
 } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
 import { PRRequest, PRStatus, User } from '../types/pr';
 import { notificationService } from './notification';
@@ -99,6 +100,27 @@ export const prService = {
       console.log('Final PR data:', finalPRData);
 
       const docRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
+
+      // Send email notification
+      try {
+        const functions = getFunctions();
+        const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
+        
+        await sendPRNotification({
+          prNumber: prNumber,
+          requestorName: prData.requestorName,
+          requestorEmail: prData.email,
+          department: prData.department,
+          description: prData.description,
+          items: prData.lineItems || []
+        });
+
+        console.log('PR notification email sent successfully');
+      } catch (emailError) {
+        console.error('Error sending PR notification email:', emailError);
+        // Don't throw the error as the PR was created successfully
+      }
+
       return docRef.id;
     } catch (error) {
       console.error('Error creating PR:', error);
