@@ -189,19 +189,36 @@ export const PRList = () => {
             {filteredPRs
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
               .map((pr) => {
-                console.log('PR dates:', {
+                console.log('Processing PR:', {
                   id: pr.id,
+                  prNumber: pr.prNumber,
                   createdAt: pr.createdAt,
-                  completedAt: pr.completedAt
+                  createdAtType: typeof pr.createdAt,
+                  completedAt: pr.completedAt,
+                  completedAtType: typeof pr.completedAt,
+                  status: pr.status
                 });
-                const daysOpen = calculateDaysOpen(pr.createdAt, pr.completedAt);
+                
+                let daysOpen;
+                try {
+                  daysOpen = calculateDaysOpen(pr.createdAt);
+                  console.log('Calculated days open:', {
+                    id: pr.id,
+                    daysOpen,
+                    createdAt: new Date(pr.createdAt).toISOString(),
+                  });
+                } catch (error) {
+                  console.error('Error calculating days open:', error);
+                  daysOpen = 0;
+                }
+                
                 return (
                   <TableRow key={pr.id} hover>
                     <TableCell>#{pr.id.slice(-6)}</TableCell>
                     <TableCell>
                       {format(
-                        pr.createdAt instanceof Date ? pr.createdAt : new Date(pr.createdAt),
-                        'MMM dd, yyyy'
+                        new Date(pr.createdAt),
+                        'MM/dd/yyyy'
                       )}
                     </TableCell>
                     <TableCell>
