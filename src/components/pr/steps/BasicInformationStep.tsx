@@ -21,6 +21,7 @@ import {
   Chip,
   Box,
   Typography,
+  SelectChangeEvent,
 } from '@mui/material';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
@@ -58,7 +59,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   loading,
 }) => {
   const handleChange = (field: keyof FormState) => (
-    event: React.ChangeEvent<HTMLInputElement | { value: unknown }>
+    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>
   ) => {
     const value = event.target.value;
     setFormState(prev => {
@@ -328,13 +329,16 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
         <FormControl fullWidth required>
           <InputLabel>Is this request urgent?</InputLabel>
           <Select
-            value={formState.isUrgent}
-            onChange={handleChange('isUrgent')}
+            value={formState.isUrgent.toString()}
+            onChange={(e) => {
+              const value = e.target.value === 'true';
+              setFormState(prev => ({ ...prev, isUrgent: value }));
+            }}
             label="Is this request urgent?"
             disabled={loading}
           >
-            <MenuItem value={false}>No</MenuItem>
-            <MenuItem value={true}>Yes</MenuItem>
+            <MenuItem value="false">No</MenuItem>
+            <MenuItem value="true">Yes</MenuItem>
           </Select>
           <FormHelperText>
             Urgent requests may require immediate attention from approvers
