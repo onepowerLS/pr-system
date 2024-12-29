@@ -60,9 +60,9 @@ const calculatePRMetrics = (pr: PRRequest) => {
   return {
     ...pr,
     metrics: {
-      ...pr.metrics,
       daysOpen: calculateDaysOpen(pr.createdAt),
-      daysResubmission: pr.resubmittedAt ? calculateDaysOpen(pr.resubmittedAt) : 0
+      daysResubmission: pr.resubmittedAt ? calculateDaysOpen(pr.resubmittedAt) : 0,
+      ...(pr.metrics || {})  // Spread existing metrics if they exist
     }
   };
 };
