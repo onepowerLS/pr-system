@@ -251,18 +251,41 @@ export const prService = {
 
   getPR: async (prId: string): Promise<PRRequest | null> => {
     try {
-      const prRef = doc(db, PR_COLLECTION, prId);
-      const prSnap = await getDoc(prRef);
+      // First try to get PR by document ID
+      const docRef = doc(db, PR_COLLECTION, prId);
+      const docSnap = await getDoc(docRef);
       
-      if (!prSnap.exists()) {
-        return null;
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: convertTimestamps(data.createdAt),
+          updatedAt: convertTimestamps(data.updatedAt),
+          resubmittedAt: convertTimestamps(data.resubmittedAt)
+        } as PRRequest;
       }
 
-      const data = prSnap.data();
-      return {
-        id: prSnap.id,
-        ...convertTimestamps(data)
-      } as PRRequest;
+      // If not found, try to get PR by PR number
+      const q = query(
+        collection(db, PR_COLLECTION),
+        where('prNumber', '==', prId)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const doc = querySnapshot.docs[0];
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: convertTimestamps(data.createdAt),
+          updatedAt: convertTimestamps(data.updatedAt),
+          resubmittedAt: convertTimestamps(data.resubmittedAt)
+        } as PRRequest;
+      }
+
+      return null;
     } catch (error) {
       console.error('Error getting PR:', error);
       throw error;

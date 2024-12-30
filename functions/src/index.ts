@@ -63,7 +63,7 @@ const generatePREmailContent = (prData: any) => {
                 ${items}
             </table>
             
-            <p>Please <a href="http://localhost:5173/pr/${prData.prNumber}">click here</a> to review the purchase request in the system.</p>
+            <p>Please <a href="${process.env.VITE_APP_URL || 'http://localhost:5173'}/pr/${prData.prNumber}">click here</a> to review the purchase request in the system.</p>
         `
     };
 };
