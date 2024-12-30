@@ -9,6 +9,7 @@ import {
   where,
   orderBy,
   Timestamp,
+  deleteDoc
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
@@ -317,10 +318,16 @@ export const prService = {
       const querySnapshot = await getDocs(q);
       
       // Convert documents to PRRequest objects
-      const prs = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as PRRequest[];
+      const prs = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt,
+          updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toDate().toISOString() : data.updatedAt,
+          resubmittedAt: data.resubmittedAt instanceof Timestamp ? data.resubmittedAt.toDate().toISOString() : data.resubmittedAt
+        };
+      }) as PRRequest[];
 
       // Separate urgent and non-urgent PRs
       const urgentPRs = prs.filter(pr => pr.isUrgent);
@@ -328,12 +335,8 @@ export const prService = {
 
       // Sort each group by creation date (oldest first)
       const sortByDate = (a: PRRequest, b: PRRequest) => {
-        const dateA = a.createdAt instanceof Timestamp 
-          ? a.createdAt.toDate() 
-          : new Date(a.createdAt);
-        const dateB = b.createdAt instanceof Timestamp 
-          ? b.createdAt.toDate() 
-          : new Date(b.createdAt);
+        const dateA = new Date(a.createdAt);
+        const dateB = new Date(b.createdAt);
         return dateA.getTime() - dateB.getTime();
       };
 
@@ -381,12 +384,8 @@ export const prService = {
 
       // Sort each group by creation date (oldest first)
       const sortByDate = (a: PRRequest, b: PRRequest) => {
-        const dateA = a.createdAt instanceof Timestamp 
-          ? a.createdAt.toDate() 
-          : new Date(a.createdAt);
-        const dateB = b.createdAt instanceof Timestamp 
-          ? b.createdAt.toDate() 
-          : new Date(b.createdAt);
+        const dateA = new Date(a.createdAt);
+        const dateB = new Date(b.createdAt);
         return dateA.getTime() - dateB.getTime();
       };
 
@@ -434,6 +433,16 @@ export const prService = {
       );
     } catch (error) {
       console.error('Error updating PR status:', error);
+      throw error;
+    }
+  },
+
+  async deletePR(prId: string): Promise<void> {
+    try {
+      const prRef = doc(db, PR_COLLECTION, prId);
+      await deleteDoc(prRef);
+    } catch (error) {
+      console.error('Error deleting PR:', error);
       throw error;
     }
   }

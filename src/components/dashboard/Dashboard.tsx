@@ -13,15 +13,18 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { RootState } from '../../store';
 import { prService } from '../../services/pr';
-import { setUserPRs, setPendingApprovals, setLoading } from '../../store/slices/prSlice';
+import { setUserPRs, setPendingApprovals, setLoading, removePR } from '../../store/slices/prSlice';
 import { UserRole, PRStatus } from '../../types/pr';
 import { OrganizationSelector } from '../common/OrganizationSelector';
 import { MetricsPanel } from './MetricsPanel';
 import { Link } from 'react-router-dom';
+import { ConfirmationDialog } from '../common/ConfirmationDialog';
 
 export const Dashboard = () => {
   const navigate = useNavigate();
@@ -33,6 +36,8 @@ export const Dashboard = () => {
   );
   const [selectedOrg, setSelectedOrg] = useState<string>('1PWR LESOTHO');
   const [selectedStatus, setSelectedStatus] = useState<PRStatus>(PRStatus.SUBMITTED);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [prToDelete, setPrToDelete] = useState<string | null>(null);
 
   // Add real-time update effect
   useEffect(() => {
@@ -332,6 +337,32 @@ export const Dashboard = () => {
 
   const columns = getColumns(selectedStatus);
 
+  const handleDeleteClick = (event: React.MouseEvent, prId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setPrToDelete(prId);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!prToDelete) return;
+
+    try {
+      await prService.deletePR(prToDelete);
+      dispatch(removePR(prToDelete));
+      setDeleteDialogOpen(false);
+      setPrToDelete(null);
+    } catch (error) {
+      console.error('Error deleting PR:', error);
+      // You might want to show an error message to the user here
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setPrToDelete(null);
+  };
+
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -388,6 +419,7 @@ export const Dashboard = () => {
                         {column.headerName}
                       </TableCell>
                     ))}
+                    <TableCell />
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -412,6 +444,13 @@ export const Dashboard = () => {
                           }
                         </TableCell>
                       ))}
+                      <TableCell>
+                        <Tooltip title="Delete PR">
+                          <IconButton onClick={(e) => handleDeleteClick(e, pr.id)}>
+                            <DeleteIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -420,6 +459,13 @@ export const Dashboard = () => {
           </Paper>
         </Grid>
       </Grid>
+      <ConfirmationDialog
+        open={deleteDialogOpen}
+        title="Delete Purchase Request"
+        message="Are you sure you want to delete this purchase request? This action cannot be undone."
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </Box>
   );
 };
