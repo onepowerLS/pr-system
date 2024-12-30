@@ -13,6 +13,8 @@ import { PrivateRoute } from './components/common/PrivateRoute';
 import { Layout } from './components/common/Layout';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { getUserDetails } from './services/auth';
+import { Box, Typography } from '@mui/material';
+import EmailTest from './components/EmailTest';
 import './App.css';
 
 function App() {
@@ -82,7 +84,15 @@ function App() {
           } />
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard" element={
+                <>
+                  <Dashboard />
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="h6">Email Notification Test</Typography>
+                    <EmailTest />
+                  </Box>
+                </>
+              } />
               <Route path="/pr/new" element={<NewPRForm />} />
               <Route path="/pr/:id" element={<PRView />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
