@@ -239,6 +239,12 @@ export const Dashboard = () => {
                     <TableCell>Description</TableCell>
                     <TableCell>Submitted By</TableCell>
                     <TableCell>Created Date</TableCell>
+                    {selectedStatus === PRStatus.SUBMITTED && (
+                      <>
+                        <TableCell>Days Open</TableCell>
+                        <TableCell>Resubmitted Date</TableCell>
+                      </>
+                    )}
                     <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
@@ -288,6 +294,16 @@ export const Dashboard = () => {
                         <TableCell>
                           {new Date(pr.createdAt).toLocaleDateString()}
                         </TableCell>
+                        {selectedStatus === PRStatus.SUBMITTED && (
+                          <>
+                            <TableCell>
+                              {pr.metrics?.daysOpen || Math.ceil((Date.now() - new Date(pr.createdAt).getTime()) / (1000 * 60 * 60 * 24))}
+                            </TableCell>
+                            <TableCell>
+                              {pr.resubmittedAt ? new Date(pr.resubmittedAt).toLocaleDateString() : '-'}
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell>
                           <IconButton
                             onClick={(e) => handleDeleteClick(e, pr.id)}
