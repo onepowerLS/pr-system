@@ -105,6 +105,16 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             <Typography><strong>Project Category:</strong> {formState.projectCategory}</Typography>
             <Typography><strong>Site:</strong> {formState.site}</Typography>
             <Typography><strong>Description:</strong> {formState.description}</Typography>
+            <Box sx={{ mt: 1 }}>
+              {formState.isUrgent && (
+                <Chip 
+                  label="URGENT" 
+                  color="error" 
+                  size="small" 
+                  sx={{ fontWeight: 'bold' }}
+                />
+              )}
+            </Box>
           </Box>
         </Paper>
       </Grid>
