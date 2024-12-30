@@ -87,6 +87,7 @@ export const prService = {
       // Create a new Date object for current time
       const now = new Date();
       
+      // Ensure isUrgent has a default value
       const finalPRData = {
         ...prData,
         status: PRStatus.SUBMITTED,
@@ -94,7 +95,8 @@ export const prService = {
         updatedAt: Timestamp.fromDate(now),
         submittedBy: prData.requestorId,
         requestorId: prData.requestorId,
-        prNumber: prNumber
+        prNumber: prNumber,
+        isUrgent: prData.isUrgent ?? false
       };
 
       console.log('Final PR data:', finalPRData);
@@ -106,6 +108,12 @@ export const prService = {
         const functions = getFunctions();
         const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
         
+        // Ensure we have the required user data
+        if (!prData.requestorName || !prData.email) {
+          console.error('Missing requestor information:', { requestorName: prData.requestorName, email: prData.email });
+          throw new Error('Requestor name and email are required');
+        }
+
         await sendPRNotification({
           prNumber: prNumber,
           requestorName: prData.requestorName,

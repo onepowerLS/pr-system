@@ -19,14 +19,6 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Helper function to format currency
-const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD'
-    }).format(amount);
-};
-
 // Helper function to generate PR email content
 const generatePREmailContent = (prData: any) => {
     const items = prData.items.map((item: any, index: number) => `
@@ -34,13 +26,10 @@ const generatePREmailContent = (prData: any) => {
             <td>${index + 1}</td>
             <td>${item.description}</td>
             <td>${item.quantity}</td>
-            <td>${formatCurrency(item.unitPrice)}</td>
-            <td>${formatCurrency(item.unitPrice * item.quantity)}</td>
+            <td>${item.uom}</td>
+            <td>${item.notes || '-'}</td>
         </tr>
     `).join('');
-
-    const totalAmount = prData.items.reduce((sum: number, item: any) => 
-        sum + (item.unitPrice * item.quantity), 0);
 
     return {
         text: `
@@ -49,8 +38,8 @@ const generatePREmailContent = (prData: any) => {
             PR Number: ${prData.prNumber}
             Department: ${prData.department}
             Requestor: ${prData.requestorName} (${prData.requestorEmail})
+            Description: ${prData.description}
             Date: ${new Date().toLocaleDateString()}
-            Total Amount: ${formatCurrency(totalAmount)}
             
             Please review the purchase request in the system.
         `,
@@ -59,6 +48,7 @@ const generatePREmailContent = (prData: any) => {
             <p><strong>PR Number:</strong> ${prData.prNumber}</p>
             <p><strong>Department:</strong> ${prData.department}</p>
             <p><strong>Requestor:</strong> ${prData.requestorName} (${prData.requestorEmail})</p>
+            <p><strong>Description:</strong> ${prData.description}</p>
             <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
             
             <h3>Items:</h3>
@@ -67,14 +57,10 @@ const generatePREmailContent = (prData: any) => {
                     <th>#</th>
                     <th>Description</th>
                     <th>Quantity</th>
-                    <th>Unit Price</th>
-                    <th>Total</th>
+                    <th>UOM</th>
+                    <th>Notes</th>
                 </tr>
                 ${items}
-                <tr>
-                    <td colspan="4" style="text-align: right;"><strong>Total Amount:</strong></td>
-                    <td><strong>${formatCurrency(totalAmount)}</strong></td>
-                </tr>
             </table>
             
             <p>Please <a href="http://localhost:5173/pr/${prData.prNumber}">click here</a> to review the purchase request in the system.</p>
@@ -85,9 +71,13 @@ const generatePREmailContent = (prData: any) => {
 // Function to send PR notification
 export const sendPRNotification = functions.https.onCall(async (data, context) => {
     try {
+        if (!data.requestorEmail) {
+            throw new Error('Requestor email is required');
+        }
+
         const emailContent = generatePREmailContent(data);
         
-        // Send to procurement
+        // Send to procurement and CC the requestor
         const procurementInfo = await transporter.sendMail({
             from: '"1PWR PR System" <noreply@1pwrafrica.com>',
             to: 'procurement@1pwrafrica.com',
@@ -100,36 +90,32 @@ export const sendPRNotification = functions.https.onCall(async (data, context) =
         console.log('PR notification sent:', procurementInfo.messageId);
         return {
             success: true,
-            messageId: procurementInfo.messageId,
-            response: procurementInfo.response
+            messageId: procurementInfo.messageId
         };
-    } catch (error: any) {
+    } catch (error) {
         console.error('Error sending PR notification:', error);
-        throw new functions.https.HttpsError('internal', error.message);
+        throw new functions.https.HttpsError('internal', 'Failed to send PR notification');
     }
 });
 
-// Callable function to send test email
+// Test email function
 export const testEmailNotification = functions.https.onCall(async (data, context) => {
     try {
-        // Send test email
-        const timestamp = new Date().toISOString();
-        const info = await transporter.sendMail({
-            from: '"1PWR Test System" <noreply@1pwrafrica.com>',
-            to: 'mso@1pwrafrica.com',
-            subject: 'Test Email from Callable Function - ' + timestamp,
-            text: 'Hello world! This is a test email sent at ' + timestamp,
-            html: '<b>Hello world!</b> This is a test email sent at ' + timestamp
+        const testInfo = await transporter.sendMail({
+            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
+            to: data.email,
+            subject: 'Test Email from PR System',
+            text: `This is a test email sent at ${new Date().toISOString()}`,
+            html: `<p>This is a test email sent at ${new Date().toISOString()}</p>`
         });
 
-        console.log('Message sent:', info.messageId);
+        console.log('Test email sent:', testInfo.messageId);
         return {
             success: true,
-            messageId: info.messageId,
-            response: info.response
+            messageId: testInfo.messageId
         };
-    } catch (error: any) {
-        console.error('Error sending email:', error);
-        throw new functions.https.HttpsError('internal', error.message);
+    } catch (error) {
+        console.error('Error sending test email:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to send test email');
     }
 });
