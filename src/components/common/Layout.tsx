@@ -9,7 +9,6 @@ import {
   Drawer,
   IconButton,
   List,
-  ListItem,
   ListItemIcon,
   ListItemText,
   Toolbar,
@@ -17,6 +16,7 @@ import {
   Divider,
   Menu,
   MenuItem,
+  styled,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -30,21 +30,25 @@ import { signOut } from '../../services/auth';
 import { clearUser } from '../../store/slices/authSlice';
 import { clearPRState } from '../../store/slices/prSlice';
 
-const drawerWidth = 240;
+const NavItem = styled('div')(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  padding: theme.spacing(1.5, 2),
+  cursor: 'pointer',
+  '&:hover': {
+    backgroundColor: theme.palette.action.hover,
+  },
+  '& .MuiListItemIcon-root': {
+    minWidth: 40,
+  },
+}));
 
-interface LayoutProps {}
-
-export const Layout = ({}: LayoutProps) => {
+export const Layout = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.auth.user);
   
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-
-  const handleDrawerToggle = () => {
-    setMobileOpen(!mobileOpen);
-  };
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -57,9 +61,7 @@ export const Layout = ({}: LayoutProps) => {
   const handleLogout = async () => {
     try {
       handleMenuClose();
-      console.log('Layout: Starting logout');
       await signOut();
-      console.log('Layout: Logout successful');
       dispatch(clearUser());
       dispatch(clearPRState());
       navigate('/login', { replace: true });
@@ -69,115 +71,79 @@ export const Layout = ({}: LayoutProps) => {
   };
 
   const drawer = (
-    <div>
+    <Box>
       <Toolbar />
       <Divider />
       <List>
-        <ListItem button onClick={() => navigate('/dashboard')}>
+        <NavItem onClick={() => navigate('/dashboard')}>
           <ListItemIcon>
             <Dashboard />
           </ListItemIcon>
           <ListItemText primary="Dashboard" />
-        </ListItem>
-        <ListItem button onClick={() => navigate('/pr/new')}>
+        </NavItem>
+        <NavItem onClick={() => navigate('/pr/new')}>
           <ListItemIcon>
             <AddCircle />
           </ListItemIcon>
           <ListItemText primary="New PR" />
-        </ListItem>
-        <ListItem button onClick={() => navigate('/pr/list')}>
+        </NavItem>
+        <NavItem onClick={() => navigate('/pr/list')}>
           <ListItemIcon>
             <ListIcon />
           </ListItemIcon>
           <ListItemText primary="My PRs" />
-        </ListItem>
+        </NavItem>
       </List>
-    </div>
+    </Box>
   );
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <CssBaseline />
       <AppBar
         position="fixed"
         sx={{
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` },
+          width: { sm: `calc(100% - 240px)` },
+          ml: { sm: `240px` },
         }}
       >
         <Toolbar>
+          <Box sx={{ flexGrow: 1 }} />
           <IconButton
             color="inherit"
-            aria-label="open drawer"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: 'none' } }}
+            onClick={handleMenuOpen}
           >
-            <MenuIcon />
+            <Person />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            PR System
-          </Typography>
-          {user && (
-            <>
-              <IconButton
-                color="inherit"
-                onClick={handleMenuOpen}
-                aria-controls="user-menu"
-                aria-haspopup="true"
-              >
-                <Person />
-              </IconButton>
-              <Menu
-                id="user-menu"
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={handleMenuClose}
-                anchorOrigin={{
-                  vertical: 'bottom',
-                  horizontal: 'right',
-                }}
-                transformOrigin={{
-                  vertical: 'top',
-                  horizontal: 'right',
-                }}
-              >
-                <MenuItem disabled>
-                  {user.email}
-                </MenuItem>
-                <MenuItem onClick={handleLogout}>
-                  Logout
-                </MenuItem>
-              </Menu>
-            </>
-          )}
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={handleMenuClose}
+          >
+            <MenuItem onClick={handleLogout}>Logout</MenuItem>
+          </Menu>
         </Toolbar>
       </AppBar>
       <Box
         component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+        sx={{
+          width: 240,
+          flexShrink: 0,
+          position: 'fixed',
+          height: '100vh',
+          zIndex: 1,
+        }}
       >
-        <Drawer
-          variant="temporary"
-          open={mobileOpen}
-          onClose={handleDrawerToggle}
-          ModalProps={{
-            keepMounted: true, // Better open performance on mobile.
-          }}
-          sx={{
-            display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
-          }}
-        >
-          {drawer}
-        </Drawer>
         <Drawer
           variant="permanent"
           sx={{
-            display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            width: 240,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: 240,
+              boxSizing: 'border-box',
+            },
           }}
-          open
         >
           {drawer}
         </Drawer>
@@ -187,10 +153,9 @@ export const Layout = ({}: LayoutProps) => {
         sx={{
           flexGrow: 1,
           p: 3,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` },
-          minHeight: '100vh',
-          bgcolor: 'background.default',
+          marginLeft: '240px',
+          width: 'calc(100% - 240px)',
+          overflow: 'auto',
         }}
       >
         <Toolbar />

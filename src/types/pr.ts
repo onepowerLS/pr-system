@@ -31,6 +31,7 @@ export interface PRRequest {
   canceledAt?: string;
   procComments?: string;
   comments?: string;
+  isUrgent: boolean;
 }
 
 export interface PRItem {

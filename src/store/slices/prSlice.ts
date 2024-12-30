@@ -47,6 +47,10 @@ const prSlice = createSlice({
       state.loading = false;
       state.error = null;
     },
+    removePR: (state, action: PayloadAction<string>) => {
+      state.userPRs = state.userPRs.filter(pr => pr.id !== action.payload);
+      state.pendingApprovals = state.pendingApprovals.filter(pr => pr.id !== action.payload);
+    },
   },
 });
 
@@ -57,6 +61,7 @@ export const {
   setLoading,
   setError,
   clearPRState,
+  removePR,
 } = prSlice.actions;
 
 export default prSlice.reducer;

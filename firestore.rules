@@ -31,6 +31,13 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Purchase Requests collection
+    match /purchaseRequests/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (resource == null || resource.data.requestorId == request.auth.uid);
+    }
+
     // All other collections
     match /{document=**} {
       allow read, write: if request.auth != null;

@@ -8,7 +8,24 @@ interface MetricsPanelProps {
 export const MetricsPanel = ({ prs }: MetricsPanelProps) => {
   const calculateMetrics = () => {
     const totalPRs = prs.length;
-    const urgentPRs = prs.filter(pr => pr.metrics?.isUrgent).length;
+    console.log('MetricsPanel - PRs:', prs.map(pr => ({
+      id: pr.id,
+      prNumber: pr.prNumber,
+      isUrgent: pr.isUrgent,
+      status: pr.status
+    })));
+    
+    const urgentPRs = prs.filter(pr => Boolean(pr.isUrgent)).length;
+    console.log('MetricsPanel - Urgent PRs count:', {
+      total: totalPRs,
+      urgent: urgentPRs,
+      urgentPRs: prs.filter(pr => Boolean(pr.isUrgent)).map(pr => ({
+        id: pr.id,
+        prNumber: pr.prNumber,
+        isUrgent: pr.isUrgent
+      }))
+    });
+    
     const avgDaysOpen = prs.reduce((acc, pr) => acc + (pr.metrics?.daysOpen || 0), 0) / totalPRs || 0;
     const overduePRs = prs.filter(pr => pr.metrics?.isOverdue).length;
     const quotesRequired = prs.filter(pr => pr.metrics?.quotesRequired).length;

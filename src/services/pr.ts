@@ -59,11 +59,16 @@ const convertTimestamps = (data: any): any => {
 
 // Calculate PR metrics
 const calculatePRMetrics = (pr: PRRequest) => {
+  console.log('Calculating metrics for PR:', {
+    id: pr.id,
+    isUrgent: pr.isUrgent
+  });
   return {
     ...pr,
     metrics: {
       daysOpen: calculateDaysOpen(pr.createdAt),
       daysResubmission: pr.resubmittedAt ? calculateDaysOpen(pr.resubmittedAt) : 0,
+      isUrgent: pr.isUrgent, // Sync with top-level isUrgent
       ...(pr.metrics || {})  // Spread existing metrics if they exist
     }
   };
@@ -88,7 +93,8 @@ export const prService = {
       // Create a new Date object for current time
       const now = new Date();
       
-      // Ensure isUrgent has a default value
+      // Ensure isUrgent has a default value and is synced with metrics
+      const isUrgent = Boolean(prData.isUrgent);
       const finalPRData = {
         ...prData,
         status: PRStatus.SUBMITTED,
@@ -97,10 +103,11 @@ export const prService = {
         submittedBy: prData.requestorId,
         requestorId: prData.requestorId,
         prNumber: prNumber,
-        isUrgent: prData.isUrgent ?? false,
+        isUrgent,
         metrics: {
           daysOpen: 0,
           isOverdue: false,
+          isUrgent,
           ...prData.metrics
         }
       };
@@ -300,59 +307,94 @@ export const prService = {
     }
   },
 
-  getUserPRs: async (userId: string, organization?: string): Promise<PRRequest[]> => {
+  getUserPRs: async (userId: string, organization: string): Promise<PRRequest[]> => {
     try {
-      console.log('Getting PRs for user:', userId);
+      if (!userId) {
+        console.error('getUserPRs: No user ID provided');
+        return [];
+      }
+
+      console.log('Getting PRs for user:', { userId, organization });
       
-      // Create base query
-      let q = query(
+      const q = query(
         collection(db, PR_COLLECTION),
+        where('organization', '==', organization),
         where('requestorId', '==', userId)
       );
 
-      // Add organization filter if provided
-      if (organization) {
-        q = query(q, where('organization', '==', organization));
-      }
-
       const querySnapshot = await getDocs(q);
-      
-      // Convert documents to PRRequest objects
-      const prs = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
+      console.log('Query results:', {
+        count: querySnapshot.size,
+        docs: querySnapshot.docs.map(doc => ({
           id: doc.id,
-          ...data,
-          createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt,
-          updatedAt: data.updatedAt instanceof Timestamp ? data.updatedAt.toDate().toISOString() : data.updatedAt,
-          resubmittedAt: data.resubmittedAt instanceof Timestamp ? data.resubmittedAt.toDate().toISOString() : data.resubmittedAt
-        };
-      }) as PRRequest[];
-
-      // Separate urgent and non-urgent PRs
-      const urgentPRs = prs.filter(pr => pr.isUrgent);
-      const nonUrgentPRs = prs.filter(pr => !pr.isUrgent);
-
-      // Sort each group by creation date (oldest first)
-      const sortByDate = (a: PRRequest, b: PRRequest) => {
-        const dateA = new Date(a.createdAt);
-        const dateB = new Date(b.createdAt);
-        return dateA.getTime() - dateB.getTime();
-      };
-
-      urgentPRs.sort(sortByDate);
-      nonUrgentPRs.sort(sortByDate);
-
-      // Combine the groups with urgent PRs first
-      const sortedPRs = [...urgentPRs, ...nonUrgentPRs];
-
-      console.log('Sorted PRs:', {
-        total: sortedPRs.length,
-        urgent: urgentPRs.length,
-        nonUrgent: nonUrgentPRs.length
+          organization: doc.data().organization,
+          requestorId: doc.data().requestorId,
+          status: doc.data().status,
+          isUrgent: doc.data().isUrgent,
+          metrics: doc.data().metrics
+        }))
       });
 
-      return sortedPRs.map(pr => calculatePRMetrics(pr));
+      const prs = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        
+        // Get urgency from both top-level and metrics
+        const topLevelUrgent = data.isUrgent === true || data.isUrgent === 'true' || data.isUrgent === 1;
+        const metricsUrgent = data.metrics?.isUrgent === true || data.metrics?.isUrgent === 'true' || data.metrics?.isUrgent === 1;
+        const isUrgent = topLevelUrgent || metricsUrgent;
+
+        console.log('Converting PR urgency:', {
+          id: doc.id,
+          prNumber: data.prNumber,
+          topLevelUrgent,
+          metricsUrgent,
+          combinedUrgent: isUrgent,
+          rawTopLevel: data.isUrgent,
+          rawMetrics: data.metrics?.isUrgent
+        });
+
+        const pr = {
+          id: doc.id,
+          ...data,
+          isUrgent,  // Use the combined urgency state
+          metrics: {
+            ...data.metrics,
+            isUrgent  // Sync with top-level isUrgent
+          },
+          createdAt: data.createdAt?.toDate(),
+          updatedAt: data.updatedAt?.toDate(),
+          completedAt: data.completedAt?.toDate(),
+          rejectedAt: data.rejectedAt?.toDate(),
+          orderedAt: data.orderedAt?.toDate(),
+          confirmedAt: data.confirmedAt?.toDate(),
+          resubmittedAt: data.resubmittedAt?.toDate(),
+          revisionAt: data.revisionAt?.toDate(),
+          canceledAt: data.canceledAt?.toDate()
+        } as PRRequest;
+
+        console.log('Processed PR:', {
+          id: pr.id,
+          prNumber: pr.prNumber,
+          topLevelUrgent,
+          metricsUrgent,
+          processedIsUrgent: pr.isUrgent,
+          processedMetricsUrgent: pr.metrics?.isUrgent
+        });
+
+        return pr;
+      });
+
+      console.log('All processed PRs:', prs.map(pr => ({
+        id: pr.id,
+        prNumber: pr.prNumber,
+        isUrgent: pr.isUrgent,
+        metricsUrgent: pr.metrics?.isUrgent,
+        organization: pr.organization,
+        requestorId: pr.requestorId,
+        status: pr.status
+      })));
+
+      return prs;
     } catch (error) {
       console.error('Error getting user PRs:', error);
       throw error;
