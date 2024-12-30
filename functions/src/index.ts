@@ -33,22 +33,24 @@ const generatePREmailContent = (prData: any) => {
 
     return {
         text: `
-            New Purchase Request Submitted
+            Purchase Request ${prData.prNumber}
             
-            PR Number: ${prData.prNumber}
             Department: ${prData.department}
             Requestor: ${prData.requestorName} (${prData.requestorEmail})
             Description: ${prData.description}
+            Required Date: ${prData.requiredDate}
+            Urgency: ${prData.isUrgent ? 'URGENT' : 'Normal'}
             Date: ${new Date().toLocaleDateString()}
             
             Please review the purchase request in the system.
         `,
         html: `
-            <h2>New Purchase Request Submitted</h2>
-            <p><strong>PR Number:</strong> ${prData.prNumber}</p>
+            <h2>Purchase Request ${prData.prNumber}</h2>
             <p><strong>Department:</strong> ${prData.department}</p>
             <p><strong>Requestor:</strong> ${prData.requestorName} (${prData.requestorEmail})</p>
             <p><strong>Description:</strong> ${prData.description}</p>
+            <p><strong>Required Date:</strong> ${prData.requiredDate}</p>
+            <p><strong>Urgency:</strong> ${prData.isUrgent ? '<span style="color: red; font-weight: bold;">URGENT</span>' : 'Normal'}</p>
             <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
             
             <h3>Items:</h3>
@@ -77,12 +79,17 @@ export const sendPRNotification = functions.https.onCall(async (data, context) =
 
         const emailContent = generatePREmailContent(data);
         
+        // Create email subject based on urgency
+        const subject = data.isUrgent 
+            ? `URGENT: Purchase Request - ${data.prNumber}`
+            : `Purchase Request - ${data.prNumber}`;
+        
         // Send to procurement and CC the requestor
         const procurementInfo = await transporter.sendMail({
             from: '"1PWR PR System" <noreply@1pwrafrica.com>',
             to: 'procurement@1pwrafrica.com',
             cc: data.requestorEmail,
-            subject: `New Purchase Request - PR#${data.prNumber}`,
+            subject: subject,
             text: emailContent.text,
             html: emailContent.html
         });
