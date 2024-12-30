@@ -108,16 +108,19 @@ export const prService = {
         const functions = getFunctions();
         const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
         
-        // Ensure we have the required user data
-        if (!prData.requestorName || !prData.email) {
-          console.error('Missing requestor information:', { requestorName: prData.requestorName, email: prData.email });
+        // Get requestor info from the nested requestor object
+        const requestorName = prData.requestor?.name;
+        const requestorEmail = prData.requestor?.email;
+
+        if (!requestorName || !requestorEmail) {
+          console.error('Missing requestor information:', { requestorName, requestorEmail });
           throw new Error('Requestor name and email are required');
         }
 
         await sendPRNotification({
           prNumber: prNumber,
-          requestorName: prData.requestorName,
-          requestorEmail: prData.email,
+          requestorName: requestorName,
+          requestorEmail: requestorEmail,
           department: prData.department,
           description: prData.description,
           items: prData.lineItems || []
