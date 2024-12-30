@@ -96,7 +96,12 @@ export const prService = {
         submittedBy: prData.requestorId,
         requestorId: prData.requestorId,
         prNumber: prNumber,
-        isUrgent: prData.isUrgent ?? false
+        isUrgent: prData.isUrgent ?? false,
+        metrics: {
+          daysOpen: 0,
+          isOverdue: false,
+          ...prData.metrics
+        }
       };
 
       console.log('Final PR data:', finalPRData);
@@ -124,7 +129,7 @@ export const prService = {
           department: prData.department,
           description: prData.description,
           requiredDate: prData.requiredDate,
-          isUrgent: prData.isUrgent || false,
+          isUrgent: prData.isUrgent ?? false,
           items: prData.lineItems || []
         });
 
