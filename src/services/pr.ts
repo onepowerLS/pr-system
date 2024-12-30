@@ -123,6 +123,8 @@ export const prService = {
           requestorEmail: requestorEmail,
           department: prData.department,
           description: prData.description,
+          requiredDate: prData.requiredDate,
+          isUrgent: prData.isUrgent || false,
           items: prData.lineItems || []
         });
 
