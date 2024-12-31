@@ -15,8 +15,10 @@ import {
   CircularProgress,
   Divider,
   Chip,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
-import { Edit as EditIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
+import { Edit as EditIcon, ArrowBack as ArrowBackIcon, AttachFile as AttachFileIcon, Download as DownloadIcon, Visibility as VisibilityIcon } from '@mui/icons-material';
 import { RootState } from '../../store';
 import { prService } from '../../services/pr';
 import { PRRequest } from '../../types/pr';
@@ -188,8 +190,8 @@ export function PRView() {
               <Grid item xs={6}>
                 <Typography color="textSecondary">Urgency</Typography>
                 <Chip
-                  label={pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
-                  color={pr.metrics?.isUrgent ? 'error' : 'default'}
+                  label={pr.isUrgent || pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
+                  color={pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'}
                   sx={{ mt: 1 }}
                 />
               </Grid>
@@ -221,6 +223,7 @@ export function PRView() {
                     <TableCell>Quantity</TableCell>
                     <TableCell>UOM</TableCell>
                     <TableCell>Notes</TableCell>
+                    <TableCell>Attachments</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -230,6 +233,74 @@ export function PRView() {
                       <TableCell>{item.quantity}</TableCell>
                       <TableCell>{item.uom}</TableCell>
                       <TableCell>{item.notes || 'N/A'}</TableCell>
+                      <TableCell>
+                        {item.attachments && item.attachments.length > 0 ? (
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {item.attachments.map((file, fileIndex) => (
+                              <Box 
+                                key={fileIndex} 
+                                sx={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center',
+                                  gap: 1,
+                                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                  padding: '4px 8px',
+                                  borderRadius: '4px'
+                                }}
+                              >
+                                <Typography 
+                                  variant="body2" 
+                                  sx={{ 
+                                    flex: 1,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {file.name}
+                                </Typography>
+                                <Tooltip title="Preview">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => window.open(file.url, '_blank')}
+                                  >
+                                    <VisibilityIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Download">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => {
+                                      fetch(file.url)
+                                        .then(response => response.blob())
+                                        .then(blob => {
+                                          const url = window.URL.createObjectURL(blob);
+                                          const link = document.createElement('a');
+                                          link.href = url;
+                                          link.setAttribute('download', file.name);
+                                          document.body.appendChild(link);
+                                          link.click();
+                                          link.parentNode?.removeChild(link);
+                                          window.URL.revokeObjectURL(url);
+                                        })
+                                        .catch(error => {
+                                          console.error('Error downloading file:', error);
+                                          // TODO: Show error notification to user
+                                        });
+                                    }}
+                                  >
+                                    <DownloadIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            ))}
+                          </Box>
+                        ) : (
+                          <Typography variant="body2" color="textSecondary">
+                            No attachments
+                          </Typography>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                   <TableRow>

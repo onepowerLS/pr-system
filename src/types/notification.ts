@@ -1,6 +1,17 @@
 import { User } from './user';
 import { PRStatus } from './pr';
 
+export type NotificationType = 
+  | 'STATUS_CHANGE'
+  | 'PR_SUBMITTED'
+  | 'PR_APPROVED'
+  | 'PR_REJECTED'
+  | 'COMMENT_ADDED'
+  | 'URGENT_PR'
+  | 'REMINDER'
+  | 'CANCELLATION_WARNING'
+  | 'CUSTOMS_WARNING';
+
 export interface NotificationLog {
   id: string;
   type: NotificationType;
@@ -11,17 +22,10 @@ export interface NotificationLog {
   error?: string;
 }
 
-export enum NotificationType {
-  STATUS_CHANGE = 'STATUS_CHANGE',
-  REMINDER = 'REMINDER',
-  CANCELLATION_WARNING = 'CANCELLATION_WARNING',
-  CUSTOMS_WARNING = 'CUSTOMS_WARNING'
-}
-
 export interface StatusChangeNotification {
   prId: string;
-  oldStatus: PRStatus;
-  newStatus: PRStatus;
+  oldStatus: string;
+  newStatus: string;
   changedBy: User;
   timestamp: Date;
   notes?: string;

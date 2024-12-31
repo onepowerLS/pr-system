@@ -9,49 +9,38 @@ import {
   where,
   orderBy,
   Timestamp,
-  deleteDoc
+  deleteDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
 import { PRRequest, PRStatus, User } from '../types/pr';
 import { notificationService } from './notification';
 import { calculateDaysOpen } from '../utils/formatters';
+import { deleteFile, moveToPermanentStorage } from './storage';
 
 const PR_COLLECTION = 'purchaseRequests';
+const functions = getFunctions();
+const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
 
 // Convert Firestore timestamp to ISO string for Redux
 const convertTimestamps = (data: any): any => {
   if (!data) return data;
   
   if (data instanceof Timestamp) {
-    const date = data.toDate();
-    console.log('Converting Timestamp:', {
-      original: data.toDate().toISOString(),
-      converted: date.toISOString()
-    });
-    return date.toISOString();
+    return data.toDate().toISOString();
   }
   
   if (Array.isArray(data)) {
     return data.map(item => convertTimestamps(item));
   }
   
-  if (typeof data === 'object' && data !== null) {
-    // Check if the object has seconds and nanoseconds, which indicates it's a Firestore timestamp
-    if ('seconds' in data && 'nanoseconds' in data) {
-      const date = Timestamp.fromMillis(data.seconds * 1000 + Math.floor(data.nanoseconds / 1000000)).toDate();
-      console.log('Converting raw timestamp:', {
-        seconds: data.seconds,
-        nanoseconds: data.nanoseconds,
-        converted: date.toISOString()
-      });
-      return date.toISOString();
+  if (typeof data === 'object') {
+    const result: any = {};
+    for (const key in data) {
+      result[key] = convertTimestamps(data[key]);
     }
-    
-    return Object.keys(data).reduce((result, key) => ({
-      ...result,
-      [key]: convertTimestamps(data[key])
-    }), {});
+    return result;
   }
   
   return data;
@@ -75,79 +64,77 @@ const calculatePRMetrics = (pr: PRRequest) => {
 };
 
 export const prService = {
-  createPR: async (prData: Partial<PRRequest>): Promise<string> => {
+  async createPR(prData: Partial<PRRequest>): Promise<string> {
     try {
       console.log('Creating PR with data:', prData);
+      const prNumber = await this.generatePRNumber(prData.organization!);
       
-      // Ensure required fields are present
-      if (!prData.requestorId) {
-        throw new Error('requestorId is required');
-      }
-      if (!prData.organization) {
-        throw new Error('organization is required');
-      }
-
-      // Generate PR number
-      const prNumber = await prService.generatePRNumber(prData.organization);
-
-      // Create a new Date object for current time
-      const now = new Date();
-      
-      // Ensure isUrgent has a default value and is synced with metrics
-      const isUrgent = Boolean(prData.isUrgent);
-      const finalPRData = {
+      // Create PR document
+      const prRef = await addDoc(collection(db, PR_COLLECTION), {
         ...prData,
-        status: PRStatus.SUBMITTED,
-        createdAt: Timestamp.fromDate(now),
-        updatedAt: Timestamp.fromDate(now),
-        submittedBy: prData.requestorId,
-        requestorId: prData.requestorId,
-        prNumber: prNumber,
-        isUrgent,
-        metrics: {
-          daysOpen: 0,
-          isOverdue: false,
-          isUrgent,
-          ...prData.metrics
+        prNumber,
+        status: PRStatus.SUBMITTED,  // Always SUBMITTED
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+
+      // Move files from temp storage to permanent storage
+      if (prData.lineItems) {
+        for (const lineItem of prData.lineItems) {
+          if (lineItem.attachments?.length > 0) {
+            await moveToPermanentStorage(prRef.id, lineItem.id);
+          }
         }
-      };
+      }
 
-      console.log('Final PR data:', finalPRData);
-
-      const docRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
-
-      // Send email notification
+      // Send email notification using Cloud Function
       try {
-        const functions = getFunctions();
-        const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
-        
-        // Get requestor info from the nested requestor object
-        const requestorName = prData.requestor?.name;
-        const requestorEmail = prData.requestor?.email;
-
-        if (!requestorName || !requestorEmail) {
-          console.error('Missing requestor information:', { requestorName, requestorEmail });
-          throw new Error('Requestor name and email are required');
-        }
-
-        await sendPRNotification({
-          prNumber: prNumber,
-          requestorName: requestorName,
-          requestorEmail: requestorEmail,
+        const notificationData = {
+          prNumber,
           department: prData.department,
+          requestorName: prData.requestor?.name,
+          requestorEmail: prData.requestorEmail,
           description: prData.description,
           requiredDate: prData.requiredDate,
-          isUrgent: prData.isUrgent ?? false,
-          items: prData.lineItems || []
-        });
+          isUrgent: prData.isUrgent,
+          items: prData.lineItems?.map(item => ({
+            description: item.description,
+            quantity: item.quantity,
+            uom: item.uom,
+            notes: item.notes
+          }))
+        };
 
-        console.log('PR notification email sent successfully');
-      } catch (emailError) {
-        console.error('Error sending PR notification email:', emailError);
-        // Don't throw the error as the PR was created successfully
+        console.log('Sending PR notification:', notificationData);
+        const result = await sendPRNotification(notificationData);
+        console.log('PR notification sent:', result);
+      } catch (notificationError) {
+        console.error('Error sending PR notification:', notificationError);
+        // Don't throw here - we want the PR to be created even if notification fails
       }
 
-      return docRef.id;
+      // Log notification in Firestore
+      await notificationService.logNotification(
+        'PR_SUBMITTED',
+        prRef.id,
+        ['procurement@1pwrafrica.com', prData.requestorEmail!],
+        'pending'
+      );
+
+      // Handle status change notification
+      await notificationService.handleStatusChange(
+        prRef.id,
+        '',  // No previous status for new PR
+        PRStatus.SUBMITTED,
+        {
+          id: prData.requestorId!,
+          email: prData.requestorEmail!,
+          name: prData.requestor?.name || 'Unknown',
+          organization: prData.organization!
+        } as User
+      );
+
+      return prRef.id;
     } catch (error) {
       console.error('Error creating PR:', error);
       throw error;
@@ -181,14 +168,27 @@ export const prService = {
         return createdAt >= startOfMonth && createdAt <= endOfMonth;
       });
 
-      const count = thisMonthPRs.length + 1;
-      console.log('Current PR count for month:', count);
+      // Find the highest number used this month
+      let maxNumber = 0;
+      thisMonthPRs.forEach(doc => {
+        const prNumber = doc.data().prNumber;
+        if (prNumber && prNumber.startsWith(`PR-${yearMonth}-`)) {
+          const num = parseInt(prNumber.split('-')[2]);
+          if (!isNaN(num) && num > maxNumber) {
+            maxNumber = num;
+          }
+        }
+      });
+
+      // Use the next number after the highest found
+      const nextNumber = maxNumber + 1;
+      console.log('Next PR number:', nextNumber);
 
       // Format: PR-YYYYMM-XXX where XXX is sequential number
-      const prNumber = `PR-${yearMonth}-${count.toString().padStart(3, '0')}`;
+      const prNumber = `PR-${yearMonth}-${nextNumber.toString().padStart(3, '0')}`;
       console.log('Generated PR number:', prNumber);
 
-      // Validate uniqueness
+      // Double-check uniqueness
       const existingQ = query(
         collection(db, PR_COLLECTION),
         where('prNumber', '==', prNumber)
@@ -197,7 +197,8 @@ export const prService = {
       
       if (!existingDocs.empty) {
         console.error('PR number collision detected:', prNumber);
-        throw new Error('Failed to generate unique PR number');
+        // If there's a collision, try the next number recursively
+        return this.generatePRNumber(organization);
       }
 
       return prNumber;
@@ -224,12 +225,13 @@ export const prService = {
 
       const finalPRData = {
         ...prData,
-        status: PRStatus.SUBMITTED,
+        status: PRStatus.SUBMITTED,  // Always SUBMITTED
         createdAt: Timestamp.fromDate(new Date()),
         updatedAt: Timestamp.fromDate(new Date()),
         submittedBy: prData.requestorId,
         requestorId: prData.requestorId,
-        prNumber: prNumber  // Add PR number
+        prNumber: prNumber,  // Add PR number
+        isUrgent: prData.isUrgent ?? false  // Ensure isUrgent is always a boolean
       };
 
       console.log('Final PR data:', finalPRData);
@@ -251,63 +253,71 @@ export const prService = {
     }
   },
 
-  updatePR: async (prId: string, updates: Partial<PRRequest>) => {
+  async updatePR(prId: string, updates: Partial<PRRequest>): Promise<void> {
     try {
+      console.log('Updating PR:', { prId, updates });
+      
       const prRef = doc(db, PR_COLLECTION, prId);
-      await updateDoc(prRef, {
+      
+      // Get current PR data
+      const prSnapshot = await getDoc(prRef);
+      if (!prSnapshot.exists()) {
+        throw new Error('PR not found');
+      }
+      
+      const prData = prSnapshot.data();
+      
+      // Merge updates with current data
+      const finalUpdates = {
         ...updates,
-        updatedAt: Timestamp.now()
-      });
+        updatedAt: Timestamp.fromDate(new Date()),
+        isUrgent: updates.isUrgent ?? prData.isUrgent ?? false  // Keep existing isUrgent or set to false
+      };
+      
+      await updateDoc(prRef, finalUpdates);
     } catch (error) {
       console.error('Error updating PR:', error);
       throw error;
     }
   },
 
-  getPR: async (prId: string): Promise<PRRequest | null> => {
+  async updatePRs(prIds: string[], updates: Partial<PRRequest>): Promise<void> {
     try {
-      // First try to get PR by document ID
-      const docRef = doc(db, PR_COLLECTION, prId);
-      const docSnap = await getDoc(docRef);
+      console.log('Updating PRs:', { prIds, updates });
       
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          ...data,
-          createdAt: convertTimestamps(data.createdAt),
-          updatedAt: convertTimestamps(data.updatedAt),
-          resubmittedAt: convertTimestamps(data.resubmittedAt)
-        } as PRRequest;
-      }
-
-      // If not found, try to get PR by PR number
-      const q = query(
-        collection(db, PR_COLLECTION),
-        where('prNumber', '==', prId)
-      );
+      const batch = writeBatch(db);
       
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        const doc = querySnapshot.docs[0];
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: convertTimestamps(data.createdAt),
-          updatedAt: convertTimestamps(data.updatedAt),
-          resubmittedAt: convertTimestamps(data.resubmittedAt)
-        } as PRRequest;
-      }
-
-      return null;
+      // Get all PR refs and current data
+      const prRefs = await Promise.all(prIds.map(async (prId) => {
+        const ref = doc(db, PR_COLLECTION, prId);
+        const snapshot = await getDoc(ref);
+        if (!snapshot.exists()) {
+          throw new Error(`PR not found: ${prId}`);
+        }
+        return { ref, data: snapshot.data() };
+      }));
+      
+      // Add updates to batch
+      prRefs.forEach(({ ref, data }) => {
+        const finalUpdates = {
+          ...updates,
+          updatedAt: Timestamp.fromDate(new Date()),
+          isUrgent: updates.isUrgent ?? data.isUrgent ?? false
+        };
+        batch.update(ref, finalUpdates);
+      });
+      
+      // Commit all updates
+      await batch.commit();
+      
+      console.log('Successfully updated PRs:', prIds);
     } catch (error) {
-      console.error('Error getting PR:', error);
+      console.error('Error updating PRs:', error);
       throw error;
     }
   },
 
-  getUserPRs: async (userId: string, organization: string): Promise<PRRequest[]> => {
+  async getUserPRs(userId: string, organization: string): Promise<PRRequest[]> {
     try {
       if (!userId) {
         console.error('getUserPRs: No user ID provided');
@@ -339,62 +349,52 @@ export const prService = {
         const data = doc.data();
         
         // Get urgency from both top-level and metrics
-        const topLevelUrgent = data.isUrgent === true || data.isUrgent === 'true' || data.isUrgent === 1;
-        const metricsUrgent = data.metrics?.isUrgent === true || data.metrics?.isUrgent === 'true' || data.metrics?.isUrgent === 1;
-        const isUrgent = topLevelUrgent || metricsUrgent;
-
-        console.log('Converting PR urgency:', {
-          id: doc.id,
-          prNumber: data.prNumber,
-          topLevelUrgent,
-          metricsUrgent,
-          combinedUrgent: isUrgent,
-          rawTopLevel: data.isUrgent,
-          rawMetrics: data.metrics?.isUrgent
-        });
-
-        const pr = {
-          id: doc.id,
+        const isUrgent = data.isUrgent === true || data.metrics?.isUrgent === true;
+        
+        // Process the data
+        const processedData = {
           ...data,
-          isUrgent,  // Use the combined urgency state
-          metrics: {
-            ...data.metrics,
-            isUrgent  // Sync with top-level isUrgent
-          },
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate(),
-          completedAt: data.completedAt?.toDate(),
-          rejectedAt: data.rejectedAt?.toDate(),
-          orderedAt: data.orderedAt?.toDate(),
-          confirmedAt: data.confirmedAt?.toDate(),
-          resubmittedAt: data.resubmittedAt?.toDate(),
-          revisionAt: data.revisionAt?.toDate(),
-          canceledAt: data.canceledAt?.toDate()
-        } as PRRequest;
-
-        console.log('Processed PR:', {
+          id: doc.id,
+          isUrgent // Use combined urgency value
+        };
+        
+        const pr = calculatePRMetrics(convertTimestamps(processedData) as PRRequest);
+        
+        console.log('Processing PR:', {
           id: pr.id,
           prNumber: pr.prNumber,
-          topLevelUrgent,
-          metricsUrgent,
-          processedIsUrgent: pr.isUrgent,
-          processedMetricsUrgent: pr.metrics?.isUrgent
+          status: pr.status,
+          isUrgent: pr.isUrgent,
+          createdAt: pr.createdAt,
+          metrics: pr.metrics
         });
-
+        
         return pr;
       });
-
-      console.log('All processed PRs:', prs.map(pr => ({
-        id: pr.id,
-        prNumber: pr.prNumber,
-        isUrgent: pr.isUrgent,
-        metricsUrgent: pr.metrics?.isUrgent,
-        organization: pr.organization,
-        requestorId: pr.requestorId,
-        status: pr.status
-      })));
-
-      return prs;
+      
+      // Sort in memory instead of using orderBy
+      const sortedPrs = prs.sort((a, b) => {
+        // First sort by urgency
+        if (a.isUrgent !== b.isUrgent) {
+          return a.isUrgent ? -1 : 1;
+        }
+        // Then by creation date (newest first)
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+      
+      console.log('Retrieved PRs:', {
+        count: sortedPrs.length,
+        prs: sortedPrs.map(pr => ({
+          id: pr.id,
+          prNumber: pr.prNumber,
+          status: pr.status,
+          isUrgent: pr.isUrgent,
+          createdAt: pr.createdAt,
+          metrics: pr.metrics
+        }))
+      });
+      
+      return sortedPrs;
     } catch (error) {
       console.error('Error getting user PRs:', error);
       throw error;
@@ -450,26 +450,32 @@ export const prService = {
     }
   },
 
-  updateStatus: async (prId: string, status: PRStatus, updatedBy: User): Promise<void> => {
+  async updateStatus(prId: string, status: PRStatus, updatedBy: User): Promise<void> {
     try {
-      const prRef = doc(db, PR_COLLECTION, prId);
-      const prDoc = await getDoc(prRef);
+      console.log('Updating PR status:', { prId, status, updatedBy });
       
-      if (!prDoc.exists()) {
+      const prRef = doc(db, PR_COLLECTION, prId);
+      
+      // Get the current PR data
+      const prSnapshot = await getDoc(prRef);
+      if (!prSnapshot.exists()) {
         throw new Error('PR not found');
       }
-
-      const currentStatus = prDoc.data().status;
       
+      const prData = prSnapshot.data();
+      const oldStatus = prData.status;
+      
+      // Update the PR status
       await updateDoc(prRef, {
         status,
-        updatedAt: Timestamp.now()
+        updatedAt: Timestamp.fromDate(new Date()),
+        isUrgent: prData.isUrgent ?? false  // Ensure isUrgent is always a boolean
       });
 
-      // Send notification for status change
+      // Create status change notification
       await notificationService.handleStatusChange(
         prId,
-        currentStatus,
+        oldStatus,
         status,
         updatedBy
       );
@@ -481,10 +487,72 @@ export const prService = {
 
   async deletePR(prId: string): Promise<void> {
     try {
-      const prRef = doc(db, PR_COLLECTION, prId);
-      await deleteDoc(prRef);
+      // Get PR data to get line item IDs
+      const pr = await this.getPR(prId);
+      if (!pr) return;
+
+      // Delete all attachments
+      if (pr.lineItems) {
+        for (const lineItem of pr.lineItems) {
+          if (lineItem.attachments?.length > 0) {
+            await Promise.all(lineItem.attachments.map(async (file: { url: string }) => {
+              if (typeof file.url === 'string') {
+                await deleteFile(file.url);
+              } else {
+                console.error('Invalid file URL:', file.url);
+              }
+            }));
+          }
+        }
+      }
+
+      // Delete PR document
+      await deleteDoc(doc(db, PR_COLLECTION, prId));
     } catch (error) {
       console.error('Error deleting PR:', error);
+      throw error;
+    }
+  },
+
+  getPR: async (prId: string): Promise<PRRequest | null> => {
+    try {
+      // First try to get PR by document ID
+      const docRef = doc(db, PR_COLLECTION, prId);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAt: convertTimestamps(data.createdAt),
+          updatedAt: convertTimestamps(data.updatedAt),
+          resubmittedAt: convertTimestamps(data.resubmittedAt)
+        } as PRRequest;
+      }
+
+      // If not found, try to get PR by PR number
+      const q = query(
+        collection(db, PR_COLLECTION),
+        where('prNumber', '==', prId)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const doc = querySnapshot.docs[0];
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: convertTimestamps(data.createdAt),
+          updatedAt: convertTimestamps(data.updatedAt),
+          resubmittedAt: convertTimestamps(data.resubmittedAt)
+        } as PRRequest;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error getting PR:', error);
       throw error;
     }
   }
