@@ -1,42 +1,61 @@
 /**
  * @fileoverview Purchase Request Form Component
- * @version 1.2.0
- * 
- * Change History:
- * 1.0.0 - Initial implementation with basic form fields
- * 1.1.0 - Added multi-step form and validation
- * 1.2.0 - Added reference data integration and approver logic
+ * @version 2.0.0
  * 
  * Description:
- * This component provides a multi-step form for creating new purchase requests.
- * It handles the complete PR creation workflow including basic information,
- * line items, quotes, and approval routing based on organizational rules.
+ * Complex form component for creating and editing purchase requests.
+ * Implements a multi-step wizard with validation, file uploads,
+ * and dynamic form fields based on PR type and organization settings.
  * 
- * Architecture Notes:
- * - Uses Material-UI for form components and layout
- * - Integrates with Firestore for data persistence
- * - Implements complex business logic for approver routing
- * - Manages multiple form states and validation rules
+ * Features:
+ * - Multi-step form wizard
+ * - Form state management with React Hooks
+ * - File upload with preview
+ * - Dynamic validation rules
+ * - Auto-save functionality
+ * - Mobile-responsive design
  * 
- * Business Rules:
- * - PRs over $1,000 require admin approval
- * - PRs over $5,000 require multiple quotes
- * - PRs over $50,000 require finance approval
- * - Preferred vendors may bypass quote requirements
- * - Department heads must be in approval chain
+ * Form Steps:
+ * 1. Basic Information
+ *    - Organization and department
+ *    - Requestor and email
+ *    - Project category and site
+ *    - Expense type and description
  * 
- * Related Modules:
- * - src/services/referenceData.ts: Provides reference data
- * - src/services/approver.ts: Handles approver logic
- * - src/store/slices/prSlice.ts: Manages PR state
+ * 2. Line Items
+ *    - Item details
+ *    - Quantity and UOM
+ *    - Notes and attachments
  * 
- * Form State Structure:
- * {
- *   basicInfo: { organization, requestor, etc. },
- *   lineItems: [{ description, quantity, etc. }],
- *   quotes: [{ vendor, amount, etc. }],
- *   approvers: [{ id, role, etc. }]
+ * 3. Quotes & Vendors
+ *    - Vendor selection
+ *    - Quote details
+ *    - Quote attachments
+ * 
+ * 4. Review & Submit
+ *    - Summary view
+ *    - Total calculation
+ *    - Submit for approval
+ * 
+ * Props:
+ * ```typescript
+ * interface NewPRFormProps {
+ *   initialData?: Partial<FormState>;  // For edit mode
+ *   onSubmit: (data: FormState) => Promise<void>;
+ *   onCancel: () => void;
  * }
+ * ```
+ * 
+ * State Management:
+ * - Form data in React Hooks
+ * - File uploads in local state
+ * - Validation state in React Hooks
+ * - Step navigation in local state
+ * 
+ * Related Components:
+ * - components/pr/steps/*: Step components
+ * - components/common/FileUpload: File handling
+ * - services/pr.ts: PR data service
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
@@ -53,7 +72,19 @@ import {
   StepLabel,
   Stepper,
   Typography,
+  Grid,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormHelperText,
+  Card,
+  CardContent,
+  CardActions,
+  IconButton,
 } from '@mui/material';
+import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { PRStatus } from '../../types/pr';
 import { RootState } from '../../store/types';
 import { setUserPRs } from '../../store/slices/prSlice';
@@ -81,6 +112,7 @@ interface LineItem {
   quantity: number;
   uom: string;
   notes: string;
+  attachments: UploadedFile[];
 }
 
 interface Quote {
@@ -646,7 +678,8 @@ export const NewPRForm = () => {
           description: '',
           quantity: 1,
           uom: '',
-          notes: ''
+          notes: '',
+          attachments: []
         }
       ]
     }));
@@ -770,7 +803,8 @@ export const NewPRForm = () => {
           description: item.description.trim(),
           quantity: Number(item.quantity),
           uom: item.uom.trim(),
-          notes: item.notes?.trim() || ''
+          notes: item.notes?.trim() || '',
+          attachments: item.attachments
         })),
         quotes: formState.quotes.map(quote => ({
           vendorName: quote.vendorName.trim(),

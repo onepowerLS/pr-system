@@ -2,72 +2,114 @@
  * @fileoverview Authentication Redux Slice
  * @version 1.2.0
  * 
- * Change History:
- * 1.0.0 - Initial implementation with basic auth state
- * 1.1.0 - Added loading and error states
- * 1.2.0 - Improved type safety and added state logging
- * 
  * Description:
- * This module defines the Redux slice for authentication state management.
- * It handles user authentication state, loading states, and error messages
- * for the authentication flow in the PR System application.
+ * Redux slice for authentication state management in the PR System.
+ * Handles user authentication state, loading states, and error handling.
  * 
- * Architecture Notes:
- * - Part of the Redux store architecture
- * - Manages global authentication state
- * - Provides actions for auth state updates
- * - Implements type-safe state management
- * 
- * Related Modules:
- * - src/services/auth.ts: Dispatches these actions
- * - src/components/auth/LoginPage.tsx: Consumes auth state
- * - src/components/common/PrivateRoute.tsx: Uses auth state for routing
- * 
- * State Structure:
+ * State Shape:
+ * ```typescript
  * {
  *   user: User | null;      // Current authenticated user
- *   loading: boolean;       // Authentication operation in progress
- *   error: string | null;   // Last authentication error
+ *   loading: boolean;       // Auth operation in progress
+ *   error: string | null;   // Last auth error message
  * }
+ * ```
+ * 
+ * Actions:
+ * - setUser: Updates the authenticated user
+ * - setLoading: Updates loading state
+ * - setError: Sets error message
+ * - clearUser: Logs out user
+ * 
+ * Usage Example:
+ * ```typescript
+ * import { useDispatch, useSelector } from 'react-redux';
+ * import { setUser, setError } from './authSlice';
+ * 
+ * // Set user
+ * dispatch(setUser(userData));
+ * 
+ * // Handle error
+ * dispatch(setError('Authentication failed'));
+ * ```
+ * 
+ * Related Modules:
+ * - src/services/auth.ts: Auth service
+ * - src/hooks/useAuth.ts: Auth hook
+ * - src/components/auth/*: Auth components
  */
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { User } from '../../types/user';
 
-// Define the shape of our authentication state
+/**
+ * Authentication State Interface
+ * Defines the shape of the auth slice state
+ */
 interface AuthState {
+  /** Currently authenticated user or null if not authenticated */
   user: User | null;
+  /** Whether an auth operation is in progress */
   loading: boolean;
+  /** Last authentication error message */
   error: string | null;
 }
 
-// Initial state when the application loads
+/** Initial authentication state */
 const initialState: AuthState = {
   user: null,
-  loading: true,  // Start with loading true
+  loading: true,  // Start true to show loading on app init
   error: null,
 };
 
-// Create the auth slice with reducers
+/**
+ * Authentication Slice
+ * Contains reducers for managing auth state
+ */
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
+    /**
+     * Updates the authenticated user
+     * @param state Current auth state
+     * @param action Payload contains User object or null
+     */
     setUser(state, action: PayloadAction<User | null>) {
       state.user = action.payload;
+      state.loading = false;
       state.error = null;
       console.log('Auth: User state updated:', action.payload ? 'User set' : 'User cleared');
     },
+
+    /**
+     * Updates the loading state
+     * @param state Current auth state
+     * @param action Payload contains boolean loading state
+     */
     setLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;
       console.log('Auth: Loading state updated:', action.payload);
     },
+
+    /**
+     * Sets the error message
+     * @param state Current auth state
+     * @param action Payload contains error message
+     */
     setError(state, action: PayloadAction<string | null>) {
       state.error = action.payload;
+      state.loading = false;
       console.log('Auth: Error state updated:', action.payload);
     },
+
+    /**
+     * Clears the authenticated user (logout)
+     * @param state Current auth state
+     */
     clearUser(state) {
       state.user = null;
+      state.loading = false;
       state.error = null;
       console.log('Auth: User state cleared');
     },
@@ -77,7 +119,7 @@ const authSlice = createSlice({
 // Export actions for use in components and services
 export const { setUser, setLoading, setError, clearUser } = authSlice.actions;
 
-// Export reducer for store configuration
+// Export the reducer for store configuration
 export default authSlice.reducer;
 
 // Export type for use in components
