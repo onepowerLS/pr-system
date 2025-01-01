@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import { useSnackbar } from 'notistack';
 import {
   Box,
   Paper,
@@ -17,12 +18,139 @@ import {
   Chip,
   IconButton,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { Edit as EditIcon, ArrowBack as ArrowBackIcon, AttachFile as AttachFileIcon, Download as DownloadIcon, Visibility as VisibilityIcon } from '@mui/icons-material';
 import { RootState } from '../../store';
 import { prService } from '../../services/pr';
 import { PRRequest } from '../../types/pr';
 import { formatCurrency } from '../../utils/formatters';
+
+const FilePreviewDialog: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  file: { name: string; url: string; type: string };
+}> = ({ open, onClose, file }) => {
+  const { enqueueSnackbar } = useSnackbar();
+  const [content, setContent] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+
+  const getFileType = (fileName: string): 'image' | 'pdf' | 'text' | 'unsupported' => {
+    const lowerFileName = fileName.toLowerCase();
+    if (lowerFileName.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/)) return 'image';
+    if (lowerFileName.endsWith('.pdf')) return 'pdf';
+    if (lowerFileName.match(/\.(txt|md|log)$/)) return 'text';
+    return 'unsupported';
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+
+    const fileType = getFileType(file.name);
+    
+    if (fileType === 'text') {
+      fetch(file.url)
+        .then(response => response.text())
+        .then(text => {
+          setContent(text);
+          setLoading(false);
+        })
+        .catch(error => {
+          console.error('Error loading file:', error);
+          enqueueSnackbar('Failed to load file preview', { variant: 'error' });
+          onClose();
+        });
+    } else {
+      setLoading(false);
+    }
+  }, [open, file.url]);
+
+  const renderContent = () => {
+    const fileType = getFileType(file.name);
+
+    switch (fileType) {
+      case 'image':
+        return (
+          <Box display="flex" justifyContent="center" alignItems="center" p={2}>
+            <img 
+              src={file.url} 
+              alt={file.name} 
+              style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }}
+            />
+          </Box>
+        );
+      case 'pdf':
+        return (
+          <Box height="70vh" width="100%">
+            <iframe
+              src={`${file.url}#view=FitH`}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+              title="PDF Preview"
+            />
+          </Box>
+        );
+      case 'text':
+        return (
+          <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+            {content}
+          </pre>
+        );
+      default:
+        return (
+          <Box p={3} textAlign="center">
+            <Typography>
+              This file type cannot be previewed directly. Please use the download button below.
+            </Typography>
+          </Box>
+        );
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="lg"
+      fullWidth
+      PaperProps={{
+        sx: { minHeight: '80vh' }
+      }}
+    >
+      <DialogTitle>
+        {file.name}
+      </DialogTitle>
+      <DialogContent>
+        {loading ? (
+          <Box display="flex" justifyContent="center" p={3}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          renderContent()
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+        <Button
+          variant="contained"
+          onClick={() => {
+            const link = document.createElement('a');
+            link.href = file.url;
+            link.setAttribute('download', file.name);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode?.removeChild(link);
+          }}
+        >
+          Download
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 export function PRView() {
   const { id } = useParams<{ id: string }>();
@@ -31,6 +159,29 @@ export function PRView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const currentUser = useSelector((state: RootState) => state.auth.user);
+  const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: string } | null>(null);
+  const { enqueueSnackbar } = useSnackbar();
+
+  // Function to check if file is previewable
+  const isPreviewableFile = (fileName: string): boolean => {
+    const lowerFileName = fileName.toLowerCase();
+    return lowerFileName.match(/\.(jpg|jpeg|png|gif|bmp|webp|pdf|txt|md|log)$/i) !== null;
+  };
+
+  // Function to handle file preview
+  const handleFilePreview = (file: { name: string; url: string; type: string }) => {
+    if (!isPreviewableFile(file.name)) {
+      enqueueSnackbar(`${file.name.split('.').pop()?.toUpperCase()} files cannot be previewed directly. Please download the file to view it.`, {
+        variant: 'info',
+        anchorOrigin: {
+          vertical: 'top',
+          horizontal: 'right',
+        },
+      });
+    } else {
+      setPreviewFile(file);
+    }
+  };
 
   useEffect(() => {
     const fetchPR = async () => {
@@ -262,7 +413,7 @@ export function PRView() {
                                 <Tooltip title="Preview">
                                   <IconButton
                                     size="small"
-                                    onClick={() => window.open(file.url, '_blank')}
+                                    onClick={() => handleFilePreview(file)}
                                   >
                                     <VisibilityIcon fontSize="small" />
                                   </IconButton>
@@ -285,7 +436,13 @@ export function PRView() {
                                         })
                                         .catch(error => {
                                           console.error('Error downloading file:', error);
-                                          // TODO: Show error notification to user
+                                          enqueueSnackbar('Failed to download file', { 
+                                            variant: 'error',
+                                            anchorOrigin: {
+                                              vertical: 'top',
+                                              horizontal: 'right',
+                                            },
+                                          });
                                         });
                                     }}
                                   >
@@ -350,6 +507,13 @@ export function PRView() {
           </Grid>
         )}
       </Grid>
+      {previewFile && (
+        <FilePreviewDialog
+          open={Boolean(previewFile)}
+          onClose={() => setPreviewFile(null)}
+          file={previewFile}
+        />
+      )}
     </Box>
   );
 }
