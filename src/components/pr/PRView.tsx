@@ -28,6 +28,7 @@ import { RootState } from '../../store';
 import { prService } from '../../services/pr';
 import { PRRequest } from '../../types/pr';
 import { formatCurrency } from '../../utils/formatters';
+import mammoth from 'mammoth';
 
 const FilePreviewDialog: React.FC<{
   open: boolean;
@@ -37,11 +38,14 @@ const FilePreviewDialog: React.FC<{
   const { enqueueSnackbar } = useSnackbar();
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const getFileType = (fileName: string): 'image' | 'pdf' | 'text' | 'unsupported' => {
+  const getFileType = (fileName: string): 'image' | 'pdf' | 'docx' | 'rtf' | 'text' | 'unsupported' => {
     const lowerFileName = fileName.toLowerCase();
     if (lowerFileName.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/)) return 'image';
     if (lowerFileName.endsWith('.pdf')) return 'pdf';
+    if (lowerFileName.endsWith('.docx')) return 'docx';
+    if (lowerFileName.endsWith('.rtf')) return 'rtf';
     if (lowerFileName.match(/\.(txt|md|log)$/)) return 'text';
     return 'unsupported';
   };
@@ -49,21 +53,72 @@ const FilePreviewDialog: React.FC<{
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    setError(null);
 
     const fileType = getFileType(file.name);
     
-    if (fileType === 'text') {
-      fetch(file.url)
-        .then(response => response.text())
-        .then(text => {
-          setContent(text);
-          setLoading(false);
-        })
-        .catch(error => {
-          console.error('Error loading file:', error);
-          enqueueSnackbar('Failed to load file preview', { variant: 'error' });
-          onClose();
+    const fetchAndProcess = async () => {
+      try {
+        const response = await fetch(file.url);
+        const blob = await response.blob();
+
+        switch (fileType) {
+          case 'text':
+          case 'rtf':  
+            const text = await blob.text();
+            // For RTF, do thorough cleanup of RTF markup
+            const cleanedText = fileType === 'rtf' 
+              ? text
+                  // Remove RTF header
+                  .replace(/^[{]\\rtf[^}]+[}]/g, '')
+                  // Remove font tables
+                  .replace(/[{]\\fonttbl[^}]+[}]/g, '')
+                  // Remove color tables
+                  .replace(/[{]\\colortbl[^}]+[}]/g, '')
+                  // Remove style sheets
+                  .replace(/[{]\\stylesheet[^}]+[}]/g, '')
+                  // Remove info groups
+                  .replace(/[{]\\info[^}]+[}]/g, '')
+                  // Remove Unicode character escapes
+                  .replace(/\\u[0-9]+\s?/g, '')
+                  // Remove special characters and control words
+                  .replace(/\\[a-z]+[0-9]*/g, '')
+                  // Remove numeric control sequences
+                  .replace(/\\[0-9]+/g, '')
+                  // Remove remaining braces
+                  .replace(/[{}]/g, '')
+                  // Fix line endings
+                  .replace(/\\par\s*/g, '\n')
+                  // Remove any remaining backslashes
+                  .replace(/\\/g, '')
+                  // Remove multiple spaces
+                  .replace(/\s+/g, ' ')
+                  // Remove multiple newlines
+                  .replace(/\n+/g, '\n')
+                  // Trim whitespace
+                  .trim()
+              : text;
+            setContent(cleanedText);
+            break;
+          case 'docx':
+            const arrayBuffer = await blob.arrayBuffer();
+            const result = await mammoth.convertToHtml({ arrayBuffer });
+            setContent(result.value);
+            break;
+        }
+      } catch (err) {
+        console.error('Error processing file:', err);
+        setError('Failed to process file. You can try downloading it instead.');
+        enqueueSnackbar('Error previewing file. You can try downloading it instead.', { 
+          variant: 'error',
         });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (['text', 'docx', 'rtf'].includes(fileType)) {
+      fetchAndProcess();
     } else {
       setLoading(false);
     }
@@ -71,6 +126,29 @@ const FilePreviewDialog: React.FC<{
 
   const renderContent = () => {
     const fileType = getFileType(file.name);
+
+    if (error) {
+      return (
+        <Box p={3} textAlign="center">
+          <Typography color="error" gutterBottom>
+            {error}
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={() => {
+              const link = document.createElement('a');
+              link.href = file.url;
+              link.setAttribute('download', file.name);
+              document.body.appendChild(link);
+              link.click();
+              link.parentNode?.removeChild(link);
+            }}
+          >
+            Download Instead
+          </Button>
+        </Box>
+      );
+    }
 
     switch (fileType) {
       case 'image':
@@ -93,18 +171,54 @@ const FilePreviewDialog: React.FC<{
             />
           </Box>
         );
+      case 'docx':
+        return (
+          <Box 
+            sx={{ 
+              p: 2,
+              maxHeight: '70vh',
+              overflow: 'auto',
+              '& img': { maxWidth: '100%' }
+            }}
+            dangerouslySetInnerHTML={{ __html: content }}
+          />
+        );
+      case 'rtf':
       case 'text':
         return (
-          <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+          <Box 
+            component="pre"
+            sx={{ 
+              p: 2,
+              maxHeight: '70vh',
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordWrap: 'break-word',
+              fontFamily: 'monospace'
+            }}
+          >
             {content}
-          </pre>
+          </Box>
         );
       default:
         return (
           <Box p={3} textAlign="center">
-            <Typography>
-              This file type cannot be previewed directly. Please use the download button below.
+            <Typography gutterBottom>
+              This file type cannot be previewed directly.
             </Typography>
+            <Button
+              variant="contained"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = file.url;
+                link.setAttribute('download', file.name);
+                document.body.appendChild(link);
+                link.click();
+                link.parentNode?.removeChild(link);
+              }}
+            >
+              Download File
+            </Button>
           </Box>
         );
     }
@@ -165,13 +279,14 @@ export function PRView() {
   // Function to check if file is previewable
   const isPreviewableFile = (fileName: string): boolean => {
     const lowerFileName = fileName.toLowerCase();
-    return lowerFileName.match(/\.(jpg|jpeg|png|gif|bmp|webp|pdf|txt|md|log)$/i) !== null;
+    return lowerFileName.match(/\.(jpg|jpeg|png|gif|bmp|webp|pdf|docx|rtf|txt|md|log)$/i) !== null;
   };
 
   // Function to handle file preview
   const handleFilePreview = (file: { name: string; url: string; type: string }) => {
     if (!isPreviewableFile(file.name)) {
-      enqueueSnackbar(`${file.name.split('.').pop()?.toUpperCase()} files cannot be previewed directly. Please download the file to view it.`, {
+      const extension = file.name.split('.').pop()?.toUpperCase() || 'This type of';
+      enqueueSnackbar(`${extension} files cannot be previewed. Click the download button to save the file.`, {
         variant: 'info',
         anchorOrigin: {
           vertical: 'top',
@@ -422,28 +537,12 @@ export function PRView() {
                                   <IconButton
                                     size="small"
                                     onClick={() => {
-                                      fetch(file.url)
-                                        .then(response => response.blob())
-                                        .then(blob => {
-                                          const url = window.URL.createObjectURL(blob);
-                                          const link = document.createElement('a');
-                                          link.href = url;
-                                          link.setAttribute('download', file.name);
-                                          document.body.appendChild(link);
-                                          link.click();
-                                          link.parentNode?.removeChild(link);
-                                          window.URL.revokeObjectURL(url);
-                                        })
-                                        .catch(error => {
-                                          console.error('Error downloading file:', error);
-                                          enqueueSnackbar('Failed to download file', { 
-                                            variant: 'error',
-                                            anchorOrigin: {
-                                              vertical: 'top',
-                                              horizontal: 'right',
-                                            },
-                                          });
-                                        });
+                                      const link = document.createElement('a');
+                                      link.href = file.url;
+                                      link.setAttribute('download', file.name);
+                                      document.body.appendChild(link);
+                                      link.click();
+                                      link.parentNode?.removeChild(link);
                                     }}
                                   >
                                     <DownloadIcon fontSize="small" />
