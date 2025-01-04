@@ -1,3 +1,35 @@
+/**
+ * @fileoverview Purchase Request Service
+ * @version 2.0.0
+ * 
+ * Description:
+ * Core service for managing purchase requests in the system. Handles CRUD operations,
+ * status transitions, approval routing, and file attachments.
+ * 
+ * Architecture Notes:
+ * - Uses Firebase Firestore for data persistence
+ * - Integrates with Cloud Storage for attachments
+ * - Implements complex business logic for approver routing
+ * - Manages PR status transitions and validations
+ * 
+ * Business Rules:
+ * - PRs over $1,000 require admin approval
+ * - PRs over $5,000 require multiple quotes
+ * - PRs over $50,000 require finance approval
+ * - Preferred vendors may bypass quote requirements
+ * - Department heads must be in approval chain
+ * 
+ * Related Modules:
+ * - src/services/storage.ts: File handling
+ * - src/services/notification.ts: PR notifications
+ * - src/types/pr.ts: PR type definitions
+ * 
+ * Error Handling:
+ * - Network errors are caught and reported
+ * - Validation errors trigger user feedback
+ * - Failed operations are logged for debugging
+ */
+
 import { 
   collection,
   doc,
@@ -23,7 +55,11 @@ const PR_COLLECTION = 'purchaseRequests';
 const functions = getFunctions();
 const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
 
-// Convert Firestore timestamp to ISO string for Redux
+/**
+ * Converts Firestore timestamp to ISO string for Redux
+ * @param {any} data - Data to convert
+ * @returns {any} Converted data
+ */
 const convertTimestamps = (data: any): any => {
   if (!data) return data;
   
@@ -46,7 +82,11 @@ const convertTimestamps = (data: any): any => {
   return data;
 };
 
-// Calculate PR metrics
+/**
+ * Calculates PR metrics
+ * @param {PRRequest} pr - Purchase request data
+ * @returns {PRRequest} Purchase request data with calculated metrics
+ */
 const calculatePRMetrics = (pr: PRRequest) => {
   console.log('Calculating metrics for PR:', {
     id: pr.id,
@@ -63,7 +103,15 @@ const calculatePRMetrics = (pr: PRRequest) => {
   };
 };
 
+/**
+ * Purchase Request Service
+ */
 export const prService = {
+  /**
+   * Creates a new purchase request
+   * @param {Partial<PRRequest>} prData - Purchase request data
+   * @returns {Promise<string>} ID of the created purchase request
+   */
   async createPR(prData: Partial<PRRequest>): Promise<string> {
     try {
       console.log('Creating PR with data:', prData);
@@ -78,13 +126,41 @@ export const prService = {
         updatedAt: Timestamp.now()
       });
 
-      // Move files from temp storage to permanent storage
+      // Move files from temp storage to permanent storage and update URLs
       if (prData.lineItems) {
-        for (const lineItem of prData.lineItems) {
-          if (lineItem.attachments?.length > 0) {
-            await moveToPermanentStorage(prRef.id, lineItem.id);
-          }
-        }
+        const updatedLineItems = await Promise.all(
+          prData.lineItems.map(async (lineItem) => {
+            if (lineItem.attachments?.length > 0) {
+              const updatedAttachments = await Promise.all(
+                lineItem.attachments.map(async (attachment) => {
+                  // Move file from temp to permanent storage
+                  const permanentPath = await moveToPermanentStorage(
+                    attachment.url, // Current temp path
+                    prNumber,       // PR number for folder structure
+                    attachment.name // Original filename
+                  );
+                  
+                  // Return updated attachment with new URL
+                  return {
+                    ...attachment,
+                    url: permanentPath
+                  };
+                })
+              );
+              
+              return {
+                ...lineItem,
+                attachments: updatedAttachments
+              };
+            }
+            return lineItem;
+          })
+        );
+
+        // Update PR document with new file URLs
+        await updateDoc(doc(db, PR_COLLECTION, prRef.id), {
+          lineItems: updatedLineItems
+        });
       }
 
       // Send email notification using Cloud Function
@@ -101,7 +177,8 @@ export const prService = {
             description: item.description,
             quantity: item.quantity,
             uom: item.uom,
-            notes: item.notes
+            notes: item.notes,
+            attachments: item.attachments ? `${item.attachments.length} file(s)` : 'None'
           }))
         };
 
@@ -141,6 +218,11 @@ export const prService = {
     }
   },
 
+  /**
+   * Generates a unique PR number for the given organization
+   * @param {string} organization - Organization name
+   * @returns {Promise<string>} Unique PR number
+   */
   async generatePRNumber(organization: string): Promise<string> {
     try {
       // Get current year and month in YYYYMM format
@@ -208,6 +290,11 @@ export const prService = {
     }
   },
 
+  /**
+   * Creates a new purchase request with a generated PR number
+   * @param {Partial<PRRequest>} prData - Purchase request data
+   * @returns {Promise<string>} ID of the created purchase request
+   */
   async createPRWithNumber(prData: Partial<PRRequest>): Promise<string> {
     try {
       console.log('Creating PR with data:', prData);
@@ -253,6 +340,12 @@ export const prService = {
     }
   },
 
+  /**
+   * Updates an existing purchase request
+   * @param {string} prId - ID of the purchase request to update
+   * @param {Partial<PRRequest>} updates - Updated purchase request data
+   * @returns {Promise<void>}
+   */
   async updatePR(prId: string, updates: Partial<PRRequest>): Promise<void> {
     try {
       console.log('Updating PR:', { prId, updates });
@@ -281,6 +374,12 @@ export const prService = {
     }
   },
 
+  /**
+   * Updates multiple purchase requests
+   * @param {string[]} prIds - IDs of the purchase requests to update
+   * @param {Partial<PRRequest>} updates - Updated purchase request data
+   * @returns {Promise<void>}
+   */
   async updatePRs(prIds: string[], updates: Partial<PRRequest>): Promise<void> {
     try {
       console.log('Updating PRs:', { prIds, updates });
@@ -317,6 +416,12 @@ export const prService = {
     }
   },
 
+  /**
+   * Retrieves purchase requests for a given user
+   * @param {string} userId - ID of the user
+   * @param {string} organization - Organization name
+   * @returns {Promise<PRRequest[]>} List of purchase requests for the user
+   */
   async getUserPRs(userId: string, organization: string): Promise<PRRequest[]> {
     try {
       if (!userId) {
@@ -401,6 +506,12 @@ export const prService = {
     }
   },
 
+  /**
+   * Retrieves pending approvals for a given approver
+   * @param {string} approverId - ID of the approver
+   * @param {string} organization - Organization name
+   * @returns {Promise<PRRequest[]>} List of pending approvals for the approver
+   */
   getPendingApprovals: async (approverId: string, organization?: string): Promise<PRRequest[]> => {
     try {
       console.log('Getting pending approvals for:', approverId);
@@ -450,6 +561,13 @@ export const prService = {
     }
   },
 
+  /**
+   * Updates the status of a purchase request
+   * @param {string} prId - ID of the purchase request
+   * @param {PRStatus} status - New status of the purchase request
+   * @param {User} updatedBy - User who updated the status
+   * @returns {Promise<void>}
+   */
   async updateStatus(prId: string, status: PRStatus, updatedBy: User): Promise<void> {
     try {
       console.log('Updating PR status:', { prId, status, updatedBy });
@@ -485,6 +603,11 @@ export const prService = {
     }
   },
 
+  /**
+   * Deletes a purchase request
+   * @param {string} prId - ID of the purchase request to delete
+   * @returns {Promise<void>}
+   */
   async deletePR(prId: string): Promise<void> {
     try {
       // Get PR data to get line item IDs
@@ -514,6 +637,11 @@ export const prService = {
     }
   },
 
+  /**
+   * Retrieves a purchase request by ID or PR number
+   * @param {string} prId - ID or PR number of the purchase request
+   * @returns {Promise<PRRequest | null>} Purchase request data or null if not found
+   */
   getPR: async (prId: string): Promise<PRRequest | null> => {
     try {
       // First try to get PR by document ID
