@@ -135,9 +135,9 @@ export const prService = {
                 lineItem.attachments.map(async (attachment) => {
                   // Move file from temp to permanent storage
                   const permanentPath = await moveToPermanentStorage(
-                    attachment.url, // Current temp path
-                    prNumber,       // PR number for folder structure
-                    attachment.name // Original filename
+                    attachment.path, // Use path instead of url
+                    prNumber,        // PR number for folder structure
+                    attachment.name  // Original filename
                   );
                   
                   // Return updated attachment with new URL
@@ -165,6 +165,7 @@ export const prService = {
 
       // Send email notification using Cloud Function
       try {
+        console.log('Line items before notification:', prData.lineItems);
         const notificationData = {
           prNumber,
           department: prData.department,
@@ -173,16 +174,24 @@ export const prService = {
           description: prData.description,
           requiredDate: prData.requiredDate,
           isUrgent: prData.isUrgent,
-          items: prData.lineItems?.map(item => ({
-            description: item.description,
-            quantity: item.quantity,
-            uom: item.uom,
-            notes: item.notes,
-            attachments: item.attachments ? `${item.attachments.length} file(s)` : 'None'
-          }))
+          items: prData.lineItems?.map(item => {
+            console.log('Processing line item attachments:', item.attachments);
+            return {
+              description: item.description,
+              quantity: item.quantity,
+              uom: item.uom,
+              notes: item.notes,
+              attachments: item.attachments?.map(att => ({
+                name: att.name,
+                size: att.size,
+                type: att.type,
+                url: att.url // Include the URL in notification data
+              })) || []
+            };
+          })
         };
 
-        console.log('Sending PR notification:', notificationData);
+        console.log('Sending PR notification with data:', notificationData);
         const result = await sendPRNotification(notificationData);
         console.log('PR notification sent:', result);
       } catch (notificationError) {

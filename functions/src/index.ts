@@ -19,17 +19,66 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// Helper function to format file size
+const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 // Helper function to generate PR email content
 const generatePREmailContent = (prData: any) => {
-    const items = prData.items.map((item: any, index: number) => `
+    const items = prData.items.map((item: any, index: number) => {
+        const attachmentsList = item.attachments?.length > 0
+            ? `<ul style="margin: 0; padding-left: 20px;">
+                ${item.attachments.map((att: any) => 
+                    `<li style="margin-bottom: 4px;">
+                        <span style="display: inline-flex; align-items: center;">
+                            ${att.name} (${formatFileSize(att.size)})
+                            ${att.url ? `
+                                <a href="${att.url}" 
+                                   target="_blank"
+                                   style="margin-left: 8px; 
+                                          display: inline-flex;
+                                          align-items: center;
+                                          padding: 2px 6px;
+                                          background: #f0f0f0;
+                                          border: 1px solid #ddd;
+                                          border-radius: 4px;
+                                          text-decoration: none;
+                                          color: #333;
+                                          font-size: 12px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" 
+                                         width="12" 
+                                         height="12" 
+                                         viewBox="0 0 24 24" 
+                                         fill="none" 
+                                         stroke="currentColor" 
+                                         stroke-width="2" 
+                                         stroke-linecap="round" 
+                                         stroke-linejoin="round"
+                                         style="margin-right: 4px;">
+                                        <path d="M21 15l-9 9h-12v-12l9-9h12v12z"/>
+                                    </svg>
+                                    View
+                                </a>` 
+                            : ''}
+                        </span>
+                    </li>`
+                ).join('')}
+               </ul>`
+            : 'None';
+
+        return `
         <tr>
             <td>${index + 1}</td>
             <td>${item.description}</td>
             <td>${item.quantity}</td>
             <td>${item.uom}</td>
             <td>${item.notes || '-'}</td>
+            <td>${attachmentsList}</td>
         </tr>
-    `).join('');
+    `}).join('');
 
     return {
         text: `
@@ -61,6 +110,7 @@ const generatePREmailContent = (prData: any) => {
                     <th>Quantity</th>
                     <th>UOM</th>
                     <th>Notes</th>
+                    <th>Attachments</th>
                 </tr>
                 ${items}
             </table>
@@ -77,7 +127,14 @@ export const sendPRNotification = functions.https.onCall(async (data, context) =
             throw new Error('Requestor email is required');
         }
 
+        console.log('Received notification data:', data);
+        console.log('Items with attachments:', data.items?.map(item => ({
+            description: item.description,
+            attachments: item.attachments
+        })));
+
         const emailContent = generatePREmailContent(data);
+        console.log('Generated email content:', emailContent);
         
         // Create email subject based on urgency
         const subject = data.isUrgent 
