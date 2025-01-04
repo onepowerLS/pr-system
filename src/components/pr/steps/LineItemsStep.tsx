@@ -21,10 +21,17 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Box,
+  Tooltip,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import DownloadIcon from '@mui/icons-material/Download';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import { FormState } from '../NewPRForm';
+import { uploadToTempStorage } from '../../../services/storage';
+import { Attachment } from '../../../types/pr';
 
 interface LineItemsStepProps {
   formState: FormState;
@@ -36,7 +43,8 @@ const emptyLineItem = {
   description: '',
   quantity: 0,
   uom: '',
-  notes: ''
+  notes: '',
+  attachments: []
 };
 
 export const LineItemsStep: React.FC<LineItemsStepProps> = ({
@@ -73,6 +81,51 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
     }));
   };
 
+  // Handle file upload
+  const handleFileUpload = async (index: number, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    try {
+      const file = files[0];
+      const tempPath = await uploadToTempStorage(file);
+
+      const newAttachment: Attachment = {
+        id: tempPath,
+        name: file.name,
+        url: tempPath,
+        type: file.type,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: formState.requestor
+      };
+
+      setFormState(prev => ({
+        ...prev,
+        lineItems: prev.lineItems.map((item, i) =>
+          i === index ? {
+            ...item,
+            attachments: [...(item.attachments || []), newAttachment]
+          } : item
+        )
+      }));
+    } catch (error) {
+      console.error('Error uploading file:', error);
+    }
+  };
+
+  // Remove attachment
+  const handleRemoveAttachment = (lineItemIndex: number, attachmentIndex: number) => {
+    setFormState(prev => ({
+      ...prev,
+      lineItems: prev.lineItems.map((item, i) =>
+        i === lineItemIndex ? {
+          ...item,
+          attachments: (item.attachments || []).filter((_, j) => j !== attachmentIndex)
+        } : item
+      )
+    }));
+  };
+
   return (
     <Grid container spacing={3}>
       <Grid item xs={12}>
@@ -90,6 +143,7 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
                 <TableCell align="right">Quantity</TableCell>
                 <TableCell>UOM</TableCell>
                 <TableCell>Notes</TableCell>
+                <TableCell>Attachments</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -133,6 +187,64 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
                       disabled={loading}
                       placeholder="Additional notes"
                     />
+                  </TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {item.attachments?.map((file, fileIndex) => (
+                        <Box 
+                          key={fileIndex} 
+                          sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center',
+                            gap: 1,
+                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                            padding: '4px 8px',
+                            borderRadius: '4px'
+                          }}
+                        >
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              flex: 1,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {file.name}
+                          </Typography>
+                          <Tooltip title="Preview">
+                            <IconButton
+                              size="small"
+                              onClick={() => window.open(file.url, '_blank')}
+                            >
+                              <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRemoveAttachment(index, fileIndex)}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      ))}
+                      <Button
+                        component="label"
+                        startIcon={<AttachFileIcon />}
+                        size="small"
+                        disabled={loading}
+                      >
+                        Attach File
+                        <input
+                          type="file"
+                          hidden
+                          onChange={(e) => handleFileUpload(index, e.target.files)}
+                        />
+                      </Button>
+                    </Box>
                   </TableCell>
                   <TableCell align="right">
                     <IconButton

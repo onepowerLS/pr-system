@@ -21,9 +21,15 @@ import {
   TableHead,
   TableRow,
   Chip,
+  IconButton,
+  Tooltip,
+  Link,
 } from '@mui/material';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import DownloadIcon from '@mui/icons-material/Download';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 
 interface ReviewStepProps {
   formState: FormState;
@@ -64,6 +70,15 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     if (!formState.preferredVendor) return null;
     const vendor = vendors.find(v => v.id === formState.preferredVendor);
     return vendor ? vendor.name : '';
+  };
+
+  // Format file size
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   return (
@@ -169,6 +184,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
                   <TableCell align="right">Quantity</TableCell>
                   <TableCell>Unit of Measure</TableCell>
                   <TableCell>Notes</TableCell>
+                  <TableCell>Attachments</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -178,6 +194,56 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
                     <TableCell align="right">{item.quantity}</TableCell>
                     <TableCell>{item.uom}</TableCell>
                     <TableCell>{item.notes}</TableCell>
+                    <TableCell>
+                      {item.attachments && item.attachments.length > 0 ? (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          {item.attachments.map((file, fileIndex) => (
+                            <Box 
+                              key={fileIndex} 
+                              sx={{ 
+                                display: 'flex', 
+                                alignItems: 'center',
+                                gap: 1,
+                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                                padding: '4px 8px',
+                                borderRadius: '4px'
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
+                                <AttachFileIcon fontSize="small" />
+                                <Typography 
+                                  variant="body2" 
+                                  sx={{ 
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {file.name}
+                                </Typography>
+                                <Typography variant="caption" color="textSecondary">
+                                  ({formatFileSize(file.size)})
+                                </Typography>
+                              </Box>
+                              <Box>
+                                <Tooltip title="Preview">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => window.open(file.url, '_blank')}
+                                  >
+                                    <VisibilityIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </Box>
+                          ))}
+                        </Box>
+                      ) : (
+                        <Typography variant="body2" color="textSecondary">
+                          No attachments
+                        </Typography>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

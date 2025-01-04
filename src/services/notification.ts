@@ -36,19 +36,24 @@ import { NotificationLog, NotificationType, StatusChangeNotification } from '../
 import { User } from '../types/user';
 
 /**
- * Notification Service Class
- * Handles all notification-related operations including logging and delivery
+ * Notification Service class
+ * 
+ * Handles logging and sending notifications for PR status changes, approvals, and comments.
  */
 class NotificationService {
+  /**
+   * Collection name for notification logs in Firestore
+   */
   private readonly notificationsCollection = 'notifications';
 
   /**
-   * Logs a new notification to the system
-   * @param type - Type of notification
-   * @param prId - ID of the related purchase request
-   * @param recipients - List of recipient user IDs
-   * @param status - Initial notification status
-   * @returns Promise resolving to the notification ID
+   * Logs a notification in Firestore and returns the notification ID.
+   * 
+   * @param type Notification type (e.g. STATUS_CHANGE, APPROVAL_REQUESTED)
+   * @param prId PR ID associated with the notification
+   * @param recipients List of recipient email addresses
+   * @param status Initial notification status (default: 'pending')
+   * @returns Notification ID
    */
   async logNotification(
     type: NotificationType,
@@ -69,12 +74,13 @@ class NotificationService {
   }
 
   /**
-   * Handles a status change notification
-   * @param prId - ID of the related purchase request
-   * @param oldStatus - Previous status of the PR
-   * @param newStatus - New status of the PR
-   * @param user - User who triggered the status change
-   * @param notes - Optional notes about the status change
+   * Handles a PR status change notification.
+   * 
+   * @param prId PR ID associated with the notification
+   * @param oldStatus Previous PR status
+   * @param newStatus New PR status
+   * @param user User who triggered the status change
+   * @param notes Optional notes about the status change
    */
   async handleStatusChange(
     prId: string,
@@ -113,9 +119,10 @@ class NotificationService {
   }
 
   /**
-   * Retrieves notifications for a specific purchase request
-   * @param prId - ID of the purchase request
-   * @returns Promise resolving to an array of notification logs
+   * Retrieves a list of notifications associated with a PR.
+   * 
+   * @param prId PR ID to retrieve notifications for
+   * @returns List of notification logs
    */
   async getNotificationsByPR(prId: string): Promise<NotificationLog[]> {
     const q = query(
@@ -131,4 +138,7 @@ class NotificationService {
   }
 }
 
+/**
+ * Singleton instance of the Notification Service
+ */
 export const notificationService = new NotificationService();
