@@ -99,6 +99,10 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const handleViewFile = (file: any) => {
+    window.open(file.url, '_blank');
+  };
+
   return (
     <Grid container spacing={3}>
       {/* PR Header */}
@@ -176,13 +180,11 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               <strong>Estimated Amount:</strong> {formState.estimatedAmount} {formState.currency}
             </Typography>
             <Typography><strong>Expense Type:</strong> {formState.expenseType}</Typography>
-            {formState.vehicle && (
+            {formState.expenseType === 'Vehicle' && formState.vehicle && (
               <Typography><strong>Vehicle:</strong> {formState.vehicle}</Typography>
             )}
             {formState.preferredVendor && (
-              <Typography>
-                <strong>Preferred Vendor:</strong> {getVendorName()}
-              </Typography>
+              <Typography><strong>Preferred Vendor:</strong> {getVendorName()}</Typography>
             )}
           </Box>
         </Paper>
@@ -211,54 +213,31 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               <TableHead>
                 <TableRow>
                   <TableCell>Description</TableCell>
-                  <TableCell align="right">Quantity</TableCell>
+                  <TableCell>Quantity</TableCell>
                   <TableCell>Unit of Measure</TableCell>
                   <TableCell>Notes</TableCell>
                   <TableCell>Attachments</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {formState.lineItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} align="center">
-                      <Typography color="textSecondary">
-                        No items added
-                      </Typography>
+                {formState.lineItems.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{item.description}</TableCell>
+                    <TableCell>{item.quantity}</TableCell>
+                    <TableCell>{item.uom}</TableCell>
+                    <TableCell>{item.notes}</TableCell>
+                    <TableCell>
+                      {item.attachments?.map((file, fileIndex) => (
+                        <Box key={fileIndex} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2">{file.name}</Typography>
+                          <IconButton size="small" onClick={() => handleViewFile(file)}>
+                            <VisibilityIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      ))}
                     </TableCell>
                   </TableRow>
-                ) : (
-                  formState.lineItems.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.description}</TableCell>
-                      <TableCell align="right">{item.quantity}</TableCell>
-                      <TableCell>{item.uom}</TableCell>
-                      <TableCell>{item.notes}</TableCell>
-                      <TableCell>
-                        {item.attachments && item.attachments.length > 0 ? (
-                          <Box sx={{ display: 'flex', gap: 1 }}>
-                            {item.attachments.map((file, fileIndex) => (
-                              <Box key={fileIndex} sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Typography variant="body2" sx={{ mr: 1 }}>
-                                  {file.name}
-                                </Typography>
-                                <Tooltip title="View">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => window.open(file.url, '_blank')}
-                                  >
-                                    <VisibilityIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Box>
-                            ))}
-                          </Box>
-                        ) : (
-                          <Typography color="textSecondary">No attachments</Typography>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
+                ))}
               </TableBody>
             </Table>
           </TableContainer>

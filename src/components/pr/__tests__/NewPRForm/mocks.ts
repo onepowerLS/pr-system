@@ -140,7 +140,7 @@ vi.mock('@/services/storage', () => ({
 }));
 
 const mockFormState = {
-  organization: 'org1',
+  organization: '1PWR LESOTHO',
   requestor: 'John Doe',
   email: 'john@example.com',
   department: 'dept1',

@@ -32,16 +32,15 @@
 ### Purchase Requests Table
 - Status Filters:
   - SUBMITTED (default)
+  - IN_QUEUE
   - PENDING_APPROVAL
   - APPROVED
-  - IN_QUEUE
+ - ORDERED
+ - PARTIALLY_RECEIVED
   - COMPLETED
   - REVISION_REQUIRED
   - CANCELED
-  - ORDERED
   - REJECTED
-  - PARTIALLY_RECEIVED
-  - RECEIVED
 
 - Columns:
   - PR Number (auto-generated)
@@ -72,7 +71,7 @@
   - Preferred Vendor (dropdown)
 
 - Field Dependencies:
-  - When Expense Type is "Vehicle", an additional required Vehicle field (dropdown) appears
+  - When Expense Type is "4 -Vehicle", an additional required Vehicle field (dropdown) appears
 
 ### Step 2: Line Items
 - Table with columns:
@@ -150,8 +149,12 @@
 
 ## 7. Status Flow
 ```
-DRAFT -> SUBMITTED -> PENDING_APPROVAL -> [APPROVED/REJECTED/REVISION_REQUIRED]
-APPROVED -> [ORDERED -> PARTIALLY_RECEIVED -> RECEIVED/COMPLETED]
+SUBMITTED -> -> [IN QUEUE/REJECTED/REVISION_REQUIRED]
+IN QUEUE -> [PENDING_APPROVAL/REJECTED/REVISION_REQUIRED]
+PENDING_APPROVAL -> [APPROVED/REJECTED/REVISION_REQUIRED]
+APPROVED -> [ORDERED]
+ORDERED -> [PARTIALLY_RECEIVED, COMPLETED]
+PARTIALLY_RECEIVED -> [COMPLETED]
 REVISION_REQUIRED -> SUBMITTED (cycle continues)
 Any Status -> CANCELED
 ```

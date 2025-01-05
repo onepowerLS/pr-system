@@ -28,7 +28,11 @@ import {
   DialogActions,
   DialogContent,
   DialogContentText,
-  DialogTitle
+  DialogTitle,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -44,6 +48,21 @@ interface LineItemsStepProps {
   setFormState: React.Dispatch<React.SetStateAction<FormState>>;
   loading: boolean;
 }
+
+const UOM_OPTIONS = [
+  'EA',   // Each
+  'PCS',  // Pieces
+  'KG',   // Kilograms
+  'L',    // Liters
+  'M',    // Meters
+  'M2',   // Square Meters
+  'M3',   // Cubic Meters
+  'HR',   // Hours
+  'DAY',  // Days
+  'MTH',  // Months
+  'LOT',  // Lot
+  'SET',  // Set
+];
 
 const emptyLineItem = {
   description: '',
@@ -101,7 +120,8 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
   };
 
   // Handle file upload
-  const handleFileUpload = async (index: number, files: FileList | null) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const files = event.target.files;
     if (!files || files.length === 0) return;
 
     const file = files[0];
@@ -223,19 +243,21 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
                       />
                     </TableCell>
                     <TableCell>
-                      <TextField
-                        required
-                        value={item.uom}
-                        onChange={handleLineItemChange(index, 'uom')}
-                        disabled={loading}
-                        placeholder="Unit of measure"
-                        label="UOM"
-                        error={!item.uom}
-                        helperText={!item.uom ? "UOM is required" : ""}
-                        inputProps={{
-                          'aria-label': 'uom'
-                        }}
-                      />
+                      <FormControl fullWidth size="small">
+                        <InputLabel>UOM</InputLabel>
+                        <Select
+                          value={item.uom}
+                          onChange={handleLineItemChange(index, 'uom')}
+                          label="UOM"
+                          required
+                        >
+                          {UOM_OPTIONS.map((option) => (
+                            <MenuItem key={option} value={option}>
+                              {option}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
                     </TableCell>
                     <TableCell>
                       <TextField
@@ -251,62 +273,37 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
                       />
                     </TableCell>
                     <TableCell>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {item.attachments?.map((file, fileIndex) => (
-                          <Box 
-                            key={fileIndex} 
-                            sx={{ 
-                              display: 'flex', 
-                              alignItems: 'center',
-                              gap: 1,
-                              backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                              padding: '4px 8px',
-                              borderRadius: '4px'
-                            }}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <input
+                          type="file"
+                          id={`file-upload-${index}`}
+                          style={{ display: 'none' }}
+                          onChange={(e) => handleFileUpload(e, index)}
+                          multiple
+                        />
+                        <label htmlFor={`file-upload-${index}`}>
+                          <Button
+                            component="span"
+                            startIcon={<AttachFileIcon />}
+                            size="small"
+                            variant="outlined"
                           >
-                            <Typography 
-                              variant="body2" 
-                              sx={{ 
-                                flex: 1,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                              }}
-                            >
+                            Attach Files
+                          </Button>
+                        </label>
+                        {item.attachments?.map((file, fileIndex) => (
+                          <Box key={fileIndex} sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Typography variant="body2" sx={{ ml: 1 }}>
                               {file.name}
                             </Typography>
-                            <Tooltip title="Preview">
-                              <IconButton
-                                size="small"
-                                onClick={() => window.open(file.url, '_blank')}
-                              >
-                                <VisibilityIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Delete">
-                              <IconButton
-                                size="small"
-                                onClick={() => handleRemoveAttachment(index, fileIndex)}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRemoveAttachment(index, fileIndex)}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
                           </Box>
                         ))}
-                        <Button
-                          component="label"
-                          startIcon={<AttachFileIcon />}
-                          disabled={loading}
-                          aria-label="attach file"
-                        >
-                          Attach File
-                          <input
-                            type="file"
-                            hidden
-                            data-testid="attach-file-input"
-                            onChange={(e) => handleFileUpload(index, e.target.files)}
-                          />
-                        </Button>
                       </Box>
                     </TableCell>
                     <TableCell align="right">

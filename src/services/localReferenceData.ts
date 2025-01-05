@@ -1,8 +1,8 @@
 // Local reference data from Excel file
 export const organizations = [
-  { id: '1pwr', name: '1PWR LESOTHO', isActive: true },
-  { id: 'smp', name: 'SMP', isActive: true },
-  { id: 'pueco', name: 'PUECO', isActive: true }
+  { id: '1PWR LESOTHO', name: '1PWR LESOTHO', isActive: true },
+  { id: 'SMP', name: 'SMP', isActive: true },
+  { id: 'PUECO', name: 'PUECO', isActive: true }
 ];
 
 // SMP-specific departments
