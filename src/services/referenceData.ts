@@ -13,33 +13,32 @@ interface ReferenceData {
   name: string;
   code?: string;
   isActive: boolean;
-  organization?: string;
   [key: string]: any;
 }
 
 class ReferenceDataService {
-  async getDepartments(organization: string): Promise<ReferenceData[]> {
-    return departments.filter(dept => dept.organization === organization);
+  async getDepartments(_organization: string): Promise<ReferenceData[]> {
+    return departments;
   }
 
-  async getProjectCategories(organization: string): Promise<ReferenceData[]> {
-    return projectCategories.filter(cat => cat.organization === organization);
+  async getProjectCategories(_organization: string): Promise<ReferenceData[]> {
+    return projectCategories;
   }
 
-  async getSites(organization: string): Promise<ReferenceData[]> {
-    return sites.filter(site => site.organization === organization);
+  async getSites(_organization: string): Promise<ReferenceData[]> {
+    return sites;
   }
 
-  async getExpenseTypes(organization: string): Promise<ReferenceData[]> {
-    return expenseTypes.filter(type => type.organization === organization);
+  async getExpenseTypes(_organization: string): Promise<ReferenceData[]> {
+    return expenseTypes;
   }
 
-  async getVehicles(organization: string): Promise<ReferenceData[]> {
-    return vehicles.filter(vehicle => vehicle.organization === organization);
+  async getVehicles(_organization: string): Promise<ReferenceData[]> {
+    return vehicles;
   }
 
-  async getVendors(organization: string): Promise<ReferenceData[]> {
-    return vendors.filter(vendor => vendor.organization === organization);
+  async getVendors(_organization: string): Promise<ReferenceData[]> {
+    return vendors;
   }
 
   async getCurrencies(): Promise<ReferenceData[]> {
