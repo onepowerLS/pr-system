@@ -1413,6 +1413,7 @@ export const NewPRForm = () => {
           color="primary"
           onClick={handleSubmit}
           disabled={submitting}
+          aria-label="Submit purchase request"
         >
           {submitting ? <CircularProgress size={24} /> : 'Submit Purchase Request'}
         </Button>

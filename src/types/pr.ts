@@ -239,6 +239,8 @@ export interface Attachment {
   name: string;
   /** URL of the attachment */
   url: string;
+  /** Path of the attachment */
+  path?: string;
   /** Type of the attachment */
   type: string;
   /** Size of the attachment */

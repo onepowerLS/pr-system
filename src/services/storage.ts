@@ -20,7 +20,8 @@ export async function uploadToTempStorage(file: File) {
       name: file.name,
       size: file.size,
       type: file.type,
-      url
+      url,
+      path: tempPath // Store the path for later use
     };
   } catch (error) {
     console.error('Error uploading file:', error);
@@ -30,28 +31,40 @@ export async function uploadToTempStorage(file: File) {
 
 /**
  * Moves a file from temporary to permanent storage
- * @param tempUrl Current URL of the file in temp storage
+ * @param tempPath Path of the file in temp storage
  * @param prNumber PR number for folder organization
  * @param fileName Original file name
  * @returns New permanent URL of the file
  */
 export async function moveToPermanentStorage(
-  tempUrl: string,
+  tempPath: string,
   prNumber: string,
   fileName: string
 ): Promise<string> {
   try {
-    // Extract temp path from URL
-    const tempPath = tempUrl.split('/o/')[1].split('?')[0];
-    const tempRef = ref(storage, decodeURIComponent(tempPath));
+    if (!tempPath) {
+      throw new Error('Temp path is required');
+    }
 
-    // Create permanent path
+    if (!prNumber) {
+      throw new Error('PR number is required');
+    }
+
+    if (!fileName) {
+      throw new Error('File name is required');
+    }
+
+    // Create references
+    const tempRef = ref(storage, tempPath);
     const permanentPath = `pr/${prNumber}/attachments/${fileName}`;
     const permanentRef = ref(storage, permanentPath);
 
-    // Download temp file and upload to permanent location
+    // Get the file data from temp storage
+    const tempUrl = await getDownloadURL(tempRef);
     const response = await fetch(tempUrl);
     const blob = await response.blob();
+
+    // Upload to permanent location
     await uploadBytes(permanentRef, blob);
 
     // Delete temp file
@@ -71,6 +84,10 @@ export async function moveToPermanentStorage(
  */
 export async function deleteFile(url: string): Promise<void> {
   try {
+    if (!url) {
+      throw new Error('URL is required');
+    }
+
     const path = url.split('/o/')[1].split('?')[0];
     const fileRef = ref(storage, decodeURIComponent(path));
     await deleteObject(fileRef);

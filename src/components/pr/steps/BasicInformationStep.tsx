@@ -22,6 +22,7 @@ import {
   Box,
   Typography,
   SelectChangeEvent,
+  CircularProgress,
 } from '@mui/material';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
@@ -106,15 +107,29 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     }
   }, [isVehicleExpense, vehicles]);
 
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+        <CircularProgress data-testid="loading-indicator" />
+      </Box>
+    );
+  }
+
   return (
     <Grid container spacing={3}>
       {/* Organization */}
       <Grid item xs={12}>
         <FormControl fullWidth disabled>
-          <InputLabel>Organization</InputLabel>
+          <InputLabel htmlFor="organization-select" id="organization-label">Organization</InputLabel>
           <Select
+            labelId="organization-label"
+            id="organization-select"
             value={formState.organization}
             label="Organization"
+            inputProps={{
+              'aria-labelledby': 'organization-label',
+              'aria-label': 'Organization'
+            }}
           >
             <MenuItem value="1PWR LESOTHO">1PWR LESOTHO</MenuItem>
           </Select>
@@ -126,10 +141,13 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       <Grid item xs={12} md={6}>
         <TextField
           fullWidth
+          id="requestor-input"
           label="Requestor"
           value={formState.requestor}
           onChange={handleChange('requestor')}
           required
+          error={formState.requestor === ''}
+          helperText={formState.requestor === '' ? 'Requestor is required' : ''}
           disabled={loading}
         />
       </Grid>
@@ -138,11 +156,14 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       <Grid item xs={12} md={6}>
         <TextField
           fullWidth
+          id="email-input"
           label="Email"
           type="email"
           value={formState.email}
           onChange={handleChange('email')}
           required
+          error={formState.email === ''}
+          helperText={formState.email === '' ? 'Email is required' : ''}
           disabled={loading}
         />
       </Grid>
@@ -150,8 +171,10 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       {/* Department */}
       <Grid item xs={12} md={6}>
         <FormControl fullWidth required>
-          <InputLabel>Department</InputLabel>
+          <InputLabel id="department-label">Department</InputLabel>
           <Select
+            labelId="department-label"
+            id="department-select"
             value={formState.department}
             onChange={handleChange('department')}
             label="Department"
@@ -169,8 +192,10 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       {/* Project Category */}
       <Grid item xs={12} md={6}>
         <FormControl fullWidth required>
-          <InputLabel>Project Category</InputLabel>
+          <InputLabel id="project-category-label">Project Category</InputLabel>
           <Select
+            labelId="project-category-label"
+            id="project-category-select"
             value={formState.projectCategory}
             onChange={handleChange('projectCategory')}
             label="Project Category"
@@ -189,6 +214,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       <Grid item xs={12}>
         <TextField
           fullWidth
+          id="description-input"
           label="Description"
           multiline
           rows={3}
@@ -197,14 +223,19 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           required
           disabled={loading}
           helperText="Provide a clear description of what you are requesting"
+          inputProps={{
+            'aria-label': 'Description'
+          }}
         />
       </Grid>
 
       {/* Site */}
       <Grid item xs={12} md={6}>
         <FormControl fullWidth required>
-          <InputLabel>Site</InputLabel>
+          <InputLabel id="site-label">Site</InputLabel>
           <Select
+            labelId="site-label"
+            id="site-select"
             value={formState.site}
             onChange={handleChange('site')}
             label="Site"
@@ -221,9 +252,11 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
 
       {/* Expense Type */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required error={isVehicleExpense && !formState.vehicle}>
-          <InputLabel>Expense Type</InputLabel>
+        <FormControl fullWidth required>
+          <InputLabel id="expense-type-label">Expense Type</InputLabel>
           <Select
+            labelId="expense-type-label"
+            id="expense-type-select"
             value={formState.expenseType}
             onChange={handleChange('expenseType')}
             label="Expense Type"
@@ -235,139 +268,51 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               </MenuItem>
             ))}
           </Select>
-          {isVehicleExpense && !formState.vehicle && (
-            <FormHelperText error>
-              Vehicle expenses require a vehicle to be selected
-            </FormHelperText>
-          )}
         </FormControl>
       </Grid>
 
-      {/* Vehicle Selection - Required for vehicle expense type */}
+      {/* Vehicle Selection - Only shown for vehicle-related expenses */}
       {isVehicleExpense && (
         <Grid item xs={12} md={6}>
-          <FormControl fullWidth required error={!formState.vehicle}>
-            <InputLabel>Vehicle</InputLabel>
+          <FormControl fullWidth required>
+            <InputLabel id="vehicle-label">Vehicle</InputLabel>
             <Select
-              value={formState.vehicle || ''}
+              labelId="vehicle-label"
+              id="vehicle-select"
+              value={formState.vehicle}
               onChange={handleChange('vehicle')}
               label="Vehicle"
               disabled={loading}
             >
-              <MenuItem value="" disabled>
-                <em>Select a vehicle</em>
-              </MenuItem>
               {vehicles.map(vehicle => (
                 <MenuItem key={vehicle.id} value={vehicle.id}>
                   {vehicle.name}
                 </MenuItem>
               ))}
             </Select>
-            {!formState.vehicle && (
-              <FormHelperText error>
-                Please select the vehicle this expense is for
-              </FormHelperText>
-            )}
           </FormControl>
         </Grid>
       )}
 
-      {/* Estimated Amount */}
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Estimated Amount"
-          type="number"
-          value={formState.estimatedAmount}
-          onChange={handleChange('estimatedAmount')}
-          required
-          disabled={loading}
-          InputProps={{
-            inputProps: { min: 0, step: 0.01 }
-          }}
-        />
-      </Grid>
-
-      {/* Currency */}
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
-          <InputLabel>Currency</InputLabel>
-          <Select
-            value={formState.currency}
-            onChange={handleChange('currency')}
-            label="Currency"
-            disabled={loading}
-          >
-            <MenuItem value="LSL">LSL</MenuItem>
-            <MenuItem value="USD">USD</MenuItem>
-            <MenuItem value="ZAR">ZAR</MenuItem>
-          </Select>
-        </FormControl>
-      </Grid>
-
-      {/* Required Date */}
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Required Date"
-          type="date"
-          value={formState.requiredDate}
-          onChange={handleChange('requiredDate')}
-          required
-          disabled={loading}
-          InputLabelProps={{
-            shrink: true,
-          }}
-          inputProps={{
-            min: new Date().toISOString().split('T')[0]
-          }}
-        />
-      </Grid>
-
-      {/* Urgency */}
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
-          <InputLabel>Is this request urgent?</InputLabel>
-          <Select
-            value={formState.isUrgent.toString()}
-            onChange={(e) => {
-              const value = e.target.value === 'true';
-              setFormState(prev => ({ ...prev, isUrgent: value }));
-            }}
-            label="Is this request urgent?"
-            disabled={loading}
-          >
-            <MenuItem value="false">No</MenuItem>
-            <MenuItem value="true">Yes</MenuItem>
-          </Select>
-          <FormHelperText>
-            Urgent requests may require immediate attention from approvers
-          </FormHelperText>
-        </FormControl>
-      </Grid>
-
       {/* Preferred Vendor */}
       <Grid item xs={12} md={6}>
         <FormControl fullWidth>
-          <InputLabel>Preferred Vendor</InputLabel>
+          <InputLabel id="vendor-label">Preferred Vendor</InputLabel>
           <Select
-            value={formState.preferredVendor || ''}
+            labelId="vendor-label"
+            id="vendor-select"
+            value={formState.preferredVendor}
             onChange={handleChange('preferredVendor')}
             label="Preferred Vendor"
             disabled={loading}
           >
-            <MenuItem value="">
-              <em>None</em>
-            </MenuItem>
             {vendors.map(vendor => (
               <MenuItem key={vendor.id} value={vendor.id}>
                 {vendor.name}
               </MenuItem>
             ))}
           </Select>
-          <FormHelperText>
-            Select if you have a preferred vendor for this purchase
-          </FormHelperText>
+          <FormHelperText>Optional - Select if you have a preferred vendor</FormHelperText>
         </FormControl>
       </Grid>
 
@@ -375,44 +320,30 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       <Grid item xs={12}>
         <Autocomplete
           multiple
+          id="approvers-select"
           options={approvers}
-          getOptionLabel={(option) => {
-            if (option.department === 'Admin') {
-              return `${option.name} (${option.department}, limit: ${option.approvalLimit})`;
-            }
-            return `${option.name} (${option.department})`;
-          }}
+          getOptionLabel={(option) => option.name}
           value={approvers.filter(a => formState.approvers.includes(a.id))}
           onChange={handleApproverChange}
           disabled={loading}
-          renderTags={(value, getTagProps) =>
-            value.map((option, index) => {
-              const props = getTagProps({ index });
-              const { key, ...chipProps } = props;
-              return (
-                <Chip
-                  key={key}
-                  label={option.department === 'Admin' ? 
-                    `${option.name} (${option.department}, limit: ${option.approvalLimit})` :
-                    `${option.name} (${option.department})`
-                  }
-                  {...chipProps}
-                />
-              );
-            })
-          }
           renderInput={(params) => (
             <TextField
               {...params}
               label="Approvers"
-              placeholder="Select approvers"
               required
+              helperText="Select at least one approver"
             />
           )}
+          renderTags={(value, getTagProps) =>
+            value.map((option, index) => (
+              <Chip
+                key={option.id}
+                label={option.name}
+                {...getTagProps({ index })}
+              />
+            ))
+          }
         />
-        <FormHelperText>
-          Select the people who need to approve this request
-        </FormHelperText>
       </Grid>
     </Grid>
   );
