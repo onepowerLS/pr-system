@@ -232,8 +232,12 @@ export const prService = {
    * @param {string} organization - Organization name
    * @returns {Promise<string>} Unique PR number
    */
-  async generatePRNumber(organization: string): Promise<string> {
+  async generatePRNumber(organization: string, attempt: number = 1): Promise<string> {
     try {
+      if (attempt > 100) {
+        throw new Error('Failed to generate unique PR number after 100 attempts');
+      }
+
       // Get current year and month in YYYYMM format
       const now = new Date();
       const yearMonth = now.getFullYear().toString() + 
@@ -271,8 +275,8 @@ export const prService = {
         }
       });
 
-      // Use the next number after the highest found
-      const nextNumber = maxNumber + 1;
+      // Use the next number after the highest found, plus any additional attempts
+      const nextNumber = maxNumber + attempt;
       console.log('Next PR number:', nextNumber);
 
       // Format: PR-YYYYMM-XXX where XXX is sequential number
@@ -287,9 +291,9 @@ export const prService = {
       const existingDocs = await getDocs(existingQ);
       
       if (!existingDocs.empty) {
-        console.error('PR number collision detected:', prNumber);
-        // If there's a collision, try the next number recursively
-        return this.generatePRNumber(organization);
+        console.log('PR number collision detected:', prNumber, 'Attempt:', attempt);
+        // If there's a collision, try the next number by incrementing attempt
+        return this.generatePRNumber(organization, attempt + 1);
       }
 
       return prNumber;
