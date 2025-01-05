@@ -33,26 +33,24 @@ import { UploadedFile } from '../services/storage';
 export enum PRStatus {
   /** Initial state when PR is first created */
   SUBMITTED = 'SUBMITTED',
+  /** PR is in procurement queue for processing */
+  IN_QUEUE = 'IN_QUEUE',
   /** Awaiting approval from designated approvers */
   PENDING_APPROVAL = 'PENDING_APPROVAL',
   /** PR has been approved and is ready for processing */
   APPROVED = 'APPROVED',
-  /** PR is in procurement queue for processing */
-  IN_QUEUE = 'IN_QUEUE',
+  /** Purchase order has been placed */
+  ORDERED = 'ORDERED',
+  /** Some items have been received */
+  PARTIALLY_RECEIVED = 'PARTIALLY_RECEIVED',
   /** PR has been fully processed and closed */
   COMPLETED = 'COMPLETED',
   /** Changes requested by approver */
   REVISION_REQUIRED = 'REVISION_REQUIRED',
   /** PR has been canceled by requestor or admin */
   CANCELED = 'CANCELED',
-  /** Purchase order has been placed */
-  ORDERED = 'ORDERED',
   /** PR has been rejected by approver */
-  REJECTED = 'REJECTED',
-  /** Some items have been received */
-  PARTIALLY_RECEIVED = 'PARTIALLY_RECEIVED',
-  /** All items have been received */
-  RECEIVED = 'RECEIVED'
+  REJECTED = 'REJECTED'
 }
 
 /**

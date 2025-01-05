@@ -145,10 +145,6 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
     }));
   };
 
-  const handleSave = (index: number) => {
-    // Add your save logic here
-  };
-
   return (
     <Grid container spacing={3}>
       {loading && (
@@ -321,15 +317,6 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
                       >
                         <DeleteIcon />
                       </IconButton>
-                      <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => handleSave(index)}
-                        disabled={loading}
-                        aria-label="save line item"
-                      >
-                        Save
-                      </Button>
                     </TableCell>
                   </TableRow>
                 ))

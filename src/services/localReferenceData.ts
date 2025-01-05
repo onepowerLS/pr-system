@@ -1,30 +1,54 @@
 // Local reference data from Excel file
+export const organizations = [
+  { id: '1pwr', name: '1PWR LESOTHO', isActive: true },
+  { id: 'smp', name: 'SMP', isActive: true },
+  { id: 'pueco', name: 'PUECO', isActive: true }
+];
+
+// SMP-specific departments
+const smpDepartments = [
+  { id: "smp_operations", name: "Operations", isActive: true, organization: "SMP" },
+  { id: "smp_engineering", name: "Engineering", isActive: true, organization: "SMP" },
+  { id: "smp_finance", name: "Finance", isActive: true, organization: "SMP" },
+  { id: "smp_procurement", name: "Procurement", isActive: true, organization: "SMP" },
+  { id: "smp_hr", name: "HR", isActive: true, organization: "SMP" }
+];
+
+// SMP-specific project categories
+const smpProjectCategories = [
+  { id: "smp_maintenance", name: "Maintenance", isActive: true, organization: "SMP" },
+  { id: "smp_expansion", name: "Expansion", isActive: true, organization: "SMP" },
+  { id: "smp_operations", name: "Operations", isActive: true, organization: "SMP" }
+];
+
+// SMP-specific sites
+const smpSites = [
+  { id: "smp_factory", name: "Factory", code: "FAC", isActive: true, organization: "SMP" },
+  { id: "smp_warehouse", name: "Warehouse", code: "WH", isActive: true, organization: "SMP" },
+  { id: "smp_office", name: "Head Office", code: "HO", isActive: true, organization: "SMP" }
+];
+
+// Combine all reference data
 export const departments = [
   { id: "c_level", name: "C Level", isActive: true, organization: "1PWR LESOTHO" },
   { id: "dpo", name: "DPO", isActive: true, organization: "1PWR LESOTHO" },
   { id: "project_management", name: "Project Management", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "fleet", name: "Fleet", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "production", name: "Production", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "electrical_engineering", name: "Electrical Engineering", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "mechanical_engineering", name: "Mechanical Engineering", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "reticulation", name: "Reticulation", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "facilities", name: "Facilities", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "asset_management", name: "Asset Management", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "pueco", name: "PUECO", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "finance", name: "Finance", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "admin", name: "Admin", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "engineering", name: "Engineering", isActive: true, organization: "1PWR LESOTHO" },
   { id: "procurement", name: "Procurement", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "finance", name: "Finance", isActive: true, organization: "1PWR LESOTHO" },
   { id: "hr", name: "HR", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "legal", name: "Legal", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "it", name: "IT", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "operations", name: "Operations", isActive: true, organization: "1PWR LESOTHO" },
   { id: "ehs", name: "EHS", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "oandm", name: "O&M", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "communications", name: "Communications", isActive: true, organization: "1PWR LESOTHO" }
 ];
 
 export const projectCategories = [
   { id: "1:20mw", name: "1:20MW", isActive: true, organization: "1PWR LESOTHO" },
   { id: "2:engineering_randd", name: "2:Engineering R&D", isActive: true, organization: "1PWR LESOTHO" },
   { id: "4:minigrids", name: "4:Minigrids", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "7:administrative_overhead", name: "7:Administrative/Overhead", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "9:eep", name: "9:EEP", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "5:general", name: "5:General", isActive: true, organization: "1PWR LESOTHO" }
 ];
 
 export const sites = [
@@ -44,7 +68,7 @@ export const sites = [
   { id: "methalaneng", name: "Methalaneng", code: "MET", isActive: true, organization: "1PWR LESOTHO" },
   { id: "manamaneng", name: "Manamaneng", code: "MAN", isActive: true, organization: "1PWR LESOTHO" },
   { id: "bobete", name: "Bobete", code: "BOB", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "1pwr_headquarters", name: "1PWR Headquarters", code: "HQ", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "1pwr_headquarters", name: "1PWR Headquarters", code: "HQ", isActive: true, organization: "1PWR LESOTHO" }
 ];
 
 export const expenseTypes = [
@@ -76,33 +100,24 @@ export const expenseTypes = [
   { id: "meals_and_meetings", name: "28 - Meals and meetings", code: "28", isActive: true, organization: "1PWR LESOTHO" },
   { id: "utilities_(lec,_lewa)", name: "30 - Utilities (LEC, LEWA)", code: "30", isActive: true, organization: "1PWR LESOTHO" },
   { id: "property_maintenance_(lndc_factory,_minigrid_powerhouse)", name: "31 - Property maintenance (LNDC factory, minigrid powerhouse)", code: "31", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "other", name: "X - Other", code: "X", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "other", name: "X - Other", code: "X", isActive: true, organization: "1PWR LESOTHO" }
 ];
 
 export const vehicles = [
   { id: "36", name: "36", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
   { id: "compressor", name: "Compressor", registration: "", isActive: true, organization: "1PWR LESOTHO" },
   { id: "drill_rig", name: "Drill rig", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "hardbody_1", name: "Hardbody 1", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "hardbody_2", name: "Hardbody 2", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "hilux", name: "Hilux", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "jeep_1", name: "Jeep 1", registration: "A992 BCF", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "jeep_2", name: "Jeep 2", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "jeep_3", name: "Jeep 3", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "mazda_1", name: "Mazda 1", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "pajero", name: "Pajero", registration: "RLZ052J", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "raider", name: "Raider", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "ranger_1", name: "Ranger 1", registration: "A 838 BLF", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "ranger_2", name: "Ranger 2", registration: "A 374 BBV", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "ranger_3", name: "Ranger 3", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "surf_1", name: "Surf 1", registration: "RCY461J", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "surf_2", name: "Surf 2", registration: "RY019", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "telehandler", name: "Telehandler", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "tractors", name: "Tractors", registration: "", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "forklift", name: "Forklift", registration: "", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "generator", name: "Generator", registration: "", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "isuzu", name: "Isuzu", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "land_cruiser", name: "Land Cruiser", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "mazda", name: "Mazda", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "mercedes_benz", name: "Mercedes Benz", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "nissan", name: "Nissan", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "toyota", name: "Toyota", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
   { id: "trailer", name: "Trailer", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "xtrail_1", name: "XTrail 1", registration: "RLK506J", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "xtrail_2", name: "Xtrail 2", registration: "", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "other", name: "Other", registration: "", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "truck", name: "Truck", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "van", name: "Van", registration: "RLL415J", isActive: true, organization: "1PWR LESOTHO" }
 ];
 
 export const vendors = [
@@ -115,15 +130,12 @@ export const vendors = [
   { id: "afrox", name: "Afrox", isActive: true, organization: "1PWR LESOTHO" },
   { id: "vyfster", name: "Vyfster", isActive: true, organization: "1PWR LESOTHO" },
   { id: "thetsane_hardware", name: "Thetsane Hardware", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "bbcdc", name: "BBCDC", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "bbcdc", name: "BBCDC", isActive: true, organization: "1PWR LESOTHO" }
 ];
 
-export const organizations = [
-  { id: "smp", name: "SMP", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "1pwr_lesotho", name: "1PWR LESOTHO", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "pueco", name: "PUECO", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "neo1", name: "NEO1", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "1pwr_benin", name: "1PWR BENIN", isActive: true, organization: "1PWR LESOTHO" },
+export const approvers = [
+  { id: "smp_manager", name: "SMP Manager", role: "MANAGER", isActive: true, organization: "SMP" },
+  { id: "smp_director", name: "SMP Director", role: "DIRECTOR", isActive: true, organization: "SMP" },
 ];
 
 export const currencies = [
@@ -131,5 +143,5 @@ export const currencies = [
   { id: "zar", name: "South African Rand", code: "ZAR", isActive: true, organization: "1PWR LESOTHO" },
   { id: "usd", name: "US Dollar", code: "USD", isActive: true, organization: "1PWR LESOTHO" },
   { id: "eur", name: "Euro", code: "EUR", isActive: true, organization: "1PWR LESOTHO" },
-  { id: "gbp", name: "British Pound", code: "GBP", isActive: true, organization: "1PWR LESOTHO" },
+  { id: "gbp", name: "British Pound", code: "GBP", isActive: true, organization: "1PWR LESOTHO" }
 ];

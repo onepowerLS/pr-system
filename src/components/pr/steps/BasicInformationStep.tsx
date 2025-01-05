@@ -26,6 +26,7 @@ import {
 } from '@mui/material';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
+import { organizations } from '../../../services/localReferenceData';
 
 interface BasicInformationStepProps {
   formState: FormState;
@@ -66,7 +67,10 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     setFormState(prev => {
       // Handle expense type changes
       if (field === 'expenseType') {
-        if (value === 'vehicle') {
+        const isVehicleExpense = expenseTypes.find(type => type.id === value)?.name === '4 - Vehicle';
+        const wasVehicleExpense = expenseTypes.find(type => type.id === prev.expenseType)?.name === '4 - Vehicle';
+        
+        if (isVehicleExpense) {
           // When switching to vehicle expense type
           return {
             ...prev,
@@ -74,7 +78,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             // Don't auto-select vehicle - user must explicitly choose
             vehicle: undefined
           };
-        } else if (prev.expenseType === 'vehicle') {
+        } else if (wasVehicleExpense) {
           // When switching from vehicle expense type, clear vehicle
           return {
             ...prev,
@@ -94,18 +98,18 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     }));
   };
 
-  // Check if expense type is vehicle
-  const isVehicleExpense = formState.expenseType === 'vehicle';
+  // Show vehicle field only for vehicle expense type
+  const showVehicleField = expenseTypes.find(type => type.id === formState.expenseType)?.name === '4 - Vehicle';
 
   // Validate that vehicle is selected if expense type is vehicle
   React.useEffect(() => {
-    if (isVehicleExpense && !formState.vehicle) {
+    if (showVehicleField && !formState.vehicle && vehicles.length > 0) {
       setFormState(prev => ({
         ...prev,
-        vehicle: vehicles[0]?.id || ''
+        vehicle: undefined
       }));
     }
-  }, [isVehicleExpense, vehicles]);
+  }, [showVehicleField, vehicles]);
 
   if (loading) {
     return (
@@ -119,21 +123,30 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     <Grid container spacing={3}>
       {/* Organization */}
       <Grid item xs={12}>
-        <FormControl fullWidth disabled>
+        <FormControl fullWidth>
           <InputLabel htmlFor="organization-select" id="organization-label">Organization</InputLabel>
           <Select
             labelId="organization-label"
             id="organization-select"
             value={formState.organization}
             label="Organization"
+            onChange={handleChange('organization')}
+            required
+            error={!formState.organization}
             inputProps={{
               'aria-labelledby': 'organization-label',
               'aria-label': 'Organization'
             }}
           >
-            <MenuItem value="1PWR LESOTHO">1PWR LESOTHO</MenuItem>
+            {organizations.map((org) => (
+              <MenuItem key={org.id} value={org.name}>
+                {org.name}
+              </MenuItem>
+            ))}
           </Select>
-          <FormHelperText>Organization is fixed to 1PWR LESOTHO</FormHelperText>
+          <FormHelperText error={!formState.organization}>
+            {!formState.organization ? 'Organization is required' : ''}
+          </FormHelperText>
         </FormControl>
       </Grid>
 
@@ -272,7 +285,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
       </Grid>
 
       {/* Vehicle Selection - Only shown for vehicle-related expenses */}
-      {isVehicleExpense && (
+      {showVehicleField && (
         <Grid item xs={12} md={6}>
           <FormControl fullWidth required>
             <InputLabel id="vehicle-label">Vehicle</InputLabel>
@@ -313,6 +326,65 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             ))}
           </Select>
           <FormHelperText>Optional - Select if you have a preferred vendor</FormHelperText>
+        </FormControl>
+      </Grid>
+
+      {/* Estimated Amount */}
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          id="estimated-amount-input"
+          label="Estimated Amount"
+          type="number"
+          value={formState.estimatedAmount}
+          onChange={handleChange('estimatedAmount')}
+          required
+          error={formState.estimatedAmount <= 0}
+          helperText={formState.estimatedAmount <= 0 ? 'Amount must be greater than 0' : ''}
+          disabled={loading}
+          inputProps={{
+            min: 0,
+            step: 0.01,
+            'aria-label': 'Estimated Amount'
+          }}
+        />
+      </Grid>
+
+      {/* Currency */}
+      <Grid item xs={12} md={6}>
+        <FormControl fullWidth required>
+          <InputLabel id="currency-label">Currency</InputLabel>
+          <Select
+            labelId="currency-label"
+            id="currency-select"
+            value={formState.currency}
+            onChange={handleChange('currency')}
+            label="Currency"
+            disabled={loading}
+          >
+            <MenuItem value="LSL">LSL - Lesotho Loti</MenuItem>
+            <MenuItem value="USD">USD - US Dollar</MenuItem>
+            <MenuItem value="ZAR">ZAR - South African Rand</MenuItem>
+          </Select>
+        </FormControl>
+      </Grid>
+
+      {/* Urgency Level */}
+      <Grid item xs={12} md={6}>
+        <FormControl fullWidth required>
+          <InputLabel id="urgency-label">Urgency Level</InputLabel>
+          <Select
+            labelId="urgency-label"
+            id="urgency-select"
+            value={formState.isUrgent}
+            onChange={handleChange('isUrgent')}
+            label="Urgency Level"
+            disabled={loading}
+          >
+            <MenuItem value={false}>Normal</MenuItem>
+            <MenuItem value={true}>Urgent</MenuItem>
+          </Select>
+          <FormHelperText>Select 'Urgent' only if this request requires immediate attention</FormHelperText>
         </FormControl>
       </Grid>
 

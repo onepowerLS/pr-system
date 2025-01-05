@@ -405,6 +405,8 @@ export const NewPRForm = () => {
             formState={formState}
             setFormState={setFormState}
             vendors={vendors}
+            projectCategories={projectCategories}
+            sites={sites}
             approvers={availableApprovers}
             loading={loading}
             onSubmit={handleSubmit}

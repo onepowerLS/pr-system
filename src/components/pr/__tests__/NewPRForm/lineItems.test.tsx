@@ -67,10 +67,12 @@ describe('LineItemsStep', () => {
     const addButton = screen.getByRole('button', { name: /add line item/i });
     await userEvent.click(addButton);
 
-    // New line item form should be visible
-    expect(screen.getByRole('textbox', { name: /description/i })).toBeInTheDocument();
-    expect(screen.getByRole('spinbutton', { name: /quantity/i })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: /uom/i })).toBeInTheDocument();
+    // Wait for form fields to be rendered
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { 'aria-label': 'description' })).toBeInTheDocument();
+      expect(screen.getByRole('spinbutton', { 'aria-label': 'quantity' })).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { 'aria-label': 'uom' })).toBeInTheDocument();
+    });
   });
 
   it('should validate line item fields', async () => {
@@ -141,9 +143,6 @@ describe('LineItemsStep', () => {
   it('should handle file attachments', async () => {
     const setFormState = vi.fn();
     const uploadResult = {
-      name: 'test.pdf',
-      size: 123,
-      type: 'application/pdf',
       url: 'https://example.com/test.pdf',
       path: 'temp/test.pdf'
     };
@@ -171,29 +170,37 @@ describe('LineItemsStep', () => {
       />
     );
 
-    // Find the file input and trigger upload
-    const fileInput = screen.getByTestId('attach-file-input') as HTMLInputElement;
-    await userEvent.upload(fileInput, file);
-
-    // Wait for state updates
-    await waitFor(() => {
-      expect(mockStorageService.uploadToTempStorage).toHaveBeenCalledWith(file);
+    // Find and trigger file upload
+    const fileInput = screen.getByTestId('attach-file-input');
+    
+    await act(async () => {
+      await userEvent.upload(fileInput, file);
     });
 
+    // Verify upload was called
+    expect(mockStorageService.uploadToTempStorage).toHaveBeenCalledWith(file);
+
+    // Wait for state update
     await waitFor(() => {
-      expect(setFormState).toHaveBeenCalledWith(expect.objectContaining({
-        lineItems: [expect.objectContaining({
-          attachments: [expect.objectContaining({
-            name: 'test.pdf',
-            url: uploadResult.url,
-            path: uploadResult.path
-          })]
-        })]
-      }));
+      expect(setFormState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lineItems: [
+            expect.objectContaining({
+              attachments: [
+                expect.objectContaining({
+                  name: 'test.pdf',
+                  url: uploadResult.url,
+                  path: uploadResult.path
+                })
+              ]
+            })
+          ]
+        })
+      );
     });
 
-    // File should be listed
-    expect(screen.getByText('test.pdf')).toBeInTheDocument();
+    // Verify UI updates
+    expect(await screen.findByText('test.pdf')).toBeInTheDocument();
   });
 
   it('should handle loading state', () => {

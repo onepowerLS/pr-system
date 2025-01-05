@@ -35,6 +35,8 @@ interface ReviewStepProps {
   formState: FormState;
   setFormState: React.Dispatch<React.SetStateAction<FormState>>;
   vendors: ReferenceDataItem[];
+  projectCategories: ReferenceDataItem[];
+  sites: ReferenceDataItem[];
   approvers: Array<{
     id: string;
     name: string;
@@ -51,6 +53,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   formState,
   approvers,
   vendors,
+  projectCategories,
+  sites,
   loading,
   onSubmit
 }) => {
@@ -70,6 +74,20 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     if (!formState.preferredVendor) return null;
     const vendor = vendors.find(v => v.id === formState.preferredVendor);
     return vendor ? vendor.name : '';
+  };
+
+  // Get project category name for display
+  const getProjectCategoryName = () => {
+    if (!formState.projectCategory) return '';
+    const category = projectCategories.find(c => c.id === formState.projectCategory);
+    return category ? category.name : '';
+  };
+
+  // Get site name for display
+  const getSiteName = () => {
+    if (!formState.site) return '';
+    const site = sites.find(s => s.id === formState.site);
+    return site ? site.name : '';
   };
 
   // Format file size
@@ -117,19 +135,32 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             Project Details
           </Typography>
           <Box sx={{ mt: 2 }}>
-            <Typography><strong>Project Category:</strong> {formState.projectCategory}</Typography>
-            <Typography><strong>Site:</strong> {formState.site}</Typography>
-            <Typography><strong>Description:</strong> {formState.description}</Typography>
-            <Box sx={{ mt: 1 }}>
-              {formState.isUrgent && (
+            <Box sx={{ display: 'flex' }}>
+              <Typography sx={{ mr: 1 }}><strong>Project Category:</strong></Typography>
+              <Typography>{getProjectCategoryName()}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex' }}>
+              <Typography sx={{ mr: 1 }}><strong>Description:</strong></Typography>
+              <Typography>{formState.description}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex' }}>
+              <Typography sx={{ mr: 1 }}><strong>Site:</strong></Typography>
+              <Typography>{getSiteName()}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex' }}>
+              <Typography sx={{ mr: 1 }}><strong>Required Date:</strong></Typography>
+              <Typography>{formState.requiredDate}</Typography>
+            </Box>
+            {formState.isUrgent && (
+              <Box sx={{ mt: 1 }}>
                 <Chip 
                   label="URGENT" 
                   color="error" 
                   size="small" 
                   sx={{ fontWeight: 'bold' }}
                 />
-              )}
-            </Box>
+              </Box>
+            )}
           </Box>
         </Paper>
       </Grid>
@@ -164,7 +195,6 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             Approval Details
           </Typography>
           <Box sx={{ mt: 2 }}>
-            <Typography><strong>Required Date:</strong> {formState.requiredDate}</Typography>
             <Typography><strong>Approvers:</strong> {getApproverNames()}</Typography>
           </Box>
         </Paper>
@@ -188,45 +218,30 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {formState.lineItems.map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell align="right">{item.quantity}</TableCell>
-                    <TableCell>{item.uom}</TableCell>
-                    <TableCell>{item.notes}</TableCell>
-                    <TableCell>
-                      {item.attachments && item.attachments.length > 0 ? (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                          {item.attachments.map((file, fileIndex) => (
-                            <Box 
-                              key={fileIndex} 
-                              sx={{ 
-                                display: 'flex', 
-                                alignItems: 'center',
-                                gap: 1,
-                                backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                padding: '4px 8px',
-                                borderRadius: '4px'
-                              }}
-                            >
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1 }}>
-                                <AttachFileIcon fontSize="small" />
-                                <Typography 
-                                  variant="body2" 
-                                  sx={{ 
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
+                {formState.lineItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center">
+                      <Typography color="textSecondary">
+                        No items added
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  formState.lineItems.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell align="right">{item.quantity}</TableCell>
+                      <TableCell>{item.uom}</TableCell>
+                      <TableCell>{item.notes}</TableCell>
+                      <TableCell>
+                        {item.attachments && item.attachments.length > 0 ? (
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            {item.attachments.map((file, fileIndex) => (
+                              <Box key={fileIndex} sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Typography variant="body2" sx={{ mr: 1 }}>
                                   {file.name}
                                 </Typography>
-                                <Typography variant="caption" color="textSecondary">
-                                  ({formatFileSize(file.size)})
-                                </Typography>
-                              </Box>
-                              <Box>
-                                <Tooltip title="Preview">
+                                <Tooltip title="View">
                                   <IconButton
                                     size="small"
                                     onClick={() => window.open(file.url, '_blank')}
@@ -235,17 +250,15 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
                                   </IconButton>
                                 </Tooltip>
                               </Box>
-                            </Box>
-                          ))}
-                        </Box>
-                      ) : (
-                        <Typography variant="body2" color="textSecondary">
-                          No attachments
-                        </Typography>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                            ))}
+                          </Box>
+                        ) : (
+                          <Typography color="textSecondary">No attachments</Typography>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </TableContainer>

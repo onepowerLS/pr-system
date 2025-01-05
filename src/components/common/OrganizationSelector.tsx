@@ -1,24 +1,25 @@
-import { FormControl, InputLabel, Select, MenuItem } from '@mui/material';
-
-const ORGANIZATIONS = ['1PWR LESOTHO', 'SMP', 'PUECO'];
+import { Select, MenuItem, FormControl, InputLabel } from '@mui/material';
+import { organizations } from '../../services/localReferenceData';
 
 interface OrganizationSelectorProps {
   value: string;
-  onChange: (org: string) => void;
+  onChange: (value: string) => void;
 }
 
 export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorProps) => {
   return (
     <FormControl fullWidth>
-      <InputLabel>Organization</InputLabel>
+      <InputLabel id="organization-label">Organization</InputLabel>
       <Select
+        labelId="organization-label"
+        id="organization-select"
         value={value}
         label="Organization"
         onChange={(e) => onChange(e.target.value)}
       >
-        {ORGANIZATIONS.map((org) => (
-          <MenuItem key={org} value={org}>
-            {org}
+        {organizations.map((org) => (
+          <MenuItem key={org.id} value={org.id}>
+            {org.name}
           </MenuItem>
         ))}
       </Select>

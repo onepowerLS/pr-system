@@ -49,7 +49,7 @@ import { db } from '../config/firebase';
 import { PRRequest, PRStatus, User } from '../types/pr';
 import { notificationService } from './notification';
 import { calculateDaysOpen } from '../utils/formatters';
-import { deleteFile, moveToPermanentStorage } from './storage';
+import { StorageService } from './storage';
 
 const PR_COLLECTION = 'purchaseRequests';
 const functions = getFunctions();
@@ -134,7 +134,7 @@ export const prService = {
               const updatedAttachments = await Promise.all(
                 lineItem.attachments.map(async (attachment) => {
                   // Move file from temp to permanent storage
-                  const permanentPath = await moveToPermanentStorage(
+                  const permanentPath = await StorageService.moveToPermanentStorage(
                     attachment.path, // Use path instead of url
                     prNumber,        // PR number for folder structure
                     attachment.name  // Original filename
@@ -629,7 +629,7 @@ export const prService = {
           if (lineItem.attachments?.length > 0) {
             await Promise.all(lineItem.attachments.map(async (file: { url: string }) => {
               if (typeof file.url === 'string') {
-                await deleteFile(file.url);
+                await StorageService.deleteFile(file.url);
               } else {
                 console.error('Invalid file URL:', file.url);
               }
