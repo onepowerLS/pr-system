@@ -40,7 +40,23 @@
  */
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { User } from '../../types/user';
+
+/**
+ * User Interface
+ * Defines the shape of the user object
+ */
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  permissionLevel: number;
+  isActive: boolean;
+  organization: {
+    id: string;
+    name: string;
+  };
+}
 
 /**
  * Authentication State Interface
@@ -58,7 +74,7 @@ interface AuthState {
 /** Initial authentication state */
 const initialState: AuthState = {
   user: null,
-  loading: true,  // Start true to show loading on app init
+  loading: false,
   error: null,
 };
 
@@ -79,7 +95,12 @@ const authSlice = createSlice({
       state.user = action.payload;
       state.loading = false;
       state.error = null;
-      console.log('Auth: User state updated:', action.payload ? 'User set' : 'User cleared');
+      // Log the user state when it's set
+      console.log('Auth Slice: Setting user state:', {
+        email: action.payload?.email,
+        role: action.payload?.role,
+        permissionLevel: action.payload?.permissionLevel
+      });
     },
 
     /**
@@ -89,7 +110,6 @@ const authSlice = createSlice({
      */
     setLoading(state, action: PayloadAction<boolean>) {
       state.loading = action.payload;
-      console.log('Auth: Loading state updated:', action.payload);
     },
 
     /**
@@ -100,7 +120,6 @@ const authSlice = createSlice({
     setError(state, action: PayloadAction<string | null>) {
       state.error = action.payload;
       state.loading = false;
-      console.log('Auth: Error state updated:', action.payload);
     },
 
     /**
@@ -111,7 +130,6 @@ const authSlice = createSlice({
       state.user = null;
       state.loading = false;
       state.error = null;
-      console.log('Auth: User state cleared');
     },
   },
 });

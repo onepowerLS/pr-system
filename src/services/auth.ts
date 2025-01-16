@@ -34,7 +34,12 @@
 import { 
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  User as FirebaseUser
+  User as FirebaseUser,
+  AuthError,
+  AuthErrorCodes,
+  onAuthStateChanged,
+  getIdToken,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
@@ -42,58 +47,137 @@ import { User } from '../types/user';
 import { store } from '../store';
 import { setUser, clearUser, setLoading, setError } from '../store/slices/authSlice';
 
-/**
- * Signs in a user with email and password
- * @param email - User's email address
- * @param password - User's password
- * @returns Promise resolving to the signed-in user
- * @throws Error if sign-in fails
- */
+// Function to check Firebase connectivity
+// const checkFirebaseConnectivity = async (): Promise<boolean> => {
+//   try {
+//     const response = await fetch('https://firebase.googleapis.com/v1/projects/_/installations', {
+//       method: 'HEAD'
+//     });
+//     return response.ok;
+//   } catch (error) {
+//     console.error('auth.ts: Firebase connectivity check failed:', error);
+//     return false;
+//   }
+// };
+
+// Check if we're in development mode
+const isDevelopment = import.meta.env.MODE === 'development';
+
+// Function to check Firebase connectivity
+// const checkFirebaseConnectivity = async (): Promise<boolean> => {
+//   try {
+//     const response = await fetch('https://www.googleapis.com/identitytoolkit/v3/relyingparty/getAccountInfo');
+//     return response.status !== 0; // If status is 0, there's no connectivity
+//   } catch (error) {
+//     console.error('auth.ts: Firebase connectivity check failed:', error);
+//     return false;
+//   }
+// };
+
+let refreshTokenInterval: NodeJS.Timeout | null = null;
+
+const startTokenRefresh = async (user: FirebaseUser) => {
+  if (refreshTokenInterval) {
+    clearInterval(refreshTokenInterval);
+  }
+
+  // Refresh token every 30 minutes
+  refreshTokenInterval = setInterval(async () => {
+    try {
+      await getIdToken(user, true);
+      console.log('auth.ts: Token refreshed successfully');
+    } catch (error) {
+      console.error('auth.ts: Token refresh failed:', error);
+      // Force re-login if token refresh fails
+      await signOut();
+    }
+  }, 30 * 60 * 1000);
+};
+
 export const signIn = async (email: string, password: string): Promise<void> => {
   console.log('auth.ts: Attempting sign in');
   try {
     store.dispatch(setLoading(true));
     store.dispatch(setError(null));
 
+    // Clear any existing token refresh
+    if (refreshTokenInterval) {
+      clearInterval(refreshTokenInterval);
+      refreshTokenInterval = null;
+    }
+
+    console.log('auth.ts: Calling Firebase signInWithEmailAndPassword');
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+    console.log('auth.ts: Firebase sign in successful, getting user document');
+    
+    // Start token refresh
+    await startTokenRefresh(userCredential.user);
+    
+    // Look up user by email instead of UID
+    const userDoc = await getDoc(doc(db, 'users', email));
+    console.log('auth.ts: User document exists:', userDoc.exists());
     
     if (!userDoc.exists()) {
       throw new Error('User account not found. Please contact support.');
     }
 
     const userData = userDoc.data() as Omit<User, 'id'>;
+    console.log('auth.ts: User data:', JSON.stringify(userData, null, 2));
+    
     const user: User = {
-      id: userCredential.user.uid,
-      ...userData
+      id: email,
+      ...userData,
+      // Set default values for required fields if they don't exist
+      role: userData.role || 'USER',
+      permissionLevel: userData.permissionLevel || 4,
+      isActive: userData.isActive ?? true,
+      name: userData.name || email.split('@')[0],
+      organization: userData.organization || {
+        id: 'default',
+        name: 'Default Organization',
+        isActive: true
+      }
     };
 
+    console.log('auth.ts: Final user object:', JSON.stringify(user, null, 2));
     store.dispatch(setUser(user));
     console.log('auth.ts: Sign in successful');
   } catch (error) {
     console.error('auth.ts: Sign in failed:', error);
+    console.error('auth.ts: Error type:', error instanceof Error ? 'Error' : typeof error);
+    console.error('auth.ts: Error code:', error instanceof Error ? (error as any).code : 'no code');
+    console.error('auth.ts: Error message:', error instanceof Error ? error.message : error);
+    
     let errorMessage = 'Failed to sign in';
     
     if (error instanceof Error) {
+      const authError = error as AuthError;
       // Handle specific Firebase Auth errors
-      switch (error.message) {
-        case 'auth/user-not-found':
+      switch (authError.code) {
+        case AuthErrorCodes.USER_DELETED:
           errorMessage = 'No account found with this email';
           break;
-        case 'auth/wrong-password':
+        case AuthErrorCodes.INVALID_PASSWORD:
           errorMessage = 'Incorrect password';
           break;
-        case 'auth/invalid-email':
+        case AuthErrorCodes.INVALID_EMAIL:
           errorMessage = 'Invalid email address';
           break;
-        case 'auth/user-disabled':
+        case AuthErrorCodes.USER_DISABLED:
           errorMessage = 'This account has been disabled';
+          break;
+        case AuthErrorCodes.INVALID_LOGIN_CREDENTIALS:
+          errorMessage = 'Invalid email or password';
+          break;
+        case AuthErrorCodes.NETWORK_REQUEST_FAILED:
+          errorMessage = 'Network error. Please check your internet connection and try again.';
           break;
         default:
           errorMessage = error.message;
       }
     }
     
+    console.error('auth.ts: Final error message:', errorMessage);
     store.dispatch(setError(errorMessage));
     throw new Error(errorMessage);
   } finally {
@@ -107,41 +191,50 @@ export const signIn = async (email: string, password: string): Promise<void> => 
  * @throws Error if sign-out fails
  */
 export const signOut = async (): Promise<void> => {
-  console.log('auth.ts: Attempting sign out');
   try {
+    // Clear token refresh
+    if (refreshTokenInterval) {
+      clearInterval(refreshTokenInterval);
+      refreshTokenInterval = null;
+    }
+
     await firebaseSignOut(auth);
     store.dispatch(clearUser());
-    console.log('auth.ts: Sign out successful');
   } catch (error) {
     console.error('auth.ts: Sign out failed:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to sign out';
-    store.dispatch(setError(errorMessage));
-    throw new Error(errorMessage);
+    throw error;
   }
 };
 
 /**
  * Retrieves user details from Firestore
- * @param uid - User's unique ID
+ * @param email - User's email address
  * @returns Promise resolving to the user details or null if not found
  */
-export const getUserDetails = async (uid: string): Promise<User | null> => {
-  console.log('auth.ts: Getting user details for:', uid);
+export const getUserDetails = async (email: string): Promise<User | null> => {
   try {
-    const userDoc = await getDoc(doc(db, 'users', uid));
-    
+    const userDoc = await getDoc(doc(db, 'users', email));
     if (!userDoc.exists()) {
-      console.error('auth.ts: No user document found for:', uid);
       return null;
     }
 
     const userData = userDoc.data() as Omit<User, 'id'>;
     return {
-      id: uid,
-      ...userData
+      id: email,
+      ...userData,
+      // Set default values for required fields if they don't exist
+      role: userData.role || 'USER',
+      permissionLevel: userData.permissionLevel || 4,
+      isActive: userData.isActive ?? true,
+      name: userData.name || '',
+      organization: userData.organization || {
+        id: 'default',
+        name: 'Default Organization',
+        isActive: true
+      }
     };
   } catch (error) {
-    console.error('auth.ts: Failed to get user details:', error);
+    console.error('auth.ts: Get user details failed:', error);
     throw error;
   }
 };
@@ -151,29 +244,12 @@ export const getUserDetails = async (uid: string): Promise<User | null> => {
  * @returns Promise resolving to the current user or null if not signed in
  */
 export const getCurrentUser = async (): Promise<User | null> => {
-  console.log('auth.ts: Getting current user');
-  try {
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      console.log('auth.ts: No current user found');
-      return null;
-    }
-
-    const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-    if (!userDoc.exists()) {
-      console.error('auth.ts: User document not found');
-      return null;
-    }
-
-    const userData = userDoc.data() as Omit<User, 'id'>;
-    return {
-      id: currentUser.uid,
-      ...userData
-    };
-  } catch (error) {
-    console.error('auth.ts: Error getting current user:', error);
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
     return null;
   }
+
+  return getUserDetails(currentUser.email as string);
 };
 
 /**
@@ -187,15 +263,25 @@ export const initializeAuthListener = (): void => {
     
     try {
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.email as string));
         if (!userDoc.exists()) {
           throw new Error('User document not found');
         }
 
         const userData = userDoc.data() as Omit<User, 'id'>;
         const user: User = {
-          id: firebaseUser.uid,
-          ...userData
+          id: firebaseUser.email as string,
+          ...userData,
+          // Set default values for required fields if they don't exist
+          role: userData.role || 'USER',
+          permissionLevel: userData.permissionLevel || 4,
+          isActive: userData.isActive ?? true,
+          name: userData.name || '',
+          organization: userData.organization || {
+            id: 'default',
+            name: 'Default Organization',
+            isActive: true
+          }
         };
 
         store.dispatch(setUser(user));
@@ -209,4 +295,46 @@ export const initializeAuthListener = (): void => {
       store.dispatch(setLoading(false));
     }
   });
+};
+
+/**
+ * Resets the password for the given email
+ * @param email - User's email address
+ * @returns Promise<void>
+ * @throws Error if password reset fails
+ */
+export const resetPassword = async (email: string): Promise<void> => {
+  console.log('auth.ts: Attempting password reset for:', email);
+  try {
+    store.dispatch(setLoading(true));
+    store.dispatch(setError(null));
+
+    await sendPasswordResetEmail(auth, email);
+    console.log('auth.ts: Password reset email sent successfully');
+  } catch (error) {
+    console.error('auth.ts: Password reset failed:', error);
+    let errorMessage = 'Failed to send password reset email';
+    
+    if (error instanceof Error) {
+      const authError = error as AuthError;
+      switch (authError.code) {
+        case AuthErrorCodes.USER_DELETED:
+          errorMessage = 'No account found with this email';
+          break;
+        case AuthErrorCodes.INVALID_EMAIL:
+          errorMessage = 'Invalid email address';
+          break;
+        case AuthErrorCodes.NETWORK_REQUEST_FAILED:
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+          break;
+        default:
+          errorMessage = error.message;
+      }
+    }
+    
+    store.dispatch(setError(errorMessage));
+    throw new Error(errorMessage);
+  } finally {
+    store.dispatch(setLoading(false));
+  }
 };

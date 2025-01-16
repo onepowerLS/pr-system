@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Box, Button, TextField, Typography, CircularProgress } from '@mui/material';
-import { signIn } from '../../services/auth';
+import { Box, Button, TextField, Typography, CircularProgress, Link } from '@mui/material';
+import { signIn, resetPassword } from '../../services/auth';
 import { setError } from '../../store/slices/authSlice';
 import { RootState } from '../../store';
 
@@ -13,6 +13,7 @@ export const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [resetSent, setResetSent] = useState(false);
   const globalError = useSelector((state: RootState) => state.auth.error);
   const isAuthenticated = useSelector((state: RootState) => !!state.auth.user);
 
@@ -44,6 +45,28 @@ export const LoginPage = () => {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!email) {
+      setLocalError('Please enter your email address');
+      return;
+    }
+
+    setLoading(true);
+    setLocalError(null);
+    dispatch(setError(null));
+
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (error) {
+      console.error('LoginPage: Password reset error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Password reset failed';
+      setLocalError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (isAuthenticated) {
     return null;
   }
@@ -57,7 +80,6 @@ export const LoginPage = () => {
         justifyContent: 'center',
         minHeight: '100vh',
         padding: 3,
-        backgroundColor: '#f5f5f5',
       }}
     >
       <Box
@@ -67,18 +89,24 @@ export const LoginPage = () => {
           width: '100%',
           maxWidth: 400,
           p: 4,
-          backgroundColor: 'white',
           borderRadius: 2,
-          boxShadow: 1,
+          bgcolor: 'background.paper',
+          boxShadow: 3,
         }}
       >
-        <Typography variant="h4" component="h1" gutterBottom textAlign="center">
-          PR System Login
+        <Typography component="h1" variant="h5" sx={{ mb: 3 }}>
+          Sign In
         </Typography>
 
         {(localError || globalError) && (
-          <Typography color="error" sx={{ mb: 2 }} textAlign="center">
+          <Typography color="error" sx={{ mb: 2 }}>
             {localError || globalError}
+          </Typography>
+        )}
+
+        {resetSent && (
+          <Typography color="success.main" sx={{ mb: 2 }}>
+            Password reset email sent. Please check your inbox.
           </Typography>
         )}
 
@@ -117,12 +145,19 @@ export const LoginPage = () => {
           sx={{ mt: 3, mb: 2 }}
           disabled={loading}
         >
-          {loading ? (
-            <CircularProgress size={24} color="inherit" />
-          ) : (
-            'Sign In'
-          )}
+          {loading ? <CircularProgress size={24} /> : 'Sign In'}
         </Button>
+
+        <Box sx={{ mt: 2, textAlign: 'center' }}>
+          <Link
+            component="button"
+            variant="body2"
+            onClick={handleResetPassword}
+            disabled={loading}
+          >
+            Forgot password?
+          </Link>
+        </Box>
       </Box>
     </Box>
   );
