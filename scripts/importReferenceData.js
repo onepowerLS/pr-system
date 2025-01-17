@@ -10,7 +10,134 @@ admin.initializeApp({
 
 const db = admin.firestore();
 const COLLECTION_PREFIX = 'referenceData';
-const DEFAULT_ORGANIZATION = '1pwr_lesotho'; // Default organization
+
+// Organizations data
+const organizations = [
+  { 
+    id: '1pwr_lesotho',
+    code: '1PWR_LSO',
+    name: '1PWR LESOTHO',
+    shortName: '1PWR LSO',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
+  },
+  { 
+    id: '1pwr_benin',
+    code: '1PWR_BEN',
+    name: '1PWR BENIN',
+    shortName: '1PWR BEN',
+    country: 'Benin',
+    timezone: 'Africa/Porto-Novo',
+    currency: 'XOF',
+    active: true
+  },
+  { 
+    id: '1pwr_zambia',
+    code: '1PWR_ZAM',
+    name: '1PWR ZAMBIA',
+    shortName: '1PWR ZAM',
+    country: 'Zambia',
+    timezone: 'Africa/Lusaka',
+    currency: 'ZMW',
+    active: false
+  },
+  { 
+    id: 'pueco_lesotho',
+    code: 'PUECO_LSO',
+    name: 'PUECO LESOTHO',
+    shortName: 'PUECO LSO',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
+  },
+  { 
+    id: 'pueco_benin',
+    code: 'PUECO_BEN',
+    name: 'PUECO BENIN',
+    shortName: 'PUECO BEN',
+    country: 'Benin',
+    timezone: 'Africa/Porto-Novo',
+    currency: 'XOF',
+    active: false
+  },
+  { 
+    id: 'neo1',
+    code: 'NEO1',
+    name: 'NEO1',
+    shortName: 'NEO1',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
+  },
+  { 
+    id: 'smp',
+    code: 'SMP',
+    name: 'SMP',
+    shortName: 'SMP',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
+  }
+];
+
+// Permissions data
+const permissions = [
+  {
+    id: 'admin',
+    code: 'ADMIN',
+    name: 'Administrator',
+    description: 'Full system access',
+    level: 1,
+    actions: ['*'],
+    scope: ['*'],
+    active: true
+  },
+  {
+    id: 'proc_mgr',
+    code: 'PROC_MGR',
+    name: 'Procurement Manager',
+    description: 'Can manage procurement process and view Admin Dashboard and edit select Admin Dashboard items',
+    level: 2,
+    actions: ['create', 'read', 'update', 'delete', 'approve'],
+    scope: ['pr', 'po', 'vendors'],
+    active: true
+  },
+  {
+    id: 'dept_head',
+    code: 'DEPT_HEAD',
+    name: 'Department Head',
+    description: 'Can approve department requests and view (but not edit) Admin Dashboard',
+    level: 4,
+    actions: ['read', 'approve'],
+    scope: ['pr'],
+    active: true
+  },
+  {
+    id: 'fin_ad',
+    code: 'FIN_AD',
+    name: 'Finance Admin',
+    description: 'Can process procurement requests and view (but not edit) Admin Dashboard',
+    level: 3,
+    actions: ['create', 'read', 'update'],
+    scope: ['pr', 'po'],
+    active: true
+  },
+  {
+    id: 'requester',
+    code: 'REQ',
+    name: 'Requester',
+    description: 'Can create and view requests',
+    level: 5,
+    actions: ['create', 'read'],
+    scope: ['pr'],
+    active: true
+  }
+];
 
 function generateId(name) {
   return name
@@ -49,85 +176,106 @@ async function importFromCsv(type, csvPath, options = {}) {
     const importBatch = db.batch();
 
     // Process each record
-    records.forEach((record) => {
-      const item = {
-        organization: DEFAULT_ORGANIZATION // Add default organization to all items
-      };
-      
-      // Map CSV columns to Firestore fields based on type
-      switch (type) {
-        case 'vehicles':
-          item.name = record['Vehicle Designation'];
-          item.code = record['Registration Status'] || '';
-          item.active = record['Active (Y/N)'].toUpperCase() === 'Y';
-          break;
-        case 'sites':
-          item.name = record['Site Name'];
-          item.code = record['Code'];
-          item.active = record['Active (Y/N)'].toUpperCase() === 'Y';
-          break;
-        case 'departments':
-          item.name = record['Department Name'];
-          item.active = record['Active Status (Y/N)'].toUpperCase() === 'Y';
-          break;
-        case 'projectCategories':
-          item.name = record['Category'];
-          item.active = record['Active (Y/N)'].toUpperCase() === 'Y';
-          break;
-        case 'expenseTypes':
-          item.name = record['Expense Type'];
-          item.code = record['Code'];
-          item.active = record['Active (Y/N)'].toUpperCase() === 'Y';
-          break;
-        case 'vendors':
-          item.organization = ''; // Set empty string for vendors to indicate organization-independent
-          item.name = record['Vendor Name'];
-          item.active = record['Approved Status (Y/N)']?.toUpperCase() === 'Y' || false; // Default to false if missing
-          item.approvalDate = record['Approval Date'];
-          item.contactName = record['Contact Name'] || '';
-          item.contactEmail = record['Contact Email'] || '';
-          item.contactPhone = record['Contact Phone'] || '';
-          item.address = record['Address'] || '';
-          item.url = record['URL'] || '';
-          item.notes = record['Notes'] || '';
-          break;
-        default:
-          console.warn(`Unknown type: ${type}`);
-          return;
-      }
-
-      // Generate ID from name
-      const id = generateId(item.name);
+    for (const record of records) {
+      const id = options.generateId ? options.generateId(record) : record.id || generateId(record.name);
       const docRef = db.collection(collectionName).doc(id);
-      
-      console.log(`Adding ${type}:`, item);
-      importBatch.set(docRef, { id, ...item });
-    });
+
+      // Transform record if needed
+      const data = options.transform ? options.transform(record) : record;
+
+      // Add to batch
+      importBatch.set(docRef, {
+        ...data,
+        id,
+        createdAt: new Date().toISOString()
+      });
+    }
 
     // Commit the batch
     await importBatch.commit();
     console.log(`Successfully imported ${records.length} ${type}`);
   } catch (error) {
     console.error(`Error importing ${type}:`, error);
-    process.exit(1);
+    throw error;
+  }
+}
+
+async function importOrganizationsAndPermissions() {
+  try {
+    // Import organizations
+    console.log('\nImporting organizations...');
+    const organizationsCollection = db.collection(`${COLLECTION_PREFIX}_organizations`);
+    const orgBatch = db.batch();
+
+    // Clear existing organizations
+    const orgSnapshot = await organizationsCollection.get();
+    orgSnapshot.docs.forEach((doc) => {
+      orgBatch.delete(doc.ref);
+    });
+    await orgBatch.commit();
+    console.log('Cleared existing organizations');
+
+    // Import new organizations
+    const newOrgBatch = db.batch();
+    organizations.forEach((org) => {
+      const docRef = organizationsCollection.doc(org.id);
+      newOrgBatch.set(docRef, {
+        ...org,
+        createdAt: new Date().toISOString()
+      });
+    });
+    await newOrgBatch.commit();
+    console.log(`Successfully imported ${organizations.length} organizations`);
+
+    // Import permissions
+    console.log('\nImporting permissions...');
+    const permissionsCollection = db.collection(`${COLLECTION_PREFIX}_permissions`);
+    const permBatch = db.batch();
+
+    // Clear existing permissions
+    const permSnapshot = await permissionsCollection.get();
+    permSnapshot.docs.forEach((doc) => {
+      permBatch.delete(doc.ref);
+    });
+    await permBatch.commit();
+    console.log('Cleared existing permissions');
+
+    // Import new permissions
+    const newPermBatch = db.batch();
+    permissions.forEach((perm) => {
+      const docRef = permissionsCollection.doc(perm.id);
+      newPermBatch.set(docRef, {
+        ...perm,
+        createdAt: new Date().toISOString()
+      });
+    });
+    await newPermBatch.commit();
+    console.log(`Successfully imported ${permissions.length} permissions`);
+
+  } catch (error) {
+    console.error('Error importing organizations and permissions:', error);
+    throw error;
   }
 }
 
 async function importAllReferenceData() {
   try {
-    // Import each type from its CSV file
-    await importFromCsv('vehicles', path.join(__dirname, '..', 'Vehicle.csv'));
-    await importFromCsv('sites', path.join(__dirname, '..', 'Sites.csv'));
+    // Import organizations and permissions first
+    await importOrganizationsAndPermissions();
+
+    // Import other reference data from CSV files
     await importFromCsv('departments', path.join(__dirname, '..', 'Departments.csv'));
-    await importFromCsv('projectCategories', path.join(__dirname, '..', 'Project Categories.csv'));
+    await importFromCsv('sites', path.join(__dirname, '..', 'Sites.csv'));
     await importFromCsv('expenseTypes', path.join(__dirname, '..', 'Expense Type.csv'));
+    await importFromCsv('projectCategories', path.join(__dirname, '..', 'Project Categories.csv'));
+    await importFromCsv('vehicles', path.join(__dirname, '..', 'Vehicle.csv'));
     await importFromCsv('vendors', path.join(__dirname, '..', 'Vendor.csv'));
 
-    console.log('\nAll reference data imported successfully');
-    process.exit(0);
+    console.log('\nAll reference data imported successfully!');
   } catch (error) {
     console.error('Error importing reference data:', error);
-    process.exit(1);
+  } finally {
+    process.exit();
   }
 }
 

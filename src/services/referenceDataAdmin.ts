@@ -3,6 +3,7 @@ import { db } from "@/config/firebase"
 import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, writeBatch, setDoc, getDoc } from "firebase/firestore"
 
 const COLLECTION_PREFIX = "referenceData"
+const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations']
 
 export class ReferenceDataAdminService {
   private getCollectionName(type: string) {
@@ -31,8 +32,8 @@ export class ReferenceDataAdminService {
     console.log(`Adding item to collection: ${collectionName}`, item);
     const collectionRef = collection(db, collectionName);
 
-    // For currencies and UOM, use code as ID
-    if ((type === 'currencies' || type === 'uom') && item.code) {
+    // For code-based ID types, use code as ID
+    if (CODE_BASED_ID_TYPES.includes(type as any) && item.code) {
       const id = item.code.toLowerCase();
       console.log(`Setting document with ID: ${id}`);
       const docRef = doc(collectionRef, id);
@@ -40,7 +41,7 @@ export class ReferenceDataAdminService {
       // Check if document already exists
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        throw new Error(`A ${type === 'currencies' ? 'currency' : 'unit of measure'} with code ${item.code} already exists`);
+        throw new Error(`A ${type === 'currencies' ? 'currency' : type === 'uom' ? 'unit of measure' : 'organization'} with code ${item.code} already exists`);
       }
 
       await setDoc(docRef, {
@@ -92,7 +93,10 @@ export class ReferenceDataAdminService {
     const collectionName = this.getCollectionName(type);
     console.log(`Updating item in collection: ${collectionName} with ID: ${id}`, item);
     const docRef = doc(db, collectionName, id);
-    await updateDoc(docRef, item);
+    await updateDoc(docRef, {
+      ...item,
+      updatedAt: new Date().toISOString()
+    });
     console.log(`Updated item in collection: ${collectionName} with ID: ${id}`);
   }
 

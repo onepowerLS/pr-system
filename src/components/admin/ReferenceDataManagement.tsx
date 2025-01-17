@@ -37,10 +37,15 @@ const REFERENCE_DATA_TYPES = {
   vehicles: "Vehicles",
   vendors: "Vendors",
   currencies: "Currencies",
-  uom: "Units of Measure"
+  uom: "Units of Measure",
+  organizations: "Organizations",
+  permissions: "Permissions"
 } as const
 
 type ReferenceDataType = keyof typeof REFERENCE_DATA_TYPES
+
+const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'uom', 'permissions', 'organizations'] as const;
+const CODE_BASED_ID_TYPES = ['currencies', 'uom'] as const;
 
 const SEED_DATA = {
   departments: [
@@ -49,62 +54,132 @@ const SEED_DATA = {
     { id: 'project_management', name: 'Project Management', active: true },
     { id: 'engineering', name: 'Engineering', active: true },
     { id: 'procurement', name: 'Procurement', active: true },
-    { id: 'finance', name: 'Finance', active: true },
-    { id: 'hr', name: 'Human Resources', active: true },
-    { id: 'legal', name: 'Legal', active: true },
-    { id: 'it', name: 'Information Technology', active: true },
-    { id: 'operations', name: 'Operations', active: true },
-    { id: 'ehs', name: 'EHS', active: true },
-    { id: 'communications', name: 'Communications', active: true }
   ],
-  projectCategories: [
-    { id: '1:20mw', name: '1:20MW', active: true },
-    { id: '2:engineering_randd', name: '2:Engineering R&D', active: true },
-    { id: '4:minigrids', name: '4:Minigrids', active: true },
-    { id: '5:general', name: '5:General', active: true },
-    { id: 'maintenance', name: 'Maintenance', active: true },
-    { id: 'expansion', name: 'Expansion', active: true },
-    { id: 'operations', name: 'Operations', active: true }
+  organizations: [
+    { 
+      id: '1pwr_lesotho',
+      code: '1PWR_LSO',
+      name: '1PWR LESOTHO',
+      shortName: '1PWR LSO',
+      country: 'Lesotho',
+      timezone: 'Africa/Maseru',
+      currency: 'LSL',
+      active: true
+    },
+    { 
+      id: '1pwr_benin',
+      code: '1PWR_BEN',
+      name: '1PWR BENIN',
+      shortName: '1PWR BEN',
+      country: 'Benin',
+      timezone: 'Africa/Porto-Novo',
+      currency: 'XOF',
+      active: true
+    },
+    { 
+      id: '1pwr_zambia',
+      code: '1PWR_ZAM',
+      name: '1PWR ZAMBIA',
+      shortName: '1PWR ZAM',
+      country: 'Zambia',
+      timezone: 'Africa/Lusaka',
+      currency: 'ZMW',
+      active: false
+    },
+    { 
+      id: 'pueco_lesotho',
+      code: 'PUECO_LSO',
+      name: 'PUECO LESOTHO',
+      shortName: 'PUECO LSO',
+      country: 'Lesotho',
+      timezone: 'Africa/Maseru',
+      currency: 'LSL',
+      active: true
+    },
+    { 
+      id: 'pueco_benin',
+      code: 'PUECO_BEN',
+      name: 'PUECO BENIN',
+      shortName: 'PUECO BEN',
+      country: 'Benin',
+      timezone: 'Africa/Porto-Novo',
+      currency: 'XOF',
+      active: false
+    },
+    { 
+      id: 'neo1',
+      code: 'NEO1',
+      name: 'NEO1',
+      shortName: 'NEO1',
+      country: 'Lesotho',
+      timezone: 'Africa/Maseru',
+      currency: 'LSL',
+      active: true
+    },
+    { 
+      id: 'smp',
+      code: 'SMP',
+      name: 'SMP',
+      shortName: 'SMP',
+      country: 'Lesotho',
+      timezone: 'Africa/Maseru',
+      currency: 'LSL',
+      active: true
+    }
   ],
-  sites: [
-    { id: 'ha_makebe', name: 'Ha Makebe', code: 'MAK', active: true },
-    { id: 'ha_raliemere', name: 'Ha Raliemere', code: 'RAL', active: true },
-    { id: 'tosing', name: 'Tosing', code: 'TOS', active: true },
-    { id: 'sebapala', name: 'Sebapala', code: 'SEB', active: true },
-    { id: 'sehlabathebe', name: 'Sehlabathebe', code: 'SEH', active: true },
-    { id: 'sehonghong', name: 'Sehonghong', code: 'SHG', active: true },
-    { id: 'mashai', name: 'Mashai', code: 'MAS', active: true },
-    { id: 'matsoaing', name: 'Matsoaing', code: 'MAT', active: true },
-    { id: 'lebakeng', name: 'Lebakeng', code: 'LEB', active: true },
-    { id: 'tlhanyaku', name: 'Tlhanyaku', code: 'TLH', active: true },
-    { id: 'ribaneng', name: 'Ribaneng', code: 'RIB', active: true }
-  ],
-  expenseTypes: [
-    { id: 'audit_+_accounting_fees', name: '1 - Audit + Accounting Fees', code: '1', active: true },
-    { id: 'bank_fees', name: '2 - Bank Fees', code: '2', active: true },
-    { id: 'materials_and_supplies', name: '3A - Materials and supplies (including fees to clearing agents)', code: '3A', active: true },
-    { id: 'materials_and_supplies_ehs', name: '3B - Materials and supplies - EHS items (other than PPE)', code: '3B', active: true },
-    { id: 'vehicle', name: '4 - Vehicle', code: '4', active: true }
-  ],
-  vehicles: [
-    { id: 'v001', name: 'Toyota Hilux (ABC123)', active: true, organization: '1PWR LESOTHO' },
-    { id: 'v002', name: 'Ford Ranger (XYZ789)', active: true, organization: '1PWR LESOTHO' },
-    { id: 'v003', name: 'Isuzu D-Max (DEF456)', active: true, organization: '1PWR LESOTHO' }
-  ],
-  vendors: [
-    { id: 'other', name: 'Other', active: true },
-    { id: 'herholdts', name: 'Herholdts', active: true },
-    { id: 'revenue_services_lesotho', name: 'Revenue Services Lesotho', active: true },
-    { id: 'lesotho_electricity_company', name: 'Lesotho Electricity Company', active: true }
-  ],
-  currencies: [
-    { id: 'lsl', name: 'Lesotho Loti', code: 'LSL', active: true },
-    { id: 'zar', name: 'South African Rand', code: 'ZAR', active: true },
-    { id: 'usd', name: 'US Dollar', code: 'USD', active: true },
-    { id: 'eur', name: 'Euro', code: 'EUR', active: true },
-    { id: 'gbp', name: 'British Pound', code: 'GBP', active: true }
+  permissions: [
+    {
+      id: 'admin',
+      code: 'ADMIN',
+      name: 'Administrator',
+      description: 'Full system access',
+      level: 1,
+      actions: ['*'],
+      scope: ['*'],
+      active: true
+    },
+    {
+      id: 'procurement_manager',
+      code: 'PROC_MGR',
+      name: 'Procurement Manager',
+      description: 'Can manage procurement process',
+      level: 2,
+      actions: ['create', 'read', 'update', 'delete', 'approve'],
+      scope: ['pr', 'po', 'vendors'],
+      active: true
+    },
+    {
+      id: 'procurement_officer',
+      code: 'PROC_OFF',
+      name: 'Procurement Officer',
+      description: 'Can process procurement requests',
+      level: 3,
+      actions: ['create', 'read', 'update'],
+      scope: ['pr', 'po'],
+      active: true
+    },
+    {
+      id: 'department_head',
+      code: 'DEPT_HEAD',
+      name: 'Department Head',
+      description: 'Can approve department requests',
+      level: 4,
+      actions: ['read', 'approve'],
+      scope: ['pr'],
+      active: true
+    },
+    {
+      id: 'requester',
+      code: 'REQ',
+      name: 'Requester',
+      description: 'Can create and view requests',
+      level: 5,
+      actions: ['create', 'read'],
+      scope: ['pr'],
+      active: true
+    }
   ]
-}
+} as const;
 
 export function ReferenceDataManagement() {
   const [selectedType, setSelectedType] = useState<ReferenceDataType>("departments")
@@ -154,7 +229,54 @@ export function ReferenceDataManagement() {
 
   // Check if the type is organization-independent
   const isOrgIndependentType = (type: ReferenceDataType): boolean => {
-    return ['vendors', 'currencies', 'uom'].includes(type);
+    return ORG_INDEPENDENT_TYPES.includes(type as any);
+  };
+
+  // Check if the type uses code as ID
+  const isCodeBasedIdType = (type: ReferenceDataType): boolean => {
+    return CODE_BASED_ID_TYPES.includes(type as any);
+  };
+
+  // Get form fields based on type
+  const getFormFields = (type: ReferenceDataType): Array<{
+    name: keyof ReferenceDataItem;
+    label: string;
+    required?: boolean;
+    type?: string;
+  }> => {
+    const commonFields = [
+      { name: 'name', label: 'Name', required: true },
+      { name: 'code', label: 'Code', required: isCodeBasedIdType(type) }
+    ];
+
+    switch (type) {
+      case 'vendors':
+        return [
+          ...commonFields,
+          { name: 'contactName', label: 'Contact Name' },
+          { name: 'contactEmail', label: 'Contact Email' },
+          { name: 'contactPhone', label: 'Contact Phone' },
+          { name: 'address', label: 'Address' },
+          { name: 'url', label: 'Website URL' },
+          { name: 'notes', label: 'Notes' }
+        ];
+      case 'organizations':
+        return [
+          ...commonFields,
+          { name: 'shortName', label: 'Short Name' },
+          { name: 'country', label: 'Country' },
+          { name: 'timezone', label: 'Timezone' },
+          { name: 'currency', label: 'Default Currency' }
+        ];
+      case 'permissions':
+        return [
+          ...commonFields,
+          { name: 'level', label: 'Permission Level', type: 'number' },
+          { name: 'description', label: 'Description' }
+        ];
+      default:
+        return commonFields;
+    }
   };
 
   // Load organizations on mount
@@ -291,10 +413,21 @@ export function ReferenceDataManagement() {
   };
 
   const handleEdit = (item: ReferenceDataItem) => {
-    setEditItem(item)
-    setIsDialogOpen(true)
-    setFormErrors({})
-  }
+    // Create a copy of the item to avoid modifying the original
+    const itemCopy = { ...item };
+    
+    // For permissions, ensure we have all required fields
+    if (selectedType === 'permissions') {
+      itemCopy.level = itemCopy.level || 5; // Default to lowest level
+      itemCopy.description = itemCopy.description || '';
+      itemCopy.actions = itemCopy.actions || [];
+      itemCopy.scope = itemCopy.scope || [];
+    }
+    
+    setEditItem(itemCopy);
+    setIsDialogOpen(true);
+    setFormErrors({});
+  };
 
   const handleSave = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault(); // Prevent form submission
@@ -312,13 +445,38 @@ export function ReferenceDataManagement() {
       }
 
       const itemToSave = { 
+        ...editItem,  // Keep all existing fields
         code: editItem.code.trim(),
         name: editItem.name.trim(),
-        active: true
+        active: editItem.active ?? true
       };
-      
-      console.log('Saving item:', itemToSave);
-      await referenceDataAdminService.addItem(selectedType, itemToSave);
+
+      // Generate new ID for permissions based on code
+      if (selectedType === 'permissions') {
+        const newId = editItem.code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        if (editItem.id && editItem.id !== newId) {
+          // Delete old document
+          await referenceDataAdminService.deleteItem(selectedType, editItem.id);
+          // Set new ID
+          itemToSave.id = newId;
+          // Add as new document
+          await referenceDataAdminService.addItem(selectedType, itemToSave);
+        } else if (!editItem.id) {
+          // New item - set ID based on code
+          itemToSave.id = newId;
+          await referenceDataAdminService.addItem(selectedType, itemToSave);
+        } else {
+          // Update existing item (ID hasn't changed)
+          await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
+        }
+      } else {
+        // Handle non-permission items as before
+        if (editItem.id) {
+          await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
+        } else {
+          await referenceDataAdminService.addItem(selectedType, itemToSave);
+        }
+      }
 
       // Refresh items list
       const updatedItems = await referenceDataAdminService.getItems(selectedType);
@@ -329,9 +487,10 @@ export function ReferenceDataManagement() {
       setFormErrors({});
       
       // Show success message using global snackbar
+      const itemType = REFERENCE_DATA_TYPES[selectedType].slice(0, -1); // Remove 's' from plural
       setSnackbar({
         open: true,
-        message: `${selectedType === 'currencies' ? 'Currency' : 'Unit of Measure'} ${itemToSave.code} added successfully`,
+        message: `${itemType} ${itemToSave.code} ${editItem.id ? 'updated' : 'added'} successfully`,
         severity: 'success',
         autoHideDuration: 3000
       });
@@ -445,6 +604,11 @@ export function ReferenceDataManagement() {
                   <TableCell>URL</TableCell>
                   <TableCell>Notes</TableCell>
                 </>
+              ) : selectedType === 'permissions' ? (
+                <>
+                  <TableCell>Level</TableCell>
+                  <TableCell>Description</TableCell>
+                </>
               ) : !isOrgIndependentType(selectedType) ? (
                 <TableCell>Organization</TableCell>
               ) : null}
@@ -467,6 +631,11 @@ export function ReferenceDataManagement() {
                     <TableCell>{item.address}</TableCell>
                     <TableCell>{item.url}</TableCell>
                     <TableCell>{item.notes}</TableCell>
+                  </>
+                ) : selectedType === 'permissions' ? (
+                  <>
+                    <TableCell>{item.level}</TableCell>
+                    <TableCell>{item.description}</TableCell>
                   </>
                 ) : !isOrgIndependentType(selectedType) ? (
                   <TableCell>
@@ -518,114 +687,21 @@ export function ReferenceDataManagement() {
         </DialogTitle>
         <DialogContent>
           <Box component="form" onSubmit={handleFormSubmit} sx={{ mt: 2 }}>
-            <TextField
-              fullWidth
-              label="Name"
-              value={editItem?.name || ''}
-              onChange={(e) => setEditItem({ ...editItem, name: e.target.value } as ReferenceDataItem)}
-              error={!!formErrors.name}
-              helperText={formErrors.name}
-              sx={{ mb: 2 }}
-            />
-            
-            {/* Only show code field for non-vendor types */}
-            {selectedType !== 'vendors' && (
+            {getFormFields(selectedType).map((field, index) => (
               <TextField
+                key={index}
                 fullWidth
-                label="Code"
-                value={editItem?.code || ''}
-                onChange={(e) => setEditItem({ ...editItem, code: e.target.value } as ReferenceDataItem)}
+                label={field.label}
+                value={editItem?.[field.name] || ''}
+                onChange={(e) => setEditItem({ ...editItem, [field.name]: e.target.value } as ReferenceDataItem)}
                 sx={{ mb: 2 }}
+                type={field.type}
+                required={field.required}
+                error={!!formErrors[field.name]}
+                helperText={formErrors[field.name]}
               />
-            )}
+            ))}
             
-            {/* Only show organization field for organization-dependent types */}
-            {!isOrgIndependentType(selectedType) && (
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>Organization</InputLabel>
-                <Select
-                  value={editItem?.organization || ''}
-                  label="Organization"
-                  onChange={(e) => setEditItem({ ...editItem, organization: e.target.value } as ReferenceDataItem)}
-                  error={!!formErrors.organization}
-                >
-                  {organizations.map((org) => (
-                    <MenuItem key={org.id} value={org.id}>
-                      {org.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
-
-            {/* Vendor-specific fields */}
-            {selectedType === 'vendors' && (
-              <>
-                <TextField
-                  fullWidth
-                  label="Approval Date"
-                  type="date"
-                  value={formatDateForInput(editItem?.approvalDate || '')}
-                  onChange={(e) => setEditItem({ ...editItem, approvalDate: e.target.value } as ReferenceDataItem)}
-                  sx={{ mb: 2 }}
-                  InputLabelProps={{ shrink: true }}
-                />
-                <TextField
-                  fullWidth
-                  label="Contact Name"
-                  value={editItem?.contactName || ''}
-                  onChange={(e) => setEditItem({ ...editItem, contactName: e.target.value } as ReferenceDataItem)}
-                  sx={{ mb: 2 }}
-                />
-                <TextField
-                  fullWidth
-                  label="Contact Email"
-                  type="email"
-                  value={editItem?.contactEmail || ''}
-                  onChange={(e) => setEditItem({ ...editItem, contactEmail: e.target.value } as ReferenceDataItem)}
-                  sx={{ mb: 2 }}
-                  error={!!formErrors.contactEmail}
-                  helperText={formErrors.contactEmail}
-                  required
-                />
-                <TextField
-                  fullWidth
-                  label="Contact Phone"
-                  value={editItem?.contactPhone || ''}
-                  onChange={(e) => setEditItem({ ...editItem, contactPhone: e.target.value } as ReferenceDataItem)}
-                  sx={{ mb: 2 }}
-                  error={!!formErrors.contactPhone}
-                  helperText={formErrors.contactPhone}
-                  required
-                />
-                <TextField
-                  fullWidth
-                  label="Address"
-                  multiline
-                  rows={2}
-                  value={editItem?.address || ''}
-                  onChange={(e) => setEditItem({ ...editItem, address: e.target.value } as ReferenceDataItem)}
-                  sx={{ mb: 2 }}
-                />
-                <TextField
-                  fullWidth
-                  label="URL"
-                  value={editItem?.url || ''}
-                  onChange={(e) => setEditItem({ ...editItem, url: e.target.value } as ReferenceDataItem)}
-                  sx={{ mb: 2 }}
-                />
-                <TextField
-                  fullWidth
-                  label="Notes"
-                  multiline
-                  rows={3}
-                  value={editItem?.notes || ''}
-                  onChange={(e) => setEditItem({ ...editItem, notes: e.target.value } as ReferenceDataItem)}
-                  sx={{ mb: 2 }}
-                />
-              </>
-            )}
-
             <FormControlLabel
               control={
                 <Switch

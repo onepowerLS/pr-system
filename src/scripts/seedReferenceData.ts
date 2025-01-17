@@ -1,120 +1,170 @@
-import { collection, doc, setDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import 'dotenv/config'
+import { db, signIn } from './firebase'
+import { collection, doc, setDoc } from 'firebase/firestore'
 
-const COLLECTION_PREFIX = 'reference';
+const COLLECTION_PREFIX = 'referenceData'
 
-const seedReferenceData = async () => {
-  // Departments
-  const departments = [
-    { id: 'eng', name: 'Engineering', isActive: true },
-    { id: 'ops', name: 'Operations', isActive: true },
-    { id: 'fin', name: 'Finance', isActive: true },
-    { id: 'hr', name: 'Human Resources', isActive: true },
-    { id: 'it', name: 'Information Technology', isActive: true }
-  ];
-
-  // Project Categories
-  const projectCategories = [
-    { id: 'capex', name: 'Capital Expenditure', isActive: true },
-    { id: 'opex', name: 'Operating Expenditure', isActive: true },
-    { id: 'maint', name: 'Maintenance', isActive: true },
-    { id: 'supp', name: 'Supplies', isActive: true },
-    { id: 'tech', name: 'Technology', isActive: true }
-  ];
-
-  // Sites
-  const sites = [
-    { id: 'maseru', name: 'Maseru HQ', isActive: true, organization: '1PWR LESOTHO' },
-    { id: 'teyateyaneng', name: 'Teyateyaneng', isActive: true, organization: '1PWR LESOTHO' },
-    { id: 'mafeteng', name: 'Mafeteng', isActive: true, organization: '1PWR LESOTHO' }
-  ];
-
-  // Expense Types
-  const expenseTypes = [
-    { id: 'vehicle', name: 'Vehicle', code: 'VEHICLE', isActive: true },
-    { id: 'equipment', name: 'Equipment', code: 'EQUIPMENT', isActive: true },
-    { id: 'supplies', name: 'Supplies', code: 'SUPPLIES', isActive: true },
-    { id: 'services', name: 'Services', code: 'SERVICES', isActive: true },
-    { id: 'travel', name: 'Travel', code: 'TRAVEL', isActive: true }
-  ];
-
-  // Vehicles
-  const vehicles = [
-    { id: 'v001', name: 'Toyota Hilux (ABC123)', isActive: true, organization: '1PWR LESOTHO' },
-    { id: 'v002', name: 'Ford Ranger (XYZ789)', isActive: true, organization: '1PWR LESOTHO' },
-    { id: 'v003', name: 'Isuzu D-Max (DEF456)', isActive: true, organization: '1PWR LESOTHO' }
-  ];
-
-  // Vendors
-  const vendors = [
-    { id: 'v001', name: 'Toyota Lesotho', isActive: true, organization: '1PWR LESOTHO' },
-    { id: 'v002', name: 'Imperial Fleet Services', isActive: true, organization: '1PWR LESOTHO' },
-    { id: 'v003', name: 'Office National', isActive: true, organization: '1PWR LESOTHO' },
-    { id: 'v004', name: 'Vodacom Business', isActive: true, organization: '1PWR LESOTHO' }
-  ];
-
-  // Currencies
-  const currencies = [
-    { id: 'lsl', name: 'Lesotho Loti', code: 'LSL', isActive: true },
-    { id: 'zar', name: 'South African Rand', code: 'ZAR', isActive: true },
-    { id: 'usd', name: 'US Dollar', code: 'USD', isActive: true },
-    { id: 'eur', name: 'Euro', code: 'EUR', isActive: true },
-    { id: 'gbp', name: 'British Pound', code: 'GBP', isActive: true }
-  ];
-
-  try {
-    // Seed Departments
-    const departmentsCol = collection(db, `${COLLECTION_PREFIX}_departments`);
-    for (const dept of departments) {
-      await setDoc(doc(departmentsCol, dept.id), dept);
-    }
-
-    // Seed Project Categories
-    const projectCategoriesCol = collection(db, `${COLLECTION_PREFIX}_project_categories`);
-    for (const category of projectCategories) {
-      await setDoc(doc(projectCategoriesCol, category.id), category);
-    }
-
-    // Seed Sites
-    const sitesCol = collection(db, `${COLLECTION_PREFIX}_sites`);
-    for (const site of sites) {
-      await setDoc(doc(sitesCol, site.id), site);
-    }
-
-    // Seed Expense Types
-    const expenseTypesCol = collection(db, `${COLLECTION_PREFIX}_expense_types`);
-    for (const type of expenseTypes) {
-      await setDoc(doc(expenseTypesCol, type.id), type);
-    }
-
-    // Seed Vehicles
-    const vehiclesCol = collection(db, `${COLLECTION_PREFIX}_vehicles`);
-    for (const vehicle of vehicles) {
-      await setDoc(doc(vehiclesCol, vehicle.id), vehicle);
-    }
-
-    // Seed Vendors
-    const vendorsCol = collection(db, `${COLLECTION_PREFIX}_vendors`);
-    for (const vendor of vendors) {
-      await setDoc(doc(vendorsCol, vendor.id), vendor);
-    }
-
-    // Seed Currencies
-    const currenciesCol = collection(db, `${COLLECTION_PREFIX}_currencies`);
-    for (const currency of currencies) {
-      await setDoc(doc(currenciesCol, currency.id), currency);
-    }
-
-    console.log('Successfully seeded reference data');
-  } catch (error) {
-    console.error('Error seeding reference data:', error);
-    throw error;
+// Organizations seed data
+const organizations = [
+  { 
+    id: '1pwr_lesotho',
+    code: '1PWR_LSO',
+    name: '1PWR LESOTHO',
+    shortName: '1PWR LSO',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
+  },
+  { 
+    id: '1pwr_benin',
+    code: '1PWR_BEN',
+    name: '1PWR BENIN',
+    shortName: '1PWR BEN',
+    country: 'Benin',
+    timezone: 'Africa/Porto-Novo',
+    currency: 'XOF',
+    active: true
+  },
+  { 
+    id: '1pwr_zambia',
+    code: '1PWR_ZAM',
+    name: '1PWR ZAMBIA',
+    shortName: '1PWR ZAM',
+    country: 'Zambia',
+    timezone: 'Africa/Lusaka',
+    currency: 'ZMW',
+    active: false
+  },
+  { 
+    id: 'pueco_lesotho',
+    code: 'PUECO_LSO',
+    name: 'PUECO LESOTHO',
+    shortName: 'PUECO LSO',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
+  },
+  { 
+    id: 'pueco_benin',
+    code: 'PUECO_BEN',
+    name: 'PUECO BENIN',
+    shortName: 'PUECO BEN',
+    country: 'Benin',
+    timezone: 'Africa/Porto-Novo',
+    currency: 'XOF',
+    active: false
+  },
+  { 
+    id: 'neo1',
+    code: 'NEO1',
+    name: 'NEO1',
+    shortName: 'NEO1',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
+  },
+  { 
+    id: 'smp',
+    code: 'SMP',
+    name: 'SMP',
+    shortName: 'SMP',
+    country: 'Lesotho',
+    timezone: 'Africa/Maseru',
+    currency: 'LSL',
+    active: true
   }
-};
+]
 
-export default seedReferenceData;
+// Permissions seed data
+const permissions = [
+  {
+    id: 'admin',
+    code: 'ADMIN',
+    name: 'Administrator',
+    description: 'Full system access',
+    level: 1,
+    actions: ['*'],
+    scope: ['*'],
+    active: true
+  },
+  {
+    id: 'procurement_manager',
+    code: 'PROC_MGR',
+    name: 'Procurement Manager',
+    description: 'Can manage procurement process',
+    level: 2,
+    actions: ['create', 'read', 'update', 'delete', 'approve'],
+    scope: ['pr', 'po', 'vendors'],
+    active: true
+  },
+  {
+    id: 'procurement_officer',
+    code: 'PROC_OFF',
+    name: 'Procurement Officer',
+    description: 'Can process procurement requests',
+    level: 3,
+    actions: ['create', 'read', 'update'],
+    scope: ['pr', 'po'],
+    active: true
+  },
+  {
+    id: 'department_head',
+    code: 'DEPT_HEAD',
+    name: 'Department Head',
+    description: 'Can approve department requests',
+    level: 4,
+    actions: ['read', 'approve'],
+    scope: ['pr'],
+    active: true
+  },
+  {
+    id: 'requester',
+    code: 'REQ',
+    name: 'Requester',
+    description: 'Can create and view requests',
+    level: 5,
+    actions: ['create', 'read'],
+    scope: ['pr'],
+    active: true
+  }
+]
 
-// Run the seed function if this script is run directly
-if (require.main === module) {
-  seedReferenceData().catch(console.error);
+async function seedReferenceData() {
+  try {
+    // Sign in first
+    await signIn()
+    console.log('Authentication successful')
+
+    // Seed organizations
+    console.log('Seeding organizations...')
+    for (const org of organizations) {
+      const docRef = doc(db, `${COLLECTION_PREFIX}_organizations`, org.id)
+      await setDoc(docRef, {
+        ...org,
+        createdAt: new Date().toISOString()
+      })
+      console.log(`Added organization: ${org.name}`)
+    }
+
+    // Seed permissions
+    console.log('Seeding permissions...')
+    for (const perm of permissions) {
+      const docRef = doc(db, `${COLLECTION_PREFIX}_permissions`, perm.id)
+      await setDoc(docRef, {
+        ...perm,
+        createdAt: new Date().toISOString()
+      })
+      console.log(`Added permission: ${perm.name}`)
+    }
+
+    console.log('Reference data seeding complete!')
+  } catch (error) {
+    console.error('Error seeding reference data:', error)
+  }
 }
+
+// Run the seed function
+seedReferenceData()

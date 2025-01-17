@@ -13,6 +13,15 @@ export interface ReferenceDataItem {
   address?: string;
   url?: string;
   notes?: string;
+  // Organization specific fields
+  shortName?: string;
+  country?: string;
+  timezone?: string;
+  currency?: string;
+  // Permission specific fields
+  level?: number;
+  actions?: string[];
+  scope?: string[];
 }
 
 export type ReferenceDataType = 
@@ -22,4 +31,21 @@ export type ReferenceDataType =
   | 'projectCategories'
   | 'vendors'
   | 'currencies'
-  | 'uom';
+  | 'uom'
+  | 'organizations'
+  | 'permissions';
+
+// Types that don't depend on organization
+export const ORG_INDEPENDENT_TYPES = [
+  'currencies',
+  'uom',
+  'organizations',
+  'permissions'
+] as const;
+
+// Types that use code as ID
+export const CODE_BASED_ID_TYPES = [
+  'currencies',
+  'uom',
+  'organizations'
+] as const;
