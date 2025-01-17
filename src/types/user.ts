@@ -27,18 +27,24 @@ import { Organization } from './organization';
 export interface User {
   /** Unique identifier */
   id: string;
-  /** User's full name */
-  name: string;
+  /** User's first name */
+  firstName: string;
+  /** User's last name */
+  lastName: string;
   /** Email address */
   email: string;
+  /** User's department */
+  department: string;
+  /** Associated organization */
+  organization: string;
+  /** Additional organizations */
+  additionalOrganizations: string[];
   /** User's role */
   role: UserRole;
-  /** Associated organization */
-  organization: Organization;
-  /** User's department */
-  department?: string;
   /** Whether user is active */
   isActive: boolean;
+  /** Permission level */
+  permissionLevel: number;
   /** Last login timestamp */
   lastLogin?: string;
   /** User preferences */
@@ -55,18 +61,7 @@ export interface User {
  * User Role Enum
  * Defines possible user roles and their hierarchy
  */
-export enum UserRole {
-  /** Full system access */
-  ADMIN = 'ADMIN',
-  /** Can approve high-value PRs */
-  FINANCE_APPROVER = 'FINANCE_APPROVER',
-  /** Can process PRs */
-  PROCUREMENT = 'PROCUREMENT',
-  /** Can approve PRs */
-  APPROVER = 'APPROVER',
-  /** Basic access */
-  USER = 'USER'
-}
+export type UserRole = 'ADMIN' | 'DEPARTMENT_HEAD' | 'PROCUREMENT' | 'STANDARD_USER';
 
 /**
  * User Permissions Interface
@@ -107,4 +102,13 @@ export interface UserPreferences {
   defaultCurrency: string;
   /** Items per page in lists */
   pageSize: number;
+}
+
+/**
+ * User With Password Interface
+ * User data structure with password
+ */
+export interface UserWithPassword extends User {
+  /** User's password */
+  password: string;
 }
