@@ -159,4 +159,51 @@ REVISION_REQUIRED -> SUBMITTED (cycle continues)
 Any Status -> CANCELED
 ```
 
+## 8. System Administration
+### User Management
+- Administrators can:
+  - View all users in a table format
+  - Add new users with:
+    - Email
+    - Name
+    - Department
+    - Permission Level
+  - Edit existing users:
+    - Update user details
+    - Change permission levels
+    - Reset passwords
+  - Delete users
+
+### Permission Levels
+- Permission levels control access to system features:
+  - ADMIN: Full system access, including user management
+  - PROCUREMENT: Access to procurement-specific features
+  - USER: Basic access for PR submission and tracking
+
+### Password Management
+- Default password for new users: "1PWR00"
+- Password changes:
+  - Admins can reset user passwords
+  - Password updates are handled securely via Firebase Cloud Functions
+  - Users are required to change password on first login
+
+### Reference Data Management
+- Administrators can manage dropdown menu contents for:
+  - Departments
+  - Project Categories
+  - Sites
+  - Expense Types
+  - Units of Measure
+  - Preferred Vendors
+  - Vehicles
+
+### Security Rules
+- Only ADMIN users can:
+  - Access user management features
+  - Reset passwords
+  - Modify reference data
+- All administrative actions are logged for audit purposes
+- Password updates require admin authentication
+- Sensitive operations use server-side Cloud Functions
+
 This specification serves as the baseline functionality reference for the PR system. Any code changes should be validated against these requirements to ensure core functionality remains intact.
