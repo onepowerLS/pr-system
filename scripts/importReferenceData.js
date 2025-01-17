@@ -264,7 +264,16 @@ async function importAllReferenceData() {
     await importOrganizationsAndPermissions();
 
     // Import other reference data from CSV files
-    await importFromCsv('departments', path.join(__dirname, '..', 'Departments.csv'));
+    await importFromCsv('departments', path.join(__dirname, '..', 'Departments.csv'), {
+      transform: (record) => ({
+        name: record['Department Name'],
+        active: record['Active Status (Y/N)'].toUpperCase() === 'Y',
+        organization: {
+          id: record['Organization ID'],
+          name: record['Organization']
+        }
+      })
+    });
     await importFromCsv('sites', path.join(__dirname, '..', 'Sites.csv'));
     await importFromCsv('expenseTypes', path.join(__dirname, '..', 'Expense Type.csv'));
     await importFromCsv('projectCategories', path.join(__dirname, '..', 'Project Categories.csv'));

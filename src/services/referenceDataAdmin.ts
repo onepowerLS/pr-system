@@ -3,7 +3,7 @@ import { db } from "@/config/firebase"
 import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, writeBatch, setDoc, getDoc } from "firebase/firestore"
 
 const COLLECTION_PREFIX = "referenceData"
-const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations']
+const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations', 'departments', 'sites', 'expenseTypes', 'projectCategories', 'vehicles', 'vendors']
 
 export class ReferenceDataAdminService {
   private getCollectionName(type: string) {
@@ -41,7 +41,7 @@ export class ReferenceDataAdminService {
       // Check if document already exists
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        throw new Error(`A ${type === 'currencies' ? 'currency' : type === 'uom' ? 'unit of measure' : 'organization'} with code ${item.code} already exists`);
+        throw new Error(`An item with code ${item.code} already exists in ${type}`);
       }
 
       await setDoc(docRef, {

@@ -2,7 +2,10 @@ export interface ReferenceDataItem {
   id: string;
   name: string;
   code?: string;
-  organization: string;
+  organization?: {
+    id: string;
+    name: string;
+  };
   description?: string;
   active: boolean;
   // Vendor specific fields

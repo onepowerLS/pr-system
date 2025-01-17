@@ -1,18 +1,18 @@
-Department Name,Active Status (Y/N)
-C Level,Y
-DPO,Y
-Project Management,Y
-Fleet,Y
-Production,Y
-Electrical Engineering,Y
-Mechanical Engineering,Y
-Reticulation,Y
-Facilities,Y
-Asset Management,Y
-PUECO,Y
-Finance,Y
-Admin,Y
-Procurement,Y
-HR,Y
-EHS,Y
-O&M,Y
+Department Name,Organization,Organization ID,Active Status (Y/N)
+C Level,1PWR LESOTHO,1pwr_lesotho,Y
+DPO,1PWR LESOTHO,1pwr_lesotho,Y
+Project Management,1PWR LESOTHO,1pwr_lesotho,Y
+Fleet,1PWR LESOTHO,1pwr_lesotho,Y
+Production,1PWR LESOTHO,1pwr_lesotho,Y
+Electrical Engineering,1PWR LESOTHO,1pwr_lesotho,Y
+Mechanical Engineering,1PWR LESOTHO,1pwr_lesotho,Y
+Reticulation,1PWR LESOTHO,1pwr_lesotho,Y
+Facilities,1PWR LESOTHO,1pwr_lesotho,Y
+Asset Management,1PWR LESOTHO,1pwr_lesotho,Y
+PUECO,1PWR LESOTHO,1pwr_lesotho,Y
+Finance,1PWR LESOTHO,1pwr_lesotho,Y
+Admin,1PWR LESOTHO,1pwr_lesotho,Y
+Procurement,1PWR LESOTHO,1pwr_lesotho,Y
+HR,1PWR LESOTHO,1pwr_lesotho,Y
+EHS,1PWR LESOTHO,1pwr_lesotho,Y
+O&M,1PWR LESOTHO,1pwr_lesotho,Y

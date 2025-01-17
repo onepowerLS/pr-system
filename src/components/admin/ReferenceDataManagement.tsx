@@ -322,7 +322,13 @@ export function ReferenceDataManagement() {
         // Only filter by organization for organization-dependent types
         if (!isOrgIndependentType(selectedType) && selectedOrganization) {
           console.log('Filtering by organization:', selectedOrganization);
-          items = items.filter(item => item.organization === selectedOrganization);
+          items = items.filter(item => {
+            // Handle both old string format and new object format
+            if (typeof item.organization === 'string') {
+              return item.organization === selectedOrganization;
+            }
+            return item.organization?.id === selectedOrganization;
+          });
           console.log('Filtered items:', items);
         }
         
@@ -592,7 +598,7 @@ export function ReferenceDataManagement() {
           <TableHead>
             <TableRow>
               <TableCell>ID</TableCell>
-              {selectedType !== 'vendors' && <TableCell>Code</TableCell>}
+              {selectedType !== 'vendors' && selectedType !== 'departments' && <TableCell>Code</TableCell>}
               <TableCell>Name</TableCell>
               {selectedType === 'vendors' ? (
                 <>
@@ -609,7 +615,7 @@ export function ReferenceDataManagement() {
                   <TableCell>Level</TableCell>
                   <TableCell>Description</TableCell>
                 </>
-              ) : !isOrgIndependentType(selectedType) ? (
+              ) : !isOrgIndependentType(selectedType) && selectedType !== 'departments' ? (
                 <TableCell>Organization</TableCell>
               ) : null}
               <TableCell>Active</TableCell>
@@ -620,7 +626,7 @@ export function ReferenceDataManagement() {
             {items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.id}</TableCell>
-                {selectedType !== 'vendors' && <TableCell>{item.code}</TableCell>}
+                {selectedType !== 'vendors' && selectedType !== 'departments' && <TableCell>{item.code}</TableCell>}
                 <TableCell>{item.name}</TableCell>
                 {selectedType === 'vendors' ? (
                   <>
@@ -637,9 +643,11 @@ export function ReferenceDataManagement() {
                     <TableCell>{item.level}</TableCell>
                     <TableCell>{item.description}</TableCell>
                   </>
-                ) : !isOrgIndependentType(selectedType) ? (
+                ) : !isOrgIndependentType(selectedType) && selectedType !== 'departments' ? (
                   <TableCell>
-                    {organizations.find(org => org.id === item.organization)?.name}
+                    {typeof item.organization === 'string' 
+                      ? organizations.find(org => org.id === item.organization)?.name
+                      : organizations.find(org => org.id === item.organization?.id)?.name}
                   </TableCell>
                 ) : null}
                 <TableCell>
