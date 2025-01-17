@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Outlet } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Outlet } from 'react-router-dom';
+import { RootState } from '@/store';
 import {
   AppBar,
   Box,
   CssBaseline,
+  Divider,
   Drawer,
   IconButton,
   List,
@@ -13,7 +14,6 @@ import {
   ListItemText,
   Toolbar,
   Typography,
-  Divider,
   Menu,
   MenuItem,
   styled,
@@ -26,10 +26,10 @@ import {
   Person,
   AdminPanelSettings,
 } from '@mui/icons-material';
-import { RootState } from '../../store';
 import { signOut } from '../../services/auth';
 import { clearUser } from '../../store/slices/authSlice';
 import { clearPRState } from '../../store/slices/prSlice';
+import { UserProfile } from '@/components/user/UserProfile';
 
 const NavItem = styled('div')(({ theme }) => ({
   display: 'flex',
@@ -51,6 +51,7 @@ export const Layout = () => {
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -75,27 +76,9 @@ export const Layout = () => {
     }
   };
 
-  // Add detailed logging for debugging
-  console.log('Layout: Full user state:', user);
-  console.log('Layout: Current user state:', {
-    email: user?.email,
-    role: user?.role,
-    permissionLevel: user?.permissionLevel,
-    name: user?.name,
-    organization: user?.organization
-  });
-
   // Check if user has admin access (either role ADMIN or permissionLevel <= 3)
   const hasAdminAccess = user?.role === 'ADMIN' || (user?.permissionLevel && user?.permissionLevel <= 3);
-  
-  console.log('Layout: Admin access check:', { 
-    hasAdminAccess,
-    role: user?.role,
-    permissionLevel: user?.permissionLevel,
-    condition1: user?.role === 'ADMIN',
-    condition2: user?.permissionLevel && user?.permissionLevel <= 3
-  });
-  
+
   const drawer = (
     <Box>
       <Toolbar />
@@ -112,6 +95,12 @@ export const Layout = () => {
             <AddCircle />
           </ListItemIcon>
           <ListItemText primary="New PR" />
+        </NavItem>
+        <NavItem onClick={() => navigate('/pr/list')}>
+          <ListItemIcon>
+            <ListIcon />
+          </ListItemIcon>
+          <ListItemText primary="My PRs" />
         </NavItem>
         {hasAdminAccess && (
           <>
@@ -177,6 +166,21 @@ export const Layout = () => {
               open={Boolean(anchorEl)}
               onClose={handleClose}
             >
+              <div style={{ padding: '8px 16px', minWidth: '200px' }}>
+                <Typography variant="body2" color="textSecondary">
+                  Signed in as
+                </Typography>
+                <Typography variant="body1">
+                  {user?.email}
+                </Typography>
+              </div>
+              <Divider />
+              <MenuItem onClick={() => {
+                handleClose();
+                setIsProfileOpen(true);
+              }}>
+                Manage Profile
+              </MenuItem>
               <MenuItem onClick={handleSignOut}>Sign Out</MenuItem>
             </Menu>
           </div>
@@ -222,6 +226,12 @@ export const Layout = () => {
       >
         <Outlet />
       </Box>
+      {isProfileOpen && (
+        <UserProfile
+          isOpen={isProfileOpen}
+          onClose={() => setIsProfileOpen(false)}
+        />
+      )}
     </Box>
   );
 };

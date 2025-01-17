@@ -43,22 +43,28 @@ export const Dashboard = () => {
   const { userPRs, pendingApprovals, loading } = useSelector(
     (state: RootState) => state.pr
   );
-  const [selectedOrg, setSelectedOrg] = useState<string>('1PWR LESOTHO');
+  const [selectedOrg, setSelectedOrg] = useState<string>('1PWR_LSO');
   const [selectedStatus, setSelectedStatus] = useState<PRStatus>(PRStatus.SUBMITTED);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [prToDelete, setPrToDelete] = useState<string | null>(null);
 
+  // Initialize selectedOrg with user's organization when component mounts
+  useEffect(() => {
+    if (user?.organization) {
+      setSelectedOrg(user.organization);
+    }
+  }, [user?.organization]);
+
   // Add real-time update effect
   useEffect(() => {
-    if (!user?.id) {
-      console.log('Dashboard: No user ID available');
+    if (!user?.id || !selectedOrg) {
+      console.log('Dashboard: No user ID or organization available');
       return;
     }
 
     console.log('Dashboard: Loading data for user:', {
       userId: user.id,
-      organization: user.organization,
-      selectedOrg,
+      organization: selectedOrg,
       role: user.role
     });
 
