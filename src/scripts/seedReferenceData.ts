@@ -1,6 +1,8 @@
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
+const COLLECTION_PREFIX = 'reference';
+
 const seedReferenceData = async () => {
   // Departments
   const departments = [
@@ -62,43 +64,43 @@ const seedReferenceData = async () => {
 
   try {
     // Seed Departments
-    const departmentsCol = collection(db, 'departments');
+    const departmentsCol = collection(db, `${COLLECTION_PREFIX}_departments`);
     for (const dept of departments) {
       await setDoc(doc(departmentsCol, dept.id), dept);
     }
 
     // Seed Project Categories
-    const projectCategoriesCol = collection(db, 'projectCategories');
+    const projectCategoriesCol = collection(db, `${COLLECTION_PREFIX}_project_categories`);
     for (const category of projectCategories) {
       await setDoc(doc(projectCategoriesCol, category.id), category);
     }
 
     // Seed Sites
-    const sitesCol = collection(db, 'sites');
+    const sitesCol = collection(db, `${COLLECTION_PREFIX}_sites`);
     for (const site of sites) {
       await setDoc(doc(sitesCol, site.id), site);
     }
 
     // Seed Expense Types
-    const expenseTypesCol = collection(db, 'expenseTypes');
+    const expenseTypesCol = collection(db, `${COLLECTION_PREFIX}_expense_types`);
     for (const type of expenseTypes) {
       await setDoc(doc(expenseTypesCol, type.id), type);
     }
 
     // Seed Vehicles
-    const vehiclesCol = collection(db, 'vehicles');
+    const vehiclesCol = collection(db, `${COLLECTION_PREFIX}_vehicles`);
     for (const vehicle of vehicles) {
       await setDoc(doc(vehiclesCol, vehicle.id), vehicle);
     }
 
     // Seed Vendors
-    const vendorsCol = collection(db, 'vendors');
+    const vendorsCol = collection(db, `${COLLECTION_PREFIX}_vendors`);
     for (const vendor of vendors) {
       await setDoc(doc(vendorsCol, vendor.id), vendor);
     }
 
     // Seed Currencies
-    const currenciesCol = collection(db, 'currencies');
+    const currenciesCol = collection(db, `${COLLECTION_PREFIX}_currencies`);
     for (const currency of currencies) {
       await setDoc(doc(currenciesCol, currency.id), currency);
     }
@@ -106,7 +108,13 @@ const seedReferenceData = async () => {
     console.log('Successfully seeded reference data');
   } catch (error) {
     console.error('Error seeding reference data:', error);
+    throw error;
   }
 };
 
 export default seedReferenceData;
+
+// Run the seed function if this script is run directly
+if (require.main === module) {
+  seedReferenceData().catch(console.error);
+}

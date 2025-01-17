@@ -1,85 +1,117 @@
-# 1PWR Purchase Request System
+# 1PWR Procurement Requisition System
 
-A web-based system for managing purchase requests at 1PWR Africa. Built with React, Firebase, and Material-UI.
+A comprehensive procurement requisition system built for 1PWR to manage purchase requests and orders.
 
 ## Features
 
-- User authentication and role-based access control
-- Create and manage purchase requests
-- Track PR status and approvals
-- View PR history and details
-- Export data to spreadsheets
+### Core Features
+- User authentication with role-based access control
+- Purchase request creation and management
+- Purchase order tracking
+- Multi-organization support
+- Document management
+- Approval workflow
 
-## Tech Stack
+### Admin Features
+- User management
+- Reference data management
+  - Departments
+  - Currencies
+  - Units of Measure (UOM)
+  - Vendors
+  - Project Categories
+  - Expense Types
+- Organization management
 
-- React + TypeScript
-- Firebase (Auth, Firestore)
-- Material-UI
-- Redux Toolkit
-- React Router
-- Vite
+### Reference Data Management
+- CRUD operations for all reference data types
+- Code-based ID generation for currencies and UOM
+- Duplicate prevention for codes
+- Active/Inactive status tracking
+- Organization-specific data filtering
 
-## Development Setup
+## Technical Stack
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/pr-system.git
-cd pr-system
+### Frontend
+- React with TypeScript
+- Tailwind CSS for styling
+- Shadcn UI components
+- Redux for state management
+- React Router for navigation
+
+### Backend
+- Firebase
+  - Authentication
+  - Firestore Database
+  - Storage
+  - Functions
+- Express.js for API endpoints
+
+### Development Tools
+- Vite for development and building
+- ESLint for code linting
+- PostCSS for CSS processing
+
+## Project Structure
+```
+src/
+├── components/     # React components
+│   ├── admin/     # Admin-specific components
+│   ├── common/    # Shared components
+│   ├── pr/        # PR-specific components
+│   └── ui/        # UI components
+├── config/        # Configuration files
+├── hooks/         # Custom React hooks
+├── lib/          # Utility libraries
+├── scripts/      # Database scripts
+├── services/     # API services
+├── store/        # Redux store
+├── styles/       # Global styles
+└── types/        # TypeScript types
 ```
 
-2. Install dependencies:
+## Recent Updates
+- Added reference data management with code-based IDs
+- Implemented organization filtering for reference data
+- Added validation to prevent duplicate codes
+- Added success/error notifications
+- Improved form validation
+- Fixed ghost entry issues in reference data
+- Added persistence for selected reference data type
+
+## Getting Started
+
+### Prerequisites
+- Node.js >= 16
+- npm >= 8
+- Firebase project
+
+### Installation
+1. Clone the repository
+```bash
+git clone https://github.com/yourusername/pr-system.git
+```
+
+2. Install dependencies
 ```bash
 npm install
 ```
 
-3. Create a `.env` file in the root directory with your Firebase configuration:
+3. Set up environment variables
+```bash
+cp .env.example .env
 ```
-VITE_FIREBASE_API_KEY=your_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your_auth_domain
-VITE_FIREBASE_PROJECT_ID=your_project_id
-VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
-VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-VITE_FIREBASE_APP_ID=your_app_id
-VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
-```
+Edit `.env` with your Firebase configuration.
 
-4. Start the development server:
+4. Start the development server
 ```bash
 npm run dev
 ```
 
-## Firebase Setup
-
-1. Create a new Firebase project
-2. Enable Email/Password authentication
-3. Create a Firestore database
-4. Set up Firestore security rules
-5. Generate and download service account credentials
-
-## Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run ESLint
-
-## Data Migration
-
-The system includes scripts for migrating data from Google Sheets:
-
-1. Place your Firebase service account credentials in `firebase-service-account.json`
-2. Place your Google Sheets API credentials in `google-sheets-credentials.json`
-3. Run the migration script:
-```bash
-node scripts/migrate-from-sheets.js
-```
-
 ## Contributing
-
 1. Create a feature branch
 2. Make your changes
 3. Submit a pull request
 
 ## License
-
-MIT
+Proprietary - All rights reserved

@@ -104,7 +104,7 @@ interface ReferenceDataItem {
   id: string;
   name: string;
   code?: string;
-  isActive: boolean;
+  active: boolean;
 }
 
 interface LineItem {
@@ -257,7 +257,7 @@ export const NewPRForm = () => {
         referenceDataService.getSites(formState.organization),
         referenceDataService.getExpenseTypes(formState.organization),
         referenceDataService.getVehicles(formState.organization),
-        referenceDataService.getVendors(formState.organization),
+        referenceDataService.getVendors(), // Don't pass organization for vendors
         approverService.getApprovers(formState.organization)
       ]);
 

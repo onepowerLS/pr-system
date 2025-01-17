@@ -1,48 +1,59 @@
-import {
-  departments,
-  projectCategories,
-  sites,
-  expenseTypes,
-  vehicles,
-  vendors,
-  currencies
-} from './localReferenceData';
+import { db } from "@/config/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { ReferenceData } from "@/types/referenceData";
 
-interface ReferenceData {
-  id: string;
-  name: string;
-  code?: string;
-  isActive: boolean;
-  [key: string]: any;
-}
+const COLLECTION_PREFIX = "referenceData";
 
 class ReferenceDataService {
-  async getDepartments(_organization: string): Promise<ReferenceData[]> {
-    return departments;
+  private getCollectionName(type: string) {
+    return `${COLLECTION_PREFIX}_${type}`;
   }
 
-  async getProjectCategories(_organization: string): Promise<ReferenceData[]> {
-    return projectCategories;
+  private async getItemsByType(type: string, organization?: string): Promise<ReferenceData[]> {
+    const collectionRef = collection(db, this.getCollectionName(type));
+    let q = collectionRef;
+
+    // For vendors, filter where organization is empty string
+    // For other types, filter by the specified organization
+    if (type === 'vendors') {
+      q = query(collectionRef, where('organization', '==', ''));
+    } else if (organization) {
+      q = query(collectionRef, where('organization', '==', organization));
+    }
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as ReferenceData));
   }
 
-  async getSites(_organization: string): Promise<ReferenceData[]> {
-    return sites;
+  async getDepartments(organization: string): Promise<ReferenceData[]> {
+    return this.getItemsByType('departments', organization);
   }
 
-  async getExpenseTypes(_organization: string): Promise<ReferenceData[]> {
-    return expenseTypes;
+  async getProjectCategories(organization: string): Promise<ReferenceData[]> {
+    return this.getItemsByType('projectCategories', organization);
   }
 
-  async getVehicles(_organization: string): Promise<ReferenceData[]> {
-    return vehicles;
+  async getSites(organization: string): Promise<ReferenceData[]> {
+    return this.getItemsByType('sites', organization);
   }
 
-  async getVendors(_organization: string): Promise<ReferenceData[]> {
-    return vendors;
+  async getExpenseTypes(organization: string): Promise<ReferenceData[]> {
+    return this.getItemsByType('expenseTypes', organization);
+  }
+
+  async getVehicles(organization: string): Promise<ReferenceData[]> {
+    return this.getItemsByType('vehicles', organization);
+  }
+
+  async getVendors(): Promise<ReferenceData[]> {
+    return this.getItemsByType('vendors'); // Don't pass organization for vendors
   }
 
   async getCurrencies(): Promise<ReferenceData[]> {
-    return currencies;
+    return this.getItemsByType('currencies');
   }
 }
 

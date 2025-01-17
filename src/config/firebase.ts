@@ -37,7 +37,7 @@
 
 // Import Firebase core and service-specific modules
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
@@ -75,31 +75,53 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-console.log('Firebase config validated');
+console.log('Firebase config loaded:', {
+  authDomain: firebaseConfig.authDomain,
+  projectId: firebaseConfig.projectId,
+  storageBucket: firebaseConfig.storageBucket
+});
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-console.log('Firebase app initialized');
+console.log('Firebase app initialized successfully');
 
-// Initialize services
+// Initialize Auth
 const auth = getAuth(app);
-console.log('Firebase auth initialized');
+console.log('Firebase auth initialized successfully');
 
+// Initialize Firestore with persistence
 const db = getFirestore(app);
-console.log('Firebase Firestore initialized');
+console.log('Firebase Firestore initialized successfully');
+
+// Enable offline persistence
+enableIndexedDbPersistence(db)
+  .then(() => {
+    console.log('Firestore persistence enabled successfully');
+  })
+  .catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+    } else if (err.code === 'unimplemented') {
+      console.warn('The current browser does not support persistence.');
+    } else {
+      console.error('Error enabling persistence:', err);
+    }
+  });
 
 const storage = getStorage(app);
-console.log('Firebase storage initialized');
+console.log('Firebase storage initialized successfully');
 
 const functions = getFunctions(app);
-console.log('Firebase functions initialized');
+console.log('Firebase functions initialized successfully');
 
 // Only initialize analytics in production
-const analytics = import.meta.env.PROD ? getAnalytics(app) : null;
-if (analytics) {
-  console.log('Firebase analytics initialized');
+let analytics = null;
+if (import.meta.env.PROD) {
+  analytics = getAnalytics(app);
+  console.log('Firebase analytics initialized successfully');
 }
 
 console.log('=== Firebase Initialization Complete ===');
 
+// Export initialized services
 export { app, auth, db, storage, functions, analytics };

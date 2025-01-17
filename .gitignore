@@ -43,7 +43,7 @@ google-sheets-credentials.json
 # Data files
 *.xlsx
 *.xls
-*.csv
+
 
 # Build files
 build

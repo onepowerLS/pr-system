@@ -24,6 +24,7 @@ import {
   AddCircle,
   List as ListIcon,
   Person,
+  AdminPanelSettings,
 } from '@mui/icons-material';
 import { RootState } from '../../store';
 import { signOut } from '../../services/auth';
@@ -49,27 +50,52 @@ export const Layout = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
+  };
+
+  const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
 
-  const handleMenuClose = () => {
+  const handleClose = () => {
     setAnchorEl(null);
   };
 
-  const handleLogout = async () => {
+  const handleSignOut = async () => {
     try {
-      handleMenuClose();
       await signOut();
       dispatch(clearUser());
       dispatch(clearPRState());
-      navigate('/login', { replace: true });
+      navigate('/login');
     } catch (error) {
-      console.error('Layout: Logout error:', error);
+      console.error('Error signing out:', error);
     }
   };
 
+  // Add detailed logging for debugging
+  console.log('Layout: Full user state:', user);
+  console.log('Layout: Current user state:', {
+    email: user?.email,
+    role: user?.role,
+    permissionLevel: user?.permissionLevel,
+    name: user?.name,
+    organization: user?.organization
+  });
+
+  // Check if user has admin access (either role ADMIN or permissionLevel <= 3)
+  const hasAdminAccess = user?.role === 'ADMIN' || (user?.permissionLevel && user?.permissionLevel <= 3);
+  
+  console.log('Layout: Admin access check:', { 
+    hasAdminAccess,
+    role: user?.role,
+    permissionLevel: user?.permissionLevel,
+    condition1: user?.role === 'ADMIN',
+    condition2: user?.permissionLevel && user?.permissionLevel <= 3
+  });
+  
   const drawer = (
     <Box>
       <Toolbar />
@@ -87,18 +113,23 @@ export const Layout = () => {
           </ListItemIcon>
           <ListItemText primary="New PR" />
         </NavItem>
-        <NavItem onClick={() => navigate('/pr/list')}>
-          <ListItemIcon>
-            <ListIcon />
-          </ListItemIcon>
-          <ListItemText primary="My PRs" />
-        </NavItem>
+        {hasAdminAccess && (
+          <>
+            <Divider />
+            <NavItem onClick={() => navigate('/admin')}>
+              <ListItemIcon>
+                <AdminPanelSettings />
+              </ListItemIcon>
+              <ListItemText primary="Admin Portal" />
+            </NavItem>
+          </>
+        )}
       </List>
     </Box>
   );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex' }}>
       <CssBaseline />
       <AppBar
         position="fixed"
@@ -108,42 +139,74 @@ export const Layout = () => {
         }}
       >
         <Toolbar>
-          <Box sx={{ flexGrow: 1 }} />
           <IconButton
             color="inherit"
-            onClick={handleMenuOpen}
+            aria-label="open drawer"
+            edge="start"
+            onClick={handleDrawerToggle}
+            sx={{ mr: 2, display: { sm: 'none' } }}
           >
-            <Person />
+            <MenuIcon />
           </IconButton>
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleMenuClose}
-          >
-            <MenuItem onClick={handleLogout}>Logout</MenuItem>
-          </Menu>
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+            1PWR Procurement System
+          </Typography>
+          <div>
+            <IconButton
+              size="large"
+              aria-label="account of current user"
+              aria-controls="menu-appbar"
+              aria-haspopup="true"
+              onClick={handleMenu}
+              color="inherit"
+            >
+              <Person />
+            </IconButton>
+            <Menu
+              id="menu-appbar"
+              anchorEl={anchorEl}
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'right',
+              }}
+              keepMounted
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+              open={Boolean(anchorEl)}
+              onClose={handleClose}
+            >
+              <MenuItem onClick={handleSignOut}>Sign Out</MenuItem>
+            </Menu>
+          </div>
         </Toolbar>
       </AppBar>
       <Box
         component="nav"
-        sx={{
-          width: 240,
-          flexShrink: 0,
-          position: 'fixed',
-          height: '100vh',
-          zIndex: 1,
-        }}
+        sx={{ width: { sm: 240 }, flexShrink: { sm: 0 } }}
       >
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={handleDrawerToggle}
+          ModalProps={{
+            keepMounted: true,
+          }}
+          sx={{
+            display: { xs: 'block', sm: 'none' },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: 240 },
+          }}
+        >
+          {drawer}
+        </Drawer>
         <Drawer
           variant="permanent"
           sx={{
-            width: 240,
-            flexShrink: 0,
-            '& .MuiDrawer-paper': {
-              width: 240,
-              boxSizing: 'border-box',
-            },
+            display: { xs: 'none', sm: 'block' },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: 240 },
           }}
+          open
         >
           {drawer}
         </Drawer>
@@ -153,12 +216,10 @@ export const Layout = () => {
         sx={{
           flexGrow: 1,
           p: 3,
-          marginLeft: '240px',
-          width: 'calc(100% - 240px)',
-          overflow: 'auto',
+          width: { sm: `calc(100% - 240px)` },
+          mt: '64px',
         }}
       >
-        <Toolbar />
         <Outlet />
       </Box>
     </Box>

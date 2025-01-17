@@ -1,0 +1,30 @@
+Expense Type,Code,Active (Y/N)
+Audit + Accounting Fees,1,Y
+Bank Fees,2,Y
+Materials and supplies (including fees to clearing agents),3A,Y
+Materials and supplies - EHS items (other than PPE),3B,Y
+"Materials and supplies - PPE (ONLY group issue: goggles, hard hats, gloves)",3C,Y
+Vehicle,4,Y
+Office Supplies - except IT items,5A,Y
+"Office Supplies - IT items (keyboard, mouse, USB stick, phone, tablet, etc.)",5B,Y
+Training,6,Y
+Communications,7,Y
+Postage + Shipping,8,Y
+"Travel (includes accommodation, meals, tolls)",9,Y
+Insurance,10,Y
+Fuel,11,Y
+Legal fees,12,Y
+License and permits,13,Y
+Rent,14,Y
+Salaries and wages,15,Y
+General,16,Y
+"Equipment (including computers, electric tools, generators, etc.) - should be > M 2000",17A,Y
+"Parts for constructing an asset (parts for PV tracker, minigrid infrastructure)",17B,Y
+Sub-contractors,18,Y
+Reimbursable,19,Y
+VAT (paid to SARS or LRA for clearing),220,Y
+Equipment rental,26,Y
+Meals and meetings,28,Y
+"Utilities (LEC, LEWA)",30,Y
+"Property maintenance (LNDC factory, minigrid powerhouse)",31,Y
+Other,X,Y

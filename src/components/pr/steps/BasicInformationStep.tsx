@@ -319,11 +319,13 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             label="Preferred Vendor"
             disabled={loading}
           >
-            {vendors.map(vendor => (
-              <MenuItem key={vendor.id} value={vendor.id}>
-                {vendor.name}
-              </MenuItem>
-            ))}
+            {vendors
+              .filter(vendor => vendor.active)
+              .map(vendor => (
+                <MenuItem key={vendor.id} value={vendor.id}>
+                  {vendor.name}
+                </MenuItem>
+              ))}
           </Select>
           <FormHelperText>Optional - Select if you have a preferred vendor</FormHelperText>
         </FormControl>

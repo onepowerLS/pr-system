@@ -2,19 +2,22 @@ import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { onAuthStateChanged } from 'firebase/auth';
+import { PersistGate } from 'redux-persist/integration/react';
 import { auth } from './config/firebase';
 import { setUser, setLoading, setError } from './store/slices/authSlice';
 import { RootState } from './store';
+import { persistor } from './store';
 import { LoginPage } from './components/auth/LoginPage';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { NewPRForm } from './components/pr/NewPRForm';
 import { PRView } from './components/pr/PRView';
 import { PrivateRoute } from './components/common/PrivateRoute';
+import { AdminRoute } from './components/common/AdminRoute';
+import { AdminDashboard } from './components/admin/AdminDashboard';
 import { Layout } from './components/common/Layout';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { getUserDetails } from './services/auth';
-import { Box, Typography } from '@mui/material';
-import EmailTest from './components/EmailTest';
+import { Box, Typography, CircularProgress } from '@mui/material';
 import './App.css';
 
 function App() {
@@ -66,41 +69,37 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <Router>
-        <Routes>
-          <Route path="/login" element={
-            loading ? (
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'center', 
-                alignItems: 'center', 
-                height: '100vh' 
-              }}>
-                Loading...
-              </div>
-            ) : (
-              user ? <Navigate to="/dashboard" replace /> : <LoginPage />
-            )
-          } />
-          <Route element={<PrivateRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/dashboard" element={
-                <>
-                  <Dashboard />
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="h6">Email Notification Test</Typography>
-                    <EmailTest />
-                  </Box>
-                </>
-              } />
-              <Route path="/pr/new" element={<NewPRForm />} />
-              <Route path="/pr/:id" element={<PRView />} />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <PersistGate loading={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>} persistor={persistor}>
+        <Router>
+          <Routes>
+            <Route path="/login" element={
+              loading ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                  <CircularProgress />
+                </Box>
+              ) : (
+                user ? <Navigate to="/dashboard" replace /> : <LoginPage />
+              )
+            } />
+            <Route element={<PrivateRoute />}>
+              <Route element={<Layout />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/pr/new" element={<NewPRForm />} />
+                <Route path="/pr/:id" element={<PRView />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              </Route>
             </Route>
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
+            <Route element={<AdminRoute />}>
+              <Route element={<Layout />}>
+                <Route path="/admin" element={<AdminDashboard />} />
+              </Route>
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </PersistGate>
     </ErrorBoundary>
   );
 }

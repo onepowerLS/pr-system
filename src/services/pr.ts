@@ -50,6 +50,7 @@ import { PRRequest, PRStatus, User } from '../types/pr';
 import { notificationService } from './notification';
 import { calculateDaysOpen } from '../utils/formatters';
 import { StorageService } from './storage';
+import { auth } from '../config/firebase';
 
 const PR_COLLECTION = 'purchaseRequests';
 const functions = getFunctions();
@@ -88,10 +89,10 @@ const convertTimestamps = (data: any): any => {
  * @returns {PRRequest} Purchase request data with calculated metrics
  */
 const calculatePRMetrics = (pr: PRRequest) => {
-  console.log('Calculating metrics for PR:', {
+  console.log('Calculating metrics for PR:', JSON.stringify({
     id: pr.id,
     isUrgent: pr.isUrgent
-  });
+  }, null, 2));
   return {
     ...pr,
     metrics: {
@@ -114,7 +115,7 @@ export const prService = {
    */
   async createPR(prData: Partial<PRRequest>): Promise<string> {
     try {
-      console.log('Creating PR with data:', prData);
+      console.log('Creating PR with data:', JSON.stringify(prData, null, 2));
       const prNumber = await this.generatePRNumber(prData.organization!);
       
       // Create PR document
@@ -165,7 +166,7 @@ export const prService = {
 
       // Send email notification using Cloud Function
       try {
-        console.log('Line items before notification:', prData.lineItems);
+        console.log('Line items before notification:', JSON.stringify(prData.lineItems, null, 2));
         const notificationData = {
           prNumber,
           department: prData.department,
@@ -175,7 +176,7 @@ export const prService = {
           requiredDate: prData.requiredDate,
           isUrgent: prData.isUrgent,
           items: prData.lineItems?.map(item => {
-            console.log('Processing line item attachments:', item.attachments);
+            console.log('Processing line item attachments:', JSON.stringify(item.attachments, null, 2));
             return {
               description: item.description,
               quantity: item.quantity,
@@ -191,11 +192,11 @@ export const prService = {
           })
         };
 
-        console.log('Sending PR notification with data:', notificationData);
+        console.log('Sending PR notification with data:', JSON.stringify(notificationData, null, 2));
         const result = await sendPRNotification(notificationData);
-        console.log('PR notification sent:', result);
+        console.log('PR notification sent:', JSON.stringify(result, null, 2));
       } catch (notificationError) {
-        console.error('Error sending PR notification:', notificationError);
+        console.error('Error sending PR notification:', JSON.stringify(notificationError, null, 2));
         // Don't throw here - we want the PR to be created even if notification fails
       }
 
@@ -222,7 +223,7 @@ export const prService = {
 
       return prRef.id;
     } catch (error) {
-      console.error('Error creating PR:', error);
+      console.error('Error creating PR:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -243,7 +244,7 @@ export const prService = {
       const yearMonth = now.getFullYear().toString() + 
                        (now.getMonth() + 1).toString().padStart(2, '0');
       
-      console.log('Generating PR number for yearMonth:', yearMonth);
+      console.log('Generating PR number for yearMonth:', JSON.stringify(yearMonth, null, 2));
 
       // Query for all PRs for this organization and filter client-side
       const q = query(
@@ -277,11 +278,11 @@ export const prService = {
 
       // Use the next number after the highest found, plus any additional attempts
       const nextNumber = maxNumber + attempt;
-      console.log('Next PR number:', nextNumber);
+      console.log('Next PR number:', JSON.stringify(nextNumber, null, 2));
 
       // Format: PR-YYYYMM-XXX where XXX is sequential number
       const prNumber = `PR-${yearMonth}-${nextNumber.toString().padStart(3, '0')}`;
-      console.log('Generated PR number:', prNumber);
+      console.log('Generated PR number:', JSON.stringify(prNumber, null, 2));
 
       // Double-check uniqueness
       const existingQ = query(
@@ -291,14 +292,14 @@ export const prService = {
       const existingDocs = await getDocs(existingQ);
       
       if (!existingDocs.empty) {
-        console.log('PR number collision detected:', prNumber, 'Attempt:', attempt);
+        console.log('PR number collision detected:', JSON.stringify(prNumber, null, 2), 'Attempt:', JSON.stringify(attempt, null, 2));
         // If there's a collision, try the next number by incrementing attempt
         return this.generatePRNumber(organization, attempt + 1);
       }
 
       return prNumber;
     } catch (error) {
-      console.error('Error generating PR number:', error);
+      console.error('Error generating PR number:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -310,45 +311,78 @@ export const prService = {
    */
   async createPRWithNumber(prData: Partial<PRRequest>): Promise<string> {
     try {
-      console.log('Creating PR with data:', prData);
-      
-      // Ensure required fields are present
-      if (!prData.requestorId) {
-        throw new Error('requestorId is required');
-      }
+      console.log('Creating PR with data:', JSON.stringify({
+        organization: prData.organization,
+        requestorId: prData.requestorId,
+        isUrgent: prData.isUrgent
+      }, null, 2));
+
+      // Validate required fields
       if (!prData.organization) {
         throw new Error('organization is required');
+      }
+      if (!prData.requestorId) {
+        throw new Error('requestorId is required');
       }
 
       // Generate PR number
       const prNumber = await this.generatePRNumber(prData.organization);
+      console.log('Generated PR number:', JSON.stringify(prNumber, null, 2));
 
-      const finalPRData = {
+      // Get current user for audit fields
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      // Create PR document
+      const pr = {
         ...prData,
-        status: PRStatus.SUBMITTED,  // Always SUBMITTED
-        createdAt: Timestamp.fromDate(new Date()),
-        updatedAt: Timestamp.fromDate(new Date()),
-        submittedBy: prData.requestorId,
-        requestorId: prData.requestorId,
-        prNumber: prNumber,  // Add PR number
-        isUrgent: prData.isUrgent ?? false  // Ensure isUrgent is always a boolean
+        prNumber,
+        status: PRStatus.DRAFT,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        submittedAt: null,
+        submittedBy: user.uid, // Use Firebase UID
+        requestorId: user.uid, // Use Firebase UID
+        approvers: [],
+        comments: [],
+        history: [],
+        attachments: [],
+        metrics: {
+          daysOpen: 0,
+          isUrgent: prData.isUrgent || false
+        }
       };
 
-      console.log('Final PR data:', finalPRData);
+      // Add to history
+      pr.history.push({
+        action: 'CREATED',
+        timestamp: new Date().toISOString(),
+        user: { id: user.uid, name: prData.requestor } as User,
+        comment: 'Purchase request created'
+      });
 
-      const docRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
+      // Create document
+      const docRef = await addDoc(collection(db, PR_COLLECTION), pr);
+      console.log('PR created with ID:', JSON.stringify(docRef.id, null, 2));
 
-      // Create status change notification
-      await notificationService.handleStatusChange(
-        docRef.id,
-        '',
-        PRStatus.SUBMITTED,
-        { id: prData.requestorId, name: prData.requestor } as User
-      );
+      // Send notification
+      try {
+        await sendPRNotification({
+          type: 'PR_CREATED',
+          prId: docRef.id,
+          userId: user.uid,
+          prNumber
+        });
+      } catch (error) {
+        console.error('Failed to send PR creation notification:', JSON.stringify(error, null, 2));
+        // Don't throw error, as PR is already created
+      }
 
       return docRef.id;
     } catch (error) {
-      console.error('Error creating PR:', error);
+      console.error('Error creating PR:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -361,7 +395,7 @@ export const prService = {
    */
   async updatePR(prId: string, updates: Partial<PRRequest>): Promise<void> {
     try {
-      console.log('Updating PR:', { prId, updates });
+      console.log('Updating PR:', JSON.stringify({ prId, updates }, null, 2));
       
       const prRef = doc(db, PR_COLLECTION, prId);
       
@@ -382,7 +416,7 @@ export const prService = {
       
       await updateDoc(prRef, finalUpdates);
     } catch (error) {
-      console.error('Error updating PR:', error);
+      console.error('Error updating PR:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -395,7 +429,7 @@ export const prService = {
    */
   async updatePRs(prIds: string[], updates: Partial<PRRequest>): Promise<void> {
     try {
-      console.log('Updating PRs:', { prIds, updates });
+      console.log('Updating PRs:', JSON.stringify({ prIds, updates }, null, 2));
       
       const batch = writeBatch(db);
       
@@ -422,75 +456,47 @@ export const prService = {
       // Commit all updates
       await batch.commit();
       
-      console.log('Successfully updated PRs:', prIds);
+      console.log('Successfully updated PRs:', JSON.stringify(prIds, null, 2));
     } catch (error) {
-      console.error('Error updating PRs:', error);
+      console.error('Error updating PRs:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
 
   /**
-   * Retrieves purchase requests for a given user
-   * @param {string} userId - ID of the user
-   * @param {string} organization - Organization name
-   * @returns {Promise<PRRequest[]>} List of purchase requests for the user
+   * Get PRs for a specific user in an organization
    */
   async getUserPRs(userId: string, organization: string): Promise<PRRequest[]> {
     try {
-      if (!userId) {
-        console.error('getUserPRs: No user ID provided');
+      if (!userId || !organization) {
+        console.error('getUserPRs: Missing required parameters', { userId, organization });
         return [];
       }
 
-      console.log('Getting PRs for user:', { userId, organization });
+      console.log('Getting PRs for user:', JSON.stringify({ userId, organization }, null, 2));
       
-      const q = query(
+      // Get all PRs for the organization
+      const allPRsQuery = query(
         collection(db, PR_COLLECTION),
-        where('organization', '==', organization),
-        where('requestorId', '==', userId)
+        where('organization', '==', organization)
       );
 
-      const querySnapshot = await getDocs(q);
-      console.log('Query results:', {
-        count: querySnapshot.size,
-        docs: querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          organization: doc.data().organization,
-          requestorId: doc.data().requestorId,
-          status: doc.data().status,
-          isUrgent: doc.data().isUrgent,
-          metrics: doc.data().metrics
-        }))
-      });
-
-      const prs = querySnapshot.docs.map(doc => {
+      const allPRsSnapshot = await getDocs(allPRsQuery);
+      const prs = allPRsSnapshot.docs.map(doc => {
         const data = doc.data();
-        
-        // Get urgency from both top-level and metrics
         const isUrgent = data.isUrgent === true || data.metrics?.isUrgent === true;
         
         // Process the data
         const processedData = {
           ...data,
           id: doc.id,
-          isUrgent // Use combined urgency value
+          isUrgent
         };
         
-        const pr = calculatePRMetrics(convertTimestamps(processedData) as PRRequest);
-        
-        console.log('Processing PR:', {
-          id: pr.id,
-          prNumber: pr.prNumber,
-          status: pr.status,
-          isUrgent: pr.isUrgent,
-          createdAt: pr.createdAt,
-          metrics: pr.metrics
-        });
-        
-        return pr;
+        return calculatePRMetrics(convertTimestamps(processedData) as PRRequest);
       });
-      
-      // Sort in memory instead of using orderBy
+
+      // Sort PRs by urgency and date
       const sortedPrs = prs.sort((a, b) => {
         // First sort by urgency
         if (a.isUrgent !== b.isUrgent) {
@@ -500,7 +506,7 @@ export const prService = {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
       
-      console.log('Retrieved PRs:', {
+      console.log('Retrieved PRs:', JSON.stringify({
         count: sortedPrs.length,
         prs: sortedPrs.map(pr => ({
           id: pr.id,
@@ -508,13 +514,16 @@ export const prService = {
           status: pr.status,
           isUrgent: pr.isUrgent,
           createdAt: pr.createdAt,
+          requestorId: pr.requestorId,
+          submittedBy: pr.submittedBy,
+          requestor: pr.requestor,
           metrics: pr.metrics
         }))
-      });
+      }, null, 2));
       
       return sortedPrs;
     } catch (error) {
-      console.error('Error getting user PRs:', error);
+      console.error('Error getting user PRs:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -561,15 +570,15 @@ export const prService = {
       // Combine the groups with urgent PRs first
       const sortedPRs = [...urgentPRs, ...nonUrgentPRs];
 
-      console.log('Sorted pending approvals:', {
+      console.log('Sorted pending approvals:', JSON.stringify({
         total: sortedPRs.length,
         urgent: urgentPRs.length,
         nonUrgent: nonUrgentPRs.length
-      });
+      }, null, 2));
 
       return sortedPRs.map(pr => calculatePRMetrics(pr));
     } catch (error) {
-      console.error('Error getting pending approvals:', error);
+      console.error('Error getting pending approvals:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -583,7 +592,7 @@ export const prService = {
    */
   async updateStatus(prId: string, status: PRStatus, updatedBy: User): Promise<void> {
     try {
-      console.log('Updating PR status:', { prId, status, updatedBy });
+      console.log('Updating PR status:', JSON.stringify({ prId, status, updatedBy }, null, 2));
       
       const prRef = doc(db, PR_COLLECTION, prId);
       
@@ -611,7 +620,7 @@ export const prService = {
         updatedBy
       );
     } catch (error) {
-      console.error('Error updating PR status:', error);
+      console.error('Error updating PR status:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -635,7 +644,7 @@ export const prService = {
               if (typeof file.url === 'string') {
                 await StorageService.deleteFile(file.url);
               } else {
-                console.error('Invalid file URL:', file.url);
+                console.error('Invalid file URL:', JSON.stringify(file.url, null, 2));
               }
             }));
           }
@@ -645,7 +654,7 @@ export const prService = {
       // Delete PR document
       await deleteDoc(doc(db, PR_COLLECTION, prId));
     } catch (error) {
-      console.error('Error deleting PR:', error);
+      console.error('Error deleting PR:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
@@ -693,7 +702,7 @@ export const prService = {
 
       return null;
     } catch (error) {
-      console.error('Error getting PR:', error);
+      console.error('Error getting PR:', JSON.stringify(error, null, 2));
       throw error;
     }
   }
