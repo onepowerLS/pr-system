@@ -43,7 +43,9 @@ export const Dashboard = () => {
   const { userPRs, pendingApprovals, loading } = useSelector(
     (state: RootState) => state.pr
   );
-  const [selectedOrg, setSelectedOrg] = useState<string>('1PWR_LSO');
+  const [selectedOrg, setSelectedOrg] = useState<string | { id: string; name: string }>(
+    user?.organization || { id: '1PWR', name: '1PWR LESOTHO' }
+  );
   const [selectedStatus, setSelectedStatus] = useState<PRStatus>(PRStatus.SUBMITTED);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [prToDelete, setPrToDelete] = useState<string | null>(null);
@@ -51,6 +53,7 @@ export const Dashboard = () => {
   // Initialize selectedOrg with user's organization when component mounts
   useEffect(() => {
     if (user?.organization) {
+      console.log('Setting organization from user:', user.organization);
       setSelectedOrg(user.organization);
     }
   }, [user?.organization]);
@@ -103,7 +106,10 @@ export const Dashboard = () => {
     loadDashboardData();
   }, [user, selectedOrg, dispatch]);
 
-  const filteredPRs = userPRs.filter(pr => pr.organization === selectedOrg);
+  const filteredPRs = userPRs.filter(pr => {
+    const orgName = typeof selectedOrg === 'string' ? selectedOrg : selectedOrg.name;
+    return pr.organization === orgName;
+  });
 
   // Get PRs for the selected status
   const getStatusPRs = () => {
@@ -113,17 +119,28 @@ export const Dashboard = () => {
         id: pr.id,
         prNumber: pr.prNumber,
         isUrgent: pr.isUrgent,
-        status: pr.status
+        status: pr.status,
+        organization: pr.organization
       }))
     });
-    const statusPRs = filteredPRs.filter(pr => pr.status === selectedStatus);
+    
+    const statusPRs = filteredPRs.filter(pr => {
+      console.log('Filtering PR:', {
+        id: pr.id,
+        status: pr.status,
+        selectedStatus,
+        matches: pr.status === selectedStatus
+      });
+      return pr.status === selectedStatus;
+    });
     
     // Log PRs before sorting
     console.log('Status PRs before sorting:', statusPRs.map(pr => ({
       id: pr.id,
       prNumber: pr.prNumber,
       isUrgent: pr.isUrgent,
-      status: pr.status
+      status: pr.status,
+      organization: pr.organization
     })));
     
     const sortedPRs = statusPRs.sort((a, b) => {
@@ -155,7 +172,8 @@ export const Dashboard = () => {
       id: pr.id,
       prNumber: pr.prNumber,
       isUrgent: pr.isUrgent,
-      status: pr.status
+      status: pr.status,
+      organization: pr.organization
     })));
 
     return sortedPRs;
