@@ -23,9 +23,10 @@ import {
   Chip,
   InputAdornment,
   IconButton as MuiIconButton,
+  CircularProgress
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon, Visibility, VisibilityOff, Key as KeyIcon } from '@mui/icons-material';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getAuth } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
@@ -40,6 +41,19 @@ interface User {
   organization: string;
   additionalOrganizations: string[];
   permissionLevel: number;
+}
+
+interface Permission {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  level: string | number;
+  actions: string[];
+  scope: string[];
+  active: boolean;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 interface PasswordDialogProps {
@@ -72,13 +86,6 @@ const organizations = [
   'SMP',
   'PUECO',
   '1PWR BENIN'
-];
-
-const permissionLevels = [
-  { value: 1, label: 'Full Admin' },
-  { value: 2, label: 'Department Head' },
-  { value: 3, label: 'Procurement' },
-  { value: 4, label: 'Standard User' }
 ];
 
 function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps) {
@@ -129,6 +136,8 @@ function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps
 
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -140,12 +149,48 @@ export function UserManagement() {
     department: '',
     organization: '',
     additionalOrganizations: [],
-    permissionLevel: 4
+    permissionLevel: undefined
   });
 
   useEffect(() => {
-    loadUsers();
+    loadInitialData();
   }, []);
+
+  const loadInitialData = async () => {
+    setIsLoading(true);
+    try {
+      await Promise.all([loadUsers(), loadPermissions()]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadPermissions = async () => {
+    try {
+      console.log('Loading permissions...');
+      const permissionsRef = collection(db, 'referenceData_permissions');
+      const permissionsQuery = query(permissionsRef);
+      const querySnapshot = await getDocs(permissionsQuery);
+      const loadedPermissions: Permission[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        console.log('Permission data:', { id: doc.id, ...data });
+        loadedPermissions.push({
+          ...data,
+          id: doc.id,
+          level: Number(data.level) // Always convert to number when loading
+        });
+      });
+      
+      // Sort permissions by level
+      loadedPermissions.sort((a, b) => Number(a.level) - Number(b.level));
+      console.log('Loaded permissions:', loadedPermissions);
+      setPermissions(loadedPermissions);
+    } catch (error) {
+      console.error('Error loading permissions:', error);
+    }
+  };
 
   const loadUsers = async () => {
     try {
@@ -159,9 +204,11 @@ export function UserManagement() {
           lastName: data.lastName || '',
           email: data.email || '',
           department: data.department || '',
-          organization: data.organization || '',
-          additionalOrganizations: Array.isArray(data.additionalOrganizations) ? data.additionalOrganizations : [],
-          permissionLevel: data.permissionLevel || 4
+          organization: typeof data.organization === 'string' ? data.organization : '',
+          additionalOrganizations: Array.isArray(data.additionalOrganizations) 
+            ? data.additionalOrganizations.map(org => typeof org === 'string' ? org : org?.name || '')
+            : [],
+          permissionLevel: typeof data.permissionLevel === 'number' ? data.permissionLevel : 5 // Default to requester (level 5)
         });
       });
       setUsers(loadedUsers);
@@ -177,6 +224,7 @@ export function UserManagement() {
   const handleClose = () => {
     setOpen(false);
     setEditingUser(null);
+    // Reset form data
     setFormData({
       firstName: '',
       lastName: '',
@@ -184,13 +232,19 @@ export function UserManagement() {
       department: '',
       organization: '',
       additionalOrganizations: [],
-      permissionLevel: 4
+      permissionLevel: undefined
     });
   };
 
   const handleEdit = (user: User) => {
+    console.log('Editing user:', user);
+    console.log('Current permissions:', permissions);
     setEditingUser(user);
-    setFormData(user);
+    // Set form data directly without resetting
+    setFormData({
+      ...user,
+      permissionLevel: typeof user.permissionLevel === 'number' ? user.permissionLevel : 5
+    });
     setOpen(true);
   };
 
@@ -207,13 +261,21 @@ export function UserManagement() {
 
   const handleSubmit = async () => {
     try {
+      const userData = {
+        ...formData,
+        permissionLevel: Number(formData.permissionLevel),
+        organization: formData.organization || '',
+        additionalOrganizations: formData.additionalOrganizations || []
+      };
+
       if (editingUser) {
-        await updateDoc(doc(db, 'users', editingUser.id), formData);
+        await updateDoc(doc(db, 'users', editingUser.id), userData);
       } else {
-        await addDoc(collection(db, 'users'), formData);
+        await addDoc(collection(db, 'users'), userData);
       }
-      handleClose();
+
       await loadUsers();
+      handleClose();
     } catch (error) {
       console.error('Error saving user:', error);
     }
@@ -249,154 +311,169 @@ export function UserManagement() {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h6">User Management</Typography>
-        <Button variant="contained" onClick={handleOpen}>
-          Add New User
-        </Button>
-      </Box>
-
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Department</TableCell>
-              <TableCell>Organization</TableCell>
-              <TableCell>Additional Organizations</TableCell>
-              <TableCell>Permission Level</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>{`${user.firstName} ${user.lastName}`}</TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.department}</TableCell>
-                <TableCell>{typeof user.organization === 'string' ? user.organization : user.organization?.name || ''}</TableCell>
-                <TableCell>
-                  {user.additionalOrganizations.map((org) => (
-                    <Chip key={org} label={typeof org === 'string' ? org : org?.name || ''} size="small" sx={{ mr: 0.5 }} />
-                  ))}
-                </TableCell>
-                <TableCell>
-                  {permissionLevels.find(level => level.value === user.permissionLevel)?.label || `Level ${user.permissionLevel}`}
-                </TableCell>
-                <TableCell>
-                  <IconButton onClick={() => handleEdit(user)} size="small">
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton onClick={() => handleDelete(user.id)} size="small">
-                    <DeleteIcon />
-                  </IconButton>
-                  <IconButton onClick={() => openPasswordDialog(user.id)} size="small">
-                    <KeyIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      <Dialog open={open} onClose={handleClose}>
-        <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
-        <DialogContent>
-          <TextField
-            margin="dense"
-            label="First Name"
-            fullWidth
-            value={formData.firstName}
-            onChange={(e) => handleChange('firstName', e.target.value)}
-          />
-          <TextField
-            margin="dense"
-            label="Last Name"
-            fullWidth
-            value={formData.lastName}
-            onChange={(e) => handleChange('lastName', e.target.value)}
-          />
-          <TextField
-            margin="dense"
-            label="Email"
-            fullWidth
-            value={formData.email}
-            onChange={(e) => handleChange('email', e.target.value)}
-          />
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Department</InputLabel>
-            <Select
-              value={formData.department}
-              onChange={(e) => handleChange('department', e.target.value)}
-              label="Department"
-            >
-              {departments.map((dept) => (
-                <MenuItem key={dept} value={dept}>{dept}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Organization</InputLabel>
-            <Select
-              value={formData.organization}
-              onChange={(e) => handleChange('organization', e.target.value)}
-              label="Organization"
-            >
-              {organizations.map((org) => (
-                <MenuItem key={org} value={org}>{org}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Additional Organizations</InputLabel>
-            <Select
-              multiple
-              value={formData.additionalOrganizations}
-              onChange={(e) => handleChange('additionalOrganizations', e.target.value)}
-              label="Additional Organizations"
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {selected.map((value) => (
-                    <Chip key={value} label={value} />
-                  ))}
-                </Box>
-              )}
-            >
-              {organizations.map((org) => (
-                <MenuItem key={org} value={org}>{org}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="dense">
-            <InputLabel>Permission Level</InputLabel>
-            <Select
-              value={formData.permissionLevel}
-              onChange={(e) => handleChange('permissionLevel', e.target.value)}
-              label="Permission Level"
-            >
-              {permissionLevels.map((level) => (
-                <MenuItem key={level.value} value={level.value}>{level.label}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {editingUser ? 'Save Changes' : 'Add User'}
+    <Box sx={{ p: 3 }}>
+      {isLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <>
+          <Typography variant="h4" gutterBottom>
+            User Management
+          </Typography>
+          <Button variant="contained" onClick={handleOpen} sx={{ mb: 2 }}>
+            Add New User
           </Button>
-        </DialogActions>
-      </Dialog>
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Email</TableCell>
+                  <TableCell>Department</TableCell>
+                  <TableCell>Organization</TableCell>
+                  <TableCell>Additional Organizations</TableCell>
+                  <TableCell>Permission Level</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell>{`${user.firstName} ${user.lastName}`}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>{user.department}</TableCell>
+                    <TableCell>{user.organization}</TableCell>
+                    <TableCell>
+                      {user.additionalOrganizations?.map((org) => (
+                        <Chip key={org} label={org} sx={{ m: 0.5 }} />
+                      ))}
+                    </TableCell>
+                    <TableCell>
+                      {permissions.find(p => Number(p.level) === user.permissionLevel)?.name || `Level ${user.permissionLevel}`}
+                    </TableCell>
+                    <TableCell>
+                      <IconButton onClick={() => handleEdit(user)}>
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton onClick={() => handleDelete(user.id)}>
+                        <DeleteIcon />
+                      </IconButton>
+                      <IconButton onClick={() => openPasswordDialog(user.id)}>
+                        <KeyIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
 
-      <PasswordDialog
-        open={passwordDialogOpen}
-        onClose={() => setPasswordDialogOpen(false)}
-        onSubmit={handlePasswordUpdate}
-        userId={selectedUserId}
-      />
+          <Dialog open={open} onClose={handleClose}>
+            <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
+            <DialogContent>
+              <TextField
+                autoFocus
+                margin="dense"
+                label="First Name"
+                fullWidth
+                value={formData.firstName}
+                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+              />
+              <TextField
+                margin="dense"
+                label="Last Name"
+                fullWidth
+                value={formData.lastName}
+                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+              />
+              <TextField
+                margin="dense"
+                label="Email"
+                type="email"
+                fullWidth
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              />
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Department</InputLabel>
+                <Select
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                >
+                  {departments.map((dept) => (
+                    <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Organization</InputLabel>
+                <Select
+                  value={formData.organization}
+                  onChange={(e) => setFormData({ ...formData, organization: e.target.value })}
+                >
+                  {organizations.map((org) => (
+                    <MenuItem key={org} value={org}>{org}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Additional Organizations</InputLabel>
+                <Select
+                  multiple
+                  value={formData.additionalOrganizations}
+                  onChange={(e) => {
+                    const value = e.target.value as string[];
+                    setFormData({ ...formData, additionalOrganizations: value });
+                  }}
+                  renderValue={(selected) => (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {(selected as string[]).map((value) => (
+                        <Chip key={value} label={value} />
+                      ))}
+                    </Box>
+                  )}
+                >
+                  {organizations.map((org) => (
+                    <MenuItem key={org} value={org}>{org}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Permission Level</InputLabel>
+                <Select
+                  value={formData.permissionLevel?.toString() || '5'}
+                  onChange={(e) => {
+                    const newLevel = Number(e.target.value);
+                    if (!isNaN(newLevel)) {
+                      setFormData(prev => ({ ...prev, permissionLevel: newLevel }));
+                    }
+                  }}
+                >
+                  {permissions.map((permission) => (
+                    <MenuItem key={permission.id} value={permission.level.toString()}>
+                      {permission.name} - {permission.description}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleClose}>Cancel</Button>
+              <Button onClick={handleSubmit} variant="contained">
+                {editingUser ? 'Update' : 'Add'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <PasswordDialog
+            open={passwordDialogOpen}
+            onClose={() => setPasswordDialogOpen(false)}
+            onSubmit={handlePasswordUpdate}
+            userId={selectedUserId}
+          />
+        </>
+      )}
     </Box>
   );
 }
