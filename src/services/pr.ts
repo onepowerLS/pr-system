@@ -470,19 +470,27 @@ export const prService = {
     try {
       console.log('PR Service: Fetching PRs for:', { userId, organization });
       
-      // Query PRs by organization only - no ordering to avoid index requirements
+      // Query PRs by organization name
       const q = query(
         collection(db, PR_COLLECTION),
         where('organization', '==', organization)
       );
       
       const querySnapshot = await getDocs(q);
-      console.log('PR Service: Found PRs:', querySnapshot.size);
+      console.log('PR Service: Found PRs:', {
+        count: querySnapshot.size,
+        organization,
+        prs: querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          prNumber: doc.data().prNumber,
+          organization: doc.data().organization
+        }))
+      });
       
       // Convert to array and sort in memory
       const prs = querySnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...convertTimestamps(doc.data())
       })) as PRRequest[];
 
       // Sort by urgency first, then by creation date
@@ -506,49 +514,47 @@ export const prService = {
    */
   getPendingApprovals: async (approverId: string, organization?: string): Promise<PRRequest[]> => {
     try {
-      console.log('Getting pending approvals for:', approverId);
-
-      let q = query(
-        collection(db, PR_COLLECTION),
+      console.log('PR Service: Fetching pending approvals:', { approverId, organization });
+      
+      // Build query conditions
+      const conditions: any[] = [
+        where('status', '==', PRStatus.SUBMITTED),
         where('approvers', 'array-contains', approverId)
-      );
-
+      ];
+      
+      // Add organization filter if provided
       if (organization) {
-        q = query(q, where('organization', '==', organization));
+        conditions.push(where('organization', '==', organization));
       }
-
+      
+      const q = query(collection(db, PR_COLLECTION), ...conditions);
       const querySnapshot = await getDocs(q);
+      
+      console.log('PR Service: Found pending approvals:', {
+        count: querySnapshot.size,
+        organization,
+        prs: querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          prNumber: doc.data().prNumber,
+          organization: doc.data().organization
+        }))
+      });
+      
+      // Convert to array and sort
       const prs = querySnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...convertTimestamps(doc.data())
       })) as PRRequest[];
 
-      // Separate urgent and non-urgent PRs
-      const urgentPRs = prs.filter(pr => pr.isUrgent);
-      const nonUrgentPRs = prs.filter(pr => !pr.isUrgent);
-
-      // Sort each group by creation date (oldest first)
-      const sortByDate = (a: PRRequest, b: PRRequest) => {
-        const dateA = new Date(a.createdAt);
-        const dateB = new Date(b.createdAt);
-        return dateA.getTime() - dateB.getTime();
-      };
-
-      urgentPRs.sort(sortByDate);
-      nonUrgentPRs.sort(sortByDate);
-
-      // Combine the groups with urgent PRs first
-      const sortedPRs = [...urgentPRs, ...nonUrgentPRs];
-
-      console.log('Sorted pending approvals:', JSON.stringify({
-        total: sortedPRs.length,
-        urgent: urgentPRs.length,
-        nonUrgent: nonUrgentPRs.length
-      }, null, 2));
-
-      return sortedPRs.map(pr => calculatePRMetrics(pr));
+      // Sort by urgency first, then by creation date
+      return prs.sort((a, b) => {
+        if (a.isUrgent !== b.isUrgent) {
+          return a.isUrgent ? -1 : 1;
+        }
+        return (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0);
+      });
     } catch (error) {
-      console.error('Error getting pending approvals:', JSON.stringify(error, null, 2));
+      console.error('Error fetching pending approvals:', error);
       throw error;
     }
   },

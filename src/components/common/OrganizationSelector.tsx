@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Select, MenuItem, FormControl, InputLabel, CircularProgress } from '@mui/material';
+import { Select, MenuItem, FormControl, InputLabel, CircularProgress, FormHelperText } from '@mui/material';
 import { referenceDataService } from '../../services/referenceData';
 import { ReferenceData } from '@/types/referenceData';
 import { RootState } from '@/store';
 
 interface OrganizationSelectorProps {
-  value: string | { id: string; name: string };
+  value: { id: string; name: string } | null | string;
   onChange: (value: { id: string; name: string }) => void;
 }
 
@@ -28,12 +28,32 @@ const organizationCodeMap: Record<string, string> = Object.entries(organizationD
 export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorProps) => {
   const [organizations, setOrganizations] = useState<ReferenceData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
     const loadOrganizations = async () => {
       try {
-        const allOrgs = await referenceDataService.getItemsByType('organizations');
+        setError(null);
+        console.log('Loading organizations for user:', {
+          user,
+          currentValue: value
+        });
+        
+        const allOrgs = await referenceDataService.getOrganizations();
+        console.log('All organizations loaded:', allOrgs.map(org => ({
+          id: org.id,
+          name: org.name,
+          code: org.code,
+          type: org.type
+        })));
+
+        if (allOrgs.length === 0) {
+          console.error('No organizations found in the database');
+          setError('No organizations available');
+          setOrganizations([]);
+          return;
+        }
         
         // Filter organizations based on user role
         let filteredOrgs;
@@ -48,33 +68,83 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
           filteredOrgs = allOrgs;
         } else {
           // Approvers and Requestors see their primary org and additional orgs
-          const userOrgs = new Set([
-            user.organization?.id,
+          const userOrgNames = [
+            user.organization,
             ...(user.additionalOrganizations || [])
-          ].filter(Boolean));
+          ].filter(Boolean).map(org => org.toString().toLowerCase());
           
-          filteredOrgs = allOrgs.filter(org => userOrgs.has(org.id));
+          console.log('User organization names:', userOrgNames);
+          
+          // Match by organization name
+          filteredOrgs = allOrgs.filter(org => {
+            const orgName = org.name.toString().toLowerCase();
+            const matches = userOrgNames.some(userOrgName => 
+              orgName === userOrgName ||
+              // Also try with underscores replaced by spaces
+              orgName === userOrgName.replace(/_/g, ' ')
+            );
+
+            console.log('Checking organization:', {
+              org: { id: org.id, name: org.name },
+              matches
+            });
+
+            return matches;
+          });
+
+          if (filteredOrgs.length === 0) {
+            console.error('User has no matching organizations');
+            setError('No organizations available for your account');
+          }
         }
         
+        console.log('Filtered organizations:', filteredOrgs.map(org => ({
+          id: org.id,
+          name: org.name,
+          code: org.code
+        })));
         setOrganizations(filteredOrgs);
+
+        // Set default organization if no value is selected and user has an organization
+        if (!value && user?.organization && filteredOrgs.length > 0) {
+          // Try to find org by name
+          const userOrgName = user.organization.toString().toLowerCase();
+          const userOrg = filteredOrgs.find(org => {
+            const orgName = org.name.toString().toLowerCase();
+            return (
+              orgName === userOrgName ||
+              // Also try with underscores replaced by spaces
+              orgName === userOrgName.replace(/_/g, ' ')
+            );
+          });
+          
+          if (userOrg) {
+            console.log('Setting default organization:', userOrg);
+            onChange({ id: userOrg.id, name: userOrg.name });
+          }
+        }
       } catch (error) {
         console.error('Error loading organizations:', error);
+        setError('Failed to load organizations');
+        setOrganizations([]);
       } finally {
         setLoading(false);
       }
     };
     loadOrganizations();
-  }, [user]);
+  }, [user, value, onChange]);
 
   // Convert organization object or string to display value
-  const displayValue = typeof value === 'object' ? value.name : organizationCodeMap[value] || '';
+  const displayValue = value 
+    ? (typeof value === 'object' ? value.name : value)
+    : '';
 
   if (loading) {
     return <CircularProgress size={24} />;
   }
 
   return (
-    <FormControl fullWidth>
+    <FormControl fullWidth error={!!error}>
       <InputLabel id="organization-label">Organization</InputLabel>
       <Select
         labelId="organization-label"
@@ -85,6 +155,7 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
           // Find the selected organization object
           const selectedOrg = organizations.find(org => org.name === e.target.value);
           if (selectedOrg) {
+            console.log('Organization selected:', selectedOrg);
             onChange({ id: selectedOrg.id, name: selectedOrg.name });
           }
         }}
@@ -95,6 +166,7 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
           </MenuItem>
         ))}
       </Select>
+      {error && <FormHelperText>{error}</FormHelperText>}
     </FormControl>
   );
 };

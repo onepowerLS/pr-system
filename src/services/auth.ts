@@ -159,6 +159,18 @@ export const getUserDetails = async (uid: string): Promise<User> => {
       throw new Error('User not found');
     }
     const userData = userDoc.data();
+    
+    // If the user's organization is 'Codeium', update it to a default organization
+    if (userData.organization === 'Codeium') {
+      console.log('Found default organization, updating to 1PWR LESOTHO');
+      // Update the user's organization in Firestore
+      await updateDoc(doc(db, 'users', uid), {
+        organization: '1PWR LESOTHO',
+        updatedAt: new Date().toISOString()
+      });
+      userData.organization = '1PWR LESOTHO';
+    }
+    
     return {
       id: uid,
       email: userData.email,

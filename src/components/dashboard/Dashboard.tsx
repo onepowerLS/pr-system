@@ -27,6 +27,7 @@ import { OrganizationSelector } from '../common/OrganizationSelector';
 import { MetricsPanel } from './MetricsPanel';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { Link } from 'react-router-dom';
+import { referenceDataService } from '../../services/referenceData';
 
 const UrgentTableRow = styled(TableRow)(({ theme }) => ({
   backgroundColor: `${theme.palette.error.main}15`,
@@ -43,25 +44,89 @@ export const Dashboard = () => {
   const { userPRs, pendingApprovals, loading } = useSelector(
     (state: RootState) => state.pr
   );
-  const [selectedOrg, setSelectedOrg] = useState<string | { id: string; name: string }>(
-    user?.organization || { id: '1PWR', name: '1PWR LESOTHO' }
-  );
+  const [selectedOrg, setSelectedOrg] = useState<{ id: string; name: string } | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<PRStatus>(PRStatus.SUBMITTED);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [prToDelete, setPrToDelete] = useState<string | null>(null);
 
-  // Initialize selectedOrg with user's organization when component mounts
+  // Initialize selectedOrg with user's organization when component mounts or when user changes
   useEffect(() => {
     if (user?.organization) {
-      console.log('Setting organization from user:', user.organization);
-      setSelectedOrg(user.organization);
+      console.log('Setting organization from user:', {
+        organization: user.organization,
+        additionalOrgs: user.additionalOrganizations
+      });
+      
+      // Get the organization details from the reference data service
+      const loadUserOrg = async () => {
+        try {
+          const orgs = await referenceDataService.getOrganizations();
+          console.log('Available organizations:', orgs.map(org => ({
+            id: org.id,
+            name: org.name,
+            code: org.code,
+            type: org.type
+          })));
+          
+          // Try to find org by ID, code, or name
+          const userOrg = orgs.find(org => {
+            const orgId = org.id.toString().toLowerCase();
+            const orgCode = (org.code || '').toString().toLowerCase();
+            const orgName = org.name.toString().toLowerCase();
+            const userOrgId = user.organization.toString().toLowerCase();
+            
+            console.log('Comparing organization:', {
+              orgId,
+              orgCode,
+              orgName,
+              userOrgId
+            });
+            
+            return (
+              orgId === userOrgId ||
+              orgCode === userOrgId ||
+              orgName === userOrgId ||
+              // Also try with underscores replaced by spaces
+              orgId === userOrgId.replace(/_/g, ' ') ||
+              orgCode === userOrgId.replace(/_/g, ' ') ||
+              orgName === userOrgId.replace(/_/g, ' ')
+            );
+          });
+          
+          if (userOrg) {
+            console.log('Found matching organization:', {
+              id: userOrg.id,
+              name: userOrg.name,
+              code: userOrg.code,
+              userOrg: user.organization
+            });
+            setSelectedOrg({ id: userOrg.id, name: userOrg.name });
+          } else {
+            console.log('No matching organization found for:', {
+              userOrg: user.organization,
+              availableOrgs: orgs.map(org => ({
+                id: org.id,
+                name: org.name,
+                code: org.code
+              }))
+            });
+          }
+        } catch (error) {
+          console.error('Error loading user organization:', error);
+        }
+      };
+      loadUserOrg();
     }
-  }, [user?.organization]);
+  }, [user]);
 
   // Add real-time update effect
   useEffect(() => {
     if (!user?.id || !selectedOrg) {
-      console.log('Dashboard: No user ID or organization available');
+      console.log('Dashboard: No user ID or organization available', {
+        userId: user?.id,
+        selectedOrg,
+        userOrg: user?.organization
+      });
       return;
     }
 
@@ -74,8 +139,8 @@ export const Dashboard = () => {
     const loadDashboardData = async () => {
       dispatch(setLoading(true));
       try {
-        // Get organization name
-        const orgName = typeof selectedOrg === 'string' ? selectedOrg : selectedOrg.name;
+        // Get organization name for filtering
+        const orgName = selectedOrg.name;
 
         // Load user's PRs with organization filter
         console.log('Dashboard: Fetching PRs for org:', {
@@ -120,8 +185,7 @@ export const Dashboard = () => {
   }, [user, selectedOrg, dispatch]);
 
   const filteredPRs = userPRs.filter(pr => {
-    const orgName = typeof selectedOrg === 'string' ? selectedOrg : selectedOrg.name;
-    return pr.organization === orgName;
+    return selectedOrg ? pr.organization === selectedOrg.name : false;
   });
 
   // Get PRs for the selected status
@@ -225,10 +289,15 @@ export const Dashboard = () => {
       <Grid container spacing={3}>
         <Grid item xs={12}>
           <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-            <OrganizationSelector
-              value={selectedOrg}
-              onChange={(org) => setSelectedOrg(org)}
-            />
+            <Grid item xs={12} md={4}>
+              <OrganizationSelector
+                value={selectedOrg || ''}
+                onChange={(org) => {
+                  console.log('Organization selected:', org);
+                  setSelectedOrg(org);
+                }}
+              />
+            </Grid>
             <Box sx={{ flexGrow: 1 }} />
             <Button
               variant="contained"
