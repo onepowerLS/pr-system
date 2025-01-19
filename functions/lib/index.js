@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.testEmailNotification = exports.sendPRNotification = void 0;
+exports.updateUserEmail = exports.createUser = exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.testEmailNotification = exports.sendPRNotification = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const nodemailer = __importStar(require("nodemailer"));
@@ -45,6 +45,10 @@ const setupInitialAdmin_1 = require("./setupInitialAdmin");
 Object.defineProperty(exports, "setupInitialAdmin", { enumerable: true, get: function () { return setupInitialAdmin_1.setupInitialAdmin; } });
 const syncUserEmails_1 = require("./syncUserEmails");
 Object.defineProperty(exports, "syncUserEmails", { enumerable: true, get: function () { return syncUserEmails_1.syncUserEmails; } });
+const createUser_1 = require("./createUser");
+Object.defineProperty(exports, "createUser", { enumerable: true, get: function () { return createUser_1.createUser; } });
+const updateUserEmail_1 = require("./updateUserEmail");
+Object.defineProperty(exports, "updateUserEmail", { enumerable: true, get: function () { return updateUserEmail_1.updateUserEmail; } });
 // Initialize Firebase Admin
 admin.initializeApp();
 // Create transporter

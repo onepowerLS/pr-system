@@ -217,35 +217,35 @@ export function UserManagement() {
     return orgId.toLowerCase().replace(/\s+/g, '_');
   };
 
-  // Helper function to normalize department ID
-  const normalizeDeptId = (deptId: string): string => {
-    return deptId.toLowerCase().replace(/\s+/g, '_');
+  // Helper function to find department by name (case insensitive)
+  const findDepartmentByName = (deptName: string): ReferenceData | undefined => {
+    return departments.find(d => 
+      d.name.toLowerCase() === deptName.toLowerCase()
+    );
+  };
+
+  // Helper function to find department by ID
+  const findDepartmentById = (deptId: string): ReferenceData | undefined => {
+    return departments.find(d => d.id === deptId);
   };
 
   // Load departments for a specific organization
-  const loadDepartmentsForOrg = async (orgId: string) => {
-    if (!orgId) {
-      setDepartments([]);
-      return;
-    }
+  const loadDepartmentsForOrg = async (organization: string) => {
+    console.log('Loading departments for organization:', organization);
+    setIsDepartmentsLoading(true);
     
     try {
-      setIsDepartmentsLoading(true);
-      console.log('Loading departments for organization:', orgId);
-      const loadedDepartments = await referenceDataService.getDepartments(orgId);
+      const loadedDepartments = await referenceDataService.getDepartments(organization);
       console.log('Loaded departments:', loadedDepartments);
-      
-      // Log the available department values
       console.log('Available department values:', loadedDepartments.map(dept => ({
         id: dept.id,
         name: dept.name,
-        normalized: normalizeDeptId(dept.id)
+        organization: dept.organization
       })));
       
       setDepartments(loadedDepartments);
     } catch (error) {
       console.error('Error loading departments:', error);
-      showSnackbar('Error loading departments', 'error');
       setDepartments([]);
     } finally {
       setIsDepartmentsLoading(false);
@@ -264,17 +264,17 @@ export function UserManagement() {
     }
   };
 
-  // Update departments when organization changes
+  // Load departments whenever organization changes in the form
   useEffect(() => {
     if (formData.organization) {
       loadDepartmentsForOrg(formData.organization);
     } else {
-      // Clear departments if no organization is selected
       setDepartments([]);
     }
   }, [formData.organization]);
 
-  const handleOpen = () => {
+  const handleAdd = () => {
+    setEditingUser(null);
     setFormData({
       firstName: '',
       lastName: '',
@@ -284,7 +284,6 @@ export function UserManagement() {
       additionalOrganizations: [],
       permissionLevel: 5
     });
-    setEditingUser(null);
     setIsDialogOpen(true);
   };
 
@@ -305,16 +304,15 @@ export function UserManagement() {
 
   const handleEdit = (user: User) => {
     console.log('Editing user:', user);
-    console.log('Current permissions:', permissions);
     
     const normalizedOrg = normalizeOrgId(user.organization);
-    const normalizedDept = normalizeDeptId(user.department);
+    const dept = findDepartmentByName(user.department);
     
     console.log('Normalized values:', {
       originalOrg: user.organization,
       normalizedOrg,
       originalDept: user.department,
-      normalizedDept
+      foundDept: dept
     });
     
     setEditingUser(user);
@@ -322,7 +320,7 @@ export function UserManagement() {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      department: normalizedDept,
+      department: dept?.id || '',
       organization: normalizedOrg,
       additionalOrganizations: user.additionalOrganizations || [],
       permissionLevel: user.permissionLevel || 5
@@ -374,7 +372,7 @@ export function UserManagement() {
     password: string;
     firstName: string;
     lastName: string;
-    role: string;
+    department: string;
     organization: string;
     permissionLevel: number;
   }) => {
@@ -398,58 +396,37 @@ export function UserManagement() {
 
   const handleSubmit = async () => {
     try {
+      const dept = findDepartmentById(formData.department);
+      
       const userData = {
-        ...formData,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        department: dept?.name || '',
+        organization: formData.organization,
         permissionLevel: Number(formData.permissionLevel),
-        organization: formData.organization || '',
         additionalOrganizations: formData.additionalOrganizations || []
       };
 
       if (editingUser) {
-        // Update user data
         await handleUserUpdate(editingUser.id, userData);
-
-        // If permission level changed, update user claims
-        if (editingUser.permissionLevel !== userData.permissionLevel) {
-          const setUserClaimsFunction = httpsCallable(functions, 'setUserClaims');
-          const result = await setUserClaimsFunction({
-            email: userData.email,
-            permissionLevel: userData.permissionLevel
-          });
-          
-          // Show the message from the claims update
-          const claimsResponse = result.data as { message: string };
-          alert(claimsResponse.message);
-        }
       } else {
-        // Create new user
         await handleNewUser({
           email: userData.email,
           password: generateRandomPassword(),
           firstName: userData.firstName,
           lastName: userData.lastName,
-          role: userData.department,
+          department: userData.department,
           organization: userData.organization,
           permissionLevel: userData.permissionLevel
         });
-        
-        // Set initial user claims
-        const setUserClaimsFunction = httpsCallable(functions, 'setUserClaims');
-        const result = await setUserClaimsFunction({
-          email: userData.email,
-          permissionLevel: userData.permissionLevel
-        });
-        
-        // Show the message from the claims update
-        const claimsResponse = result.data as { message: string };
-        alert(claimsResponse.message);
       }
 
-      await loadUsers();
-      handleClose();
+      setIsDialogOpen(false);
+      loadUsers();
     } catch (error) {
       console.error('Error saving user:', error);
-      alert('Failed to save user. Please try again.');
+      // Handle error appropriately
     }
   };
 
@@ -532,7 +509,7 @@ export function UserManagement() {
               </Button>
               <Button
                 variant="contained"
-                onClick={handleOpen}
+                onClick={handleAdd}
                 disabled={isLoading}
               >
                 Add New User
@@ -557,7 +534,7 @@ export function UserManagement() {
               <TableRow key={user.id}>
                 <TableCell>{`${user.firstName} ${user.lastName}`}</TableCell>
                 <TableCell>{user.email}</TableCell>
-                <TableCell>{getDepartmentName(user.department || '')}</TableCell>
+                <TableCell>{user.department}</TableCell>
                 <TableCell>{getOrganizationName(user.organization || '')}</TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -619,28 +596,22 @@ export function UserManagement() {
           <FormControl fullWidth margin="dense">
             <InputLabel>Organization</InputLabel>
             <Select
-              value={formData.organization || ''}
-              onChange={(e) => {
-                const newOrg = e.target.value;
-                setFormData({
-                  ...formData,
-                  organization: newOrg,
-                  department: '' // Clear department when organization changes
-                });
-              }}
+              value={formData.organization}
+              onChange={(e) => setFormData({ ...formData, organization: e.target.value, department: '' })}
               label="Organization"
             >
               {organizations.map((org) => (
-                <MenuItem key={normalizeOrgId(org.id)} value={normalizeOrgId(org.id)}>
+                <MenuItem key={org.id} value={org.id}>
                   {org.name}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
+
           <FormControl fullWidth margin="dense">
             <InputLabel>Department</InputLabel>
             <Select
-              value={formData.department || ''}
+              value={formData.department}
               onChange={(e) => setFormData({ ...formData, department: e.target.value })}
               label="Department"
               disabled={!formData.organization || isDepartmentsLoading}
@@ -651,7 +622,7 @@ export function UserManagement() {
                 <MenuItem disabled>No departments available</MenuItem>
               ) : (
                 departments.map((dept) => (
-                  <MenuItem key={normalizeDeptId(dept.id)} value={normalizeDeptId(dept.id)}>
+                  <MenuItem key={dept.id} value={dept.id}>
                     {dept.name}
                   </MenuItem>
                 ))

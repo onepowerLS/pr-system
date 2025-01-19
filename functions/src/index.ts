@@ -5,6 +5,8 @@ import { updateUserPassword } from './updateUserPassword';
 import { setUserClaims } from './setUserClaims';
 import { setupInitialAdmin } from './setupInitialAdmin';
 import { syncUserEmails } from './syncUserEmails';
+import { createUser } from './createUser';
+import { updateUserEmail } from './updateUserEmail';
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -188,7 +190,11 @@ export const testEmailNotification = functions.https.onCall(async (data, context
     }
 });
 
-export { updateUserPassword };
-export { setUserClaims };
-export { setupInitialAdmin };
-export { syncUserEmails };
+export {
+    updateUserPassword,
+    setUserClaims,
+    setupInitialAdmin,
+    syncUserEmails,
+    createUser,
+    updateUserEmail
+};

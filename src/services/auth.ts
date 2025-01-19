@@ -258,20 +258,16 @@ export const resetPassword = async (email: string): Promise<void> => {
  */
 export const updateUserEmail = async (userId: string, newEmail: string): Promise<void> => {
   try {
-    // First, get the user from Firebase Auth
-    const userRecord = await getAuth().getUser(userId);
+    const updateUserEmailFunction = httpsCallable(functions, 'updateUserEmail');
+    const result = await updateUserEmailFunction({ userId, newEmail });
     
-    // Update email in Firebase Auth
-    await getAuth().updateUser(userId, {
-      email: newEmail,
-    });
+    const response = result.data as {
+      success: boolean;
+    };
 
-    // Update email in Firestore
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      email: newEmail,
-      updatedAt: new Date().toISOString()
-    });
+    if (!response.success) {
+      throw new Error('Failed to update user email');
+    }
 
     console.log(`Successfully updated email for user ${userId} to ${newEmail}`);
   } catch (error) {
@@ -309,35 +305,24 @@ export const createUser = async (userData: {
   password: string;
   firstName: string;
   lastName: string;
-  role: string;
+  department: string;
   organization: string;
   permissionLevel: number;
 }): Promise<User> => {
   try {
-    // First create the user in Firebase Auth
-    const userRecord = await getAuth().createUser({
-      email: userData.email,
-      password: userData.password,
-      displayName: `${userData.firstName} ${userData.lastName}`
-    });
-
-    // Then create the user document in Firestore
-    const userDoc = {
-      id: userRecord.uid,
-      email: userData.email,
-      firstName: userData.firstName,
-      lastName: userData.lastName,
-      role: userData.role,
-      organization: userData.organization,
-      isActive: true,
-      permissionLevel: userData.permissionLevel,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    const createUserFunction = httpsCallable(functions, 'createUser');
+    const result = await createUserFunction(userData);
+    
+    const response = result.data as {
+      success: boolean;
+      user: User;
     };
 
-    await setDoc(doc(db, 'users', userRecord.uid), userDoc);
+    if (!response.success) {
+      throw new Error('Failed to create user');
+    }
 
-    return userDoc;
+    return response.user;
   } catch (error) {
     console.error('Error creating user:', error);
     throw error;
