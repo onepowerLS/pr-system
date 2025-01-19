@@ -36,6 +36,8 @@ import { db, functions } from '../../config/firebase';
 import { User } from '../../types/user';
 import { updateUserEmail, createUser, updateUserPassword } from '../../services/auth';
 import { useSnackbar } from '../../contexts/SnackbarContext';
+import { referenceDataService } from '../../services/referenceData';
+import { ReferenceData } from '../../types/referenceData';
 
 // Helper function to generate random password
 function generateRandomPassword(): string {
@@ -68,24 +70,6 @@ interface PasswordDialogProps {
   onSubmit: (newPassword: string) => void;
   userId: string;
 }
-
-const departments = [
-  'CEO',
-  'CFO',
-  'Asset Management',
-  'DPO',
-  'EHS',
-  'Engineering',
-  'Facilities',
-  'Finance',
-  'Fleet',
-  'IT',
-  'O&M',
-  'Procurement',
-  'Production',
-  'PUECO',
-  'Reticulation'
-];
 
 const organizations = [
   '1PWR LESOTHO',
@@ -143,6 +127,7 @@ function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [departments, setDepartments] = useState<ReferenceData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -170,7 +155,11 @@ export function UserManagement() {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      await Promise.all([loadUsers(), loadPermissions()]);
+      await Promise.all([
+        loadUsers(), 
+        loadPermissions(),
+        loadDepartments()
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -227,6 +216,25 @@ export function UserManagement() {
       console.error('Error loading users:', error);
     }
   };
+
+  const loadDepartments = async () => {
+    try {
+      console.log('Loading departments...');
+      const loadedDepartments = await referenceDataService.getDepartments(formData.organization || '');
+      console.log('Loaded departments:', loadedDepartments);
+      setDepartments(loadedDepartments);
+    } catch (error) {
+      console.error('Error loading departments:', error);
+      showSnackbar('Error loading departments', 'error');
+    }
+  };
+
+  // Update departments when organization changes
+  useEffect(() => {
+    if (formData.organization) {
+      loadDepartments();
+    }
+  }, [formData.organization]);
 
   const handleOpen = () => {
     setIsDialogOpen(true);
@@ -531,11 +539,14 @@ export function UserManagement() {
               <FormControl fullWidth margin="dense">
                 <InputLabel>Department</InputLabel>
                 <Select
-                  value={formData.department}
+                  value={formData.department || ''}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                  label="Department"
                 >
                   {departments.map((dept) => (
-                    <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                    <MenuItem key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </MenuItem>
                   ))}
                 </Select>
               </FormControl>
