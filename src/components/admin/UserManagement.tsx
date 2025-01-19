@@ -217,6 +217,11 @@ export function UserManagement() {
     return orgId.toLowerCase().replace(/\s+/g, '_');
   };
 
+  // Helper function to normalize department ID
+  const normalizeDeptId = (deptId: string): string => {
+    return deptId.toLowerCase().replace(/\s+/g, '_');
+  };
+
   // Load departments for a specific organization
   const loadDepartmentsForOrg = async (orgId: string) => {
     if (!orgId) {
@@ -229,6 +234,14 @@ export function UserManagement() {
       console.log('Loading departments for organization:', orgId);
       const loadedDepartments = await referenceDataService.getDepartments(orgId);
       console.log('Loaded departments:', loadedDepartments);
+      
+      // Log the available department values
+      console.log('Available department values:', loadedDepartments.map(dept => ({
+        id: dept.id,
+        name: dept.name,
+        normalized: normalizeDeptId(dept.id)
+      })));
+      
       setDepartments(loadedDepartments);
     } catch (error) {
       console.error('Error loading departments:', error);
@@ -293,13 +306,24 @@ export function UserManagement() {
   const handleEdit = (user: User) => {
     console.log('Editing user:', user);
     console.log('Current permissions:', permissions);
+    
+    const normalizedOrg = normalizeOrgId(user.organization);
+    const normalizedDept = normalizeDeptId(user.department);
+    
+    console.log('Normalized values:', {
+      originalOrg: user.organization,
+      normalizedOrg,
+      originalDept: user.department,
+      normalizedDept
+    });
+    
     setEditingUser(user);
     setFormData({
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      department: user.department,
-      organization: normalizeOrgId(user.organization),
+      department: normalizedDept,
+      organization: normalizedOrg,
       additionalOrganizations: user.additionalOrganizations || [],
       permissionLevel: user.permissionLevel || 5
     });
@@ -627,7 +651,7 @@ export function UserManagement() {
                 <MenuItem disabled>No departments available</MenuItem>
               ) : (
                 departments.map((dept) => (
-                  <MenuItem key={dept.id} value={dept.id}>
+                  <MenuItem key={normalizeDeptId(dept.id)} value={normalizeDeptId(dept.id)}>
                     {dept.name}
                   </MenuItem>
                 ))

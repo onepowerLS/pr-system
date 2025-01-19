@@ -16,15 +16,25 @@ class ReferenceDataService {
     console.log('Getting reference data items:', { type, organization });
     
     try {
-      const collectionRef = collection(this.db, this.getCollectionName(type));
+      const collectionName = this.getCollectionName(type);
+      console.log('Collection name:', collectionName);
+      
+      const collectionRef = collection(this.db, collectionName);
       let q = collectionRef;
 
       // Only filter by organization for org-dependent types
       if (!ORG_INDEPENDENT_TYPES.includes(type as any) && organization) {
+        console.log('Applying organization filter:', { type, organization });
         q = query(collectionRef, where('organization', '==', organization));
       }
 
       const querySnapshot = await getDocs(q);
+      console.log('Query snapshot:', {
+        empty: querySnapshot.empty,
+        size: querySnapshot.size,
+        docs: querySnapshot.docs.map(doc => doc.id)
+      });
+      
       const items = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -37,7 +47,8 @@ class ReferenceDataService {
           id: item.id,
           name: item.name,
           type: item.type,
-          active: item.active
+          active: item.active,
+          organization: item.organization
         }))
       });
 
@@ -46,7 +57,12 @@ class ReferenceDataService {
       console.log('Filtered to active items:', {
         type,
         totalCount: items.length,
-        activeCount: activeItems.length
+        activeCount: activeItems.length,
+        items: activeItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          organization: item.organization
+        }))
       });
 
       return activeItems;
