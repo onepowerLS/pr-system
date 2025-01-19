@@ -33,10 +33,18 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.testEmailNotification = exports.sendPRNotification = void 0;
+exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.testEmailNotification = exports.sendPRNotification = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const nodemailer = __importStar(require("nodemailer"));
+const updateUserPassword_1 = require("./updateUserPassword");
+Object.defineProperty(exports, "updateUserPassword", { enumerable: true, get: function () { return updateUserPassword_1.updateUserPassword; } });
+const setUserClaims_1 = require("./setUserClaims");
+Object.defineProperty(exports, "setUserClaims", { enumerable: true, get: function () { return setUserClaims_1.setUserClaims; } });
+const setupInitialAdmin_1 = require("./setupInitialAdmin");
+Object.defineProperty(exports, "setupInitialAdmin", { enumerable: true, get: function () { return setupInitialAdmin_1.setupInitialAdmin; } });
+const syncUserEmails_1 = require("./syncUserEmails");
+Object.defineProperty(exports, "syncUserEmails", { enumerable: true, get: function () { return syncUserEmails_1.syncUserEmails; } });
 // Initialize Firebase Admin
 admin.initializeApp();
 // Create transporter
@@ -52,35 +60,86 @@ const transporter = nodemailer.createTransport({
         rejectUnauthorized: false
     }
 });
+// Helper function to format file size
+const formatFileSize = (bytes) => {
+    if (bytes < 1024)
+        return `${bytes} B`;
+    if (bytes < 1024 * 1024)
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 // Helper function to generate PR email content
 const generatePREmailContent = (prData) => {
-    const items = prData.items.map((item, index) => `
+    const items = prData.items.map((item, index) => {
+        var _a;
+        const attachmentsList = ((_a = item.attachments) === null || _a === void 0 ? void 0 : _a.length) > 0
+            ? `<ul style="margin: 0; padding-left: 20px;">
+                ${item.attachments.map((att) => `<li style="margin-bottom: 4px;">
+                        <span style="display: inline-flex; align-items: center;">
+                            ${att.name} (${formatFileSize(att.size)})
+                            ${att.url ? `
+                                <a href="${att.url}" 
+                                   target="_blank"
+                                   style="margin-left: 8px; 
+                                          display: inline-flex;
+                                          align-items: center;
+                                          padding: 2px 6px;
+                                          background: #f0f0f0;
+                                          border: 1px solid #ddd;
+                                          border-radius: 4px;
+                                          text-decoration: none;
+                                          color: #333;
+                                          font-size: 12px;">
+                                    <svg xmlns="http://www.w3.org/2000/svg" 
+                                         width="12" 
+                                         height="12" 
+                                         viewBox="0 0 24 24" 
+                                         fill="none" 
+                                         stroke="currentColor" 
+                                         stroke-width="2" 
+                                         stroke-linecap="round" 
+                                         stroke-linejoin="round"
+                                         style="margin-right: 4px;">
+                                        <path d="M21 15l-9 9h-12v-12l9-9h12v12z"/>
+                                    </svg>
+                                    View
+                                </a>`
+                : ''}
+                        </span>
+                    </li>`).join('')}
+               </ul>`
+            : 'None';
+        return `
         <tr>
             <td>${index + 1}</td>
             <td>${item.description}</td>
             <td>${item.quantity}</td>
             <td>${item.uom}</td>
             <td>${item.notes || '-'}</td>
+            <td>${attachmentsList}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
     return {
         text: `
-            New Purchase Request Submitted
+            Purchase Request ${prData.prNumber}
             
-            PR Number: ${prData.prNumber}
             Department: ${prData.department}
             Requestor: ${prData.requestorName} (${prData.requestorEmail})
             Description: ${prData.description}
+            Required Date: ${prData.requiredDate}
+            Urgency: ${prData.isUrgent ? 'URGENT' : 'Normal'}
             Date: ${new Date().toLocaleDateString()}
             
             Please review the purchase request in the system.
         `,
         html: `
-            <h2>New Purchase Request Submitted</h2>
-            <p><strong>PR Number:</strong> ${prData.prNumber}</p>
+            <h2>Purchase Request ${prData.prNumber}</h2>
             <p><strong>Department:</strong> ${prData.department}</p>
             <p><strong>Requestor:</strong> ${prData.requestorName} (${prData.requestorEmail})</p>
             <p><strong>Description:</strong> ${prData.description}</p>
+            <p><strong>Required Date:</strong> ${prData.requiredDate}</p>
+            <p><strong>Urgency:</strong> ${prData.isUrgent ? '<span style="color: red; font-weight: bold;">URGENT</span>' : 'Normal'}</p>
             <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
             
             <h3>Items:</h3>
@@ -91,27 +150,39 @@ const generatePREmailContent = (prData) => {
                     <th>Quantity</th>
                     <th>UOM</th>
                     <th>Notes</th>
+                    <th>Attachments</th>
                 </tr>
                 ${items}
             </table>
             
-            <p>Please <a href="http://localhost:5173/pr/${prData.prNumber}">click here</a> to review the purchase request in the system.</p>
+            <p>Please <a href="${process.env.VITE_APP_URL || 'http://localhost:5173'}/pr/${prData.prNumber}">click here</a> to review the purchase request in the system.</p>
         `
     };
 };
 // Function to send PR notification
 exports.sendPRNotification = functions.https.onCall(async (data, context) => {
+    var _a;
     try {
         if (!data.requestorEmail) {
             throw new Error('Requestor email is required');
         }
+        console.log('Received notification data:', data);
+        console.log('Items with attachments:', (_a = data.items) === null || _a === void 0 ? void 0 : _a.map((item) => ({
+            description: item.description,
+            attachments: item.attachments
+        })));
         const emailContent = generatePREmailContent(data);
+        console.log('Generated email content:', emailContent);
+        // Create email subject based on urgency
+        const subject = data.isUrgent
+            ? `URGENT: Purchase Request - ${data.prNumber}`
+            : `Purchase Request - ${data.prNumber}`;
         // Send to procurement and CC the requestor
         const procurementInfo = await transporter.sendMail({
             from: '"1PWR PR System" <noreply@1pwrafrica.com>',
             to: 'procurement@1pwrafrica.com',
             cc: data.requestorEmail,
-            subject: `New Purchase Request - PR#${data.prNumber}`,
+            subject: subject,
             text: emailContent.text,
             html: emailContent.html
         });

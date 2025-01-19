@@ -81,16 +81,14 @@ console.log('Firebase config loaded:', {
   storageBucket: firebaseConfig.storageBucket
 });
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase app and services
+export const app = initializeApp(firebaseConfig);
 console.log('Firebase app initialized successfully');
 
-// Initialize Auth
-const auth = getAuth(app);
+export const auth = getAuth(app);
 console.log('Firebase auth initialized successfully');
 
-// Initialize Firestore with persistence
-const db = getFirestore(app);
+export const db = getFirestore(app);
 console.log('Firebase Firestore initialized successfully');
 
 // Enable offline persistence
@@ -108,20 +106,17 @@ enableIndexedDbPersistence(db)
     }
   });
 
-const storage = getStorage(app);
+export const storage = getStorage(app);
 console.log('Firebase storage initialized successfully');
 
-const functions = getFunctions(app);
+// Initialize Firebase Functions with the correct region and custom domain
+export const functions = getFunctions(app);
 console.log('Firebase functions initialized successfully');
 
 // Only initialize analytics in production
-let analytics = null;
+export const analytics = import.meta.env.PROD ? getAnalytics(app) : null;
 if (import.meta.env.PROD) {
-  analytics = getAnalytics(app);
   console.log('Firebase analytics initialized successfully');
 }
 
 console.log('=== Firebase Initialization Complete ===');
-
-// Export initialized services
-export { app, auth, db, storage, functions, analytics };

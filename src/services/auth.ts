@@ -33,18 +33,31 @@
  * 4. UI components react to state changes
  */
 
-import { 
+import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
-  User as FirebaseUser,
-  AuthError,
   AuthErrorCodes,
   onAuthStateChanged,
   getIdToken,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  getAuth,
+  User as FirebaseUser,
+  AuthError
 } from 'firebase/auth';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
+
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  setDoc
+} from 'firebase/firestore';
+
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../config/firebase';
 import { User } from '../types/user';
 import { store } from '../store';
 import { setUser, clearUser, setLoading, setError } from '../store/slices/authSlice';
@@ -80,7 +93,7 @@ export const signIn = async (email: string, password: string): Promise<void> => 
     store.dispatch(setError(null));
 
     // Sign in with Firebase
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const userCredential = await signInWithEmailAndPassword(getAuth(), email, password);
     console.log('auth.ts: Firebase sign in successful');
 
     // Get user details from Firestore
@@ -126,7 +139,7 @@ export const signIn = async (email: string, password: string): Promise<void> => 
 
 export const signOut = async (): Promise<void> => {
   try {
-    await firebaseSignOut(auth);
+    await firebaseSignOut(getAuth());
     if (refreshTokenInterval) {
       clearInterval(refreshTokenInterval);
       refreshTokenInterval = null;
@@ -139,57 +152,32 @@ export const signOut = async (): Promise<void> => {
   }
 };
 
-export const getUserDetails = async (uid: string): Promise<User | null> => {
-  console.log('auth.ts: Getting user details for:', uid);
+export const getUserDetails = async (uid: string): Promise<User> => {
   try {
-    // First try to get user by UID
-    const userDocRef = doc(db, 'users', uid);
-    let userDoc = await getDoc(userDocRef);
-
-    // If not found by UID, try to find by email
+    const userDoc = await getDoc(doc(db, 'users', uid));
     if (!userDoc.exists()) {
-      console.log('auth.ts: User not found by UID, checking email...');
-      const user = auth.currentUser;
-      if (user?.email) {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('email', '==', user.email));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-          userDoc = querySnapshot.docs[0];
-          console.log('auth.ts: User found by email');
-        } else {
-          console.log('auth.ts: User not found by email either');
-          return null;
-        }
-      }
+      throw new Error('User not found');
     }
-
-    const userData = userDoc.data() as Omit<User, 'id'>;
-    
-    // Ensure organization data is properly formatted
-    const organization = typeof userData.organization === 'string'
-      ? { id: normalizeOrganizationId(userData.organization), name: userData.organization }
-      : userData.organization;
-
-    // Normalize additional organization IDs
-    const additionalOrganizations = userData.additionalOrganizations?.map(normalizeOrganizationId) || [];
-
-    // Return user data with normalized organization IDs
+    const userData = userDoc.data();
     return {
-      id: userDoc.id,
-      ...userData,
-      organization,
-      additionalOrganizations
+      id: uid,
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      role: userData.role,
+      organization: userData.organization,
+      isActive: userData.isActive,
+      permissionLevel: userData.permissionLevel,
+      additionalOrganizations: userData.additionalOrganizations || []
     };
   } catch (error) {
-    console.error('auth.ts: Get user details failed:', error);
+    console.error('Error fetching user details:', error);
     throw error;
   }
 };
 
 export const getCurrentUser = async (): Promise<User | null> => {
-  const user = auth.currentUser;
+  const user = getAuth().currentUser;
   if (!user) {
     return null;
   }
@@ -197,7 +185,7 @@ export const getCurrentUser = async (): Promise<User | null> => {
 };
 
 export const initializeAuthListener = (): void => {
-  onAuthStateChanged(auth, async (user) => {
+  onAuthStateChanged(getAuth(), async (user) => {
     try {
       if (user) {
         const userDetails = await getUserDetails(user.uid);
@@ -224,7 +212,7 @@ export const resetPassword = async (email: string): Promise<void> => {
     store.dispatch(setLoading(true));
     store.dispatch(setError(null));
 
-    await sendPasswordResetEmail(auth, email);
+    await sendPasswordResetEmail(getAuth(), email);
     console.log('auth.ts: Password reset email sent');
   } catch (error) {
     console.error('auth.ts: Password reset failed:', error);
@@ -248,5 +236,98 @@ export const resetPassword = async (email: string): Promise<void> => {
     throw error;
   } finally {
     store.dispatch(setLoading(false));
+  }
+};
+
+/**
+ * Updates a user's email address in both Firebase Auth and Firestore
+ * @param userId - The user's ID
+ * @param newEmail - The new email address
+ */
+export const updateUserEmail = async (userId: string, newEmail: string): Promise<void> => {
+  try {
+    // First, get the user from Firebase Auth
+    const userRecord = await getAuth().getUser(userId);
+    
+    // Update email in Firebase Auth
+    await getAuth().updateUser(userId, {
+      email: newEmail,
+    });
+
+    // Update email in Firestore
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      email: newEmail,
+      updatedAt: new Date().toISOString()
+    });
+
+    console.log(`Successfully updated email for user ${userId} to ${newEmail}`);
+  } catch (error) {
+    console.error('Error updating user email:', error);
+    throw error;
+  }
+};
+
+/**
+ * Updates a user's password in Firebase Auth
+ * @param userId The user's ID
+ * @param email The user's email
+ * @param newPassword The new password to set
+ * @returns A promise that resolves with the result of the operation
+ */
+export async function updateUserPassword(userId: string, email: string, newPassword: string) {
+  try {
+    const updatePasswordFunction = httpsCallable(functions, 'updateUserPassword');
+    return await updatePasswordFunction({
+      userId,
+      email,
+      newPassword
+    });
+  } catch (error) {
+    console.error('Error updating password:', error);
+    throw error;
+  }
+}
+
+/**
+ * Creates a new user in both Firebase Auth and Firestore
+ */
+export const createUser = async (userData: {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  organization: string;
+  permissionLevel: number;
+}): Promise<User> => {
+  try {
+    // First create the user in Firebase Auth
+    const userRecord = await getAuth().createUser({
+      email: userData.email,
+      password: userData.password,
+      displayName: `${userData.firstName} ${userData.lastName}`
+    });
+
+    // Then create the user document in Firestore
+    const userDoc = {
+      id: userRecord.uid,
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      role: userData.role,
+      organization: userData.organization,
+      isActive: true,
+      permissionLevel: userData.permissionLevel,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    await setDoc(doc(db, 'users', userRecord.uid), userDoc);
+
+    return userDoc;
+  } catch (error) {
+    console.error('Error creating user:', error);
+    throw error;
   }
 };

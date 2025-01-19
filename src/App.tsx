@@ -18,6 +18,7 @@ import { Layout } from './components/common/Layout';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { getUserDetails } from './services/auth';
 import { Box, Typography, CircularProgress } from '@mui/material';
+import { SnackbarProvider } from './contexts/SnackbarContext';
 import './App.css';
 
 function App() {
@@ -72,33 +73,35 @@ function App() {
       <PersistGate loading={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <CircularProgress />
       </Box>} persistor={persistor}>
-        <Router>
-          <Routes>
-            <Route path="/login" element={
-              loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-                  <CircularProgress />
-                </Box>
-              ) : (
-                user ? <Navigate to="/dashboard" replace /> : <LoginPage />
-              )
-            } />
-            <Route element={<PrivateRoute />}>
-              <Route element={<Layout />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/pr/new" element={<NewPRForm />} />
-                <Route path="/pr/:id" element={<PRView />} />
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <SnackbarProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={
+                loading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                    <CircularProgress />
+                  </Box>
+                ) : (
+                  user ? <Navigate to="/dashboard" replace /> : <LoginPage />
+                )
+              } />
+              <Route element={<PrivateRoute />}>
+                <Route element={<Layout />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/pr/new" element={<NewPRForm />} />
+                  <Route path="/pr/:id" element={<PRView />} />
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                </Route>
               </Route>
-            </Route>
-            <Route element={<AdminRoute />}>
-              <Route element={<Layout />}>
-                <Route path="/admin" element={<AdminDashboard />} />
+              <Route element={<AdminRoute />}>
+                <Route element={<Layout />}>
+                  <Route path="/admin" element={<AdminDashboard />} />
+                </Route>
               </Route>
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Router>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Router>
+        </SnackbarProvider>
       </PersistGate>
     </ErrorBoundary>
   );

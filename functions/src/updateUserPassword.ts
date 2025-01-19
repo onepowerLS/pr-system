@@ -1,8 +1,33 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 
-export const updateUserPassword = functions.https.onCall(async (data, context) => {
-  // Check if request is made by an admin user
+interface UpdatePasswordData {
+  userId: string;
+  email: string;
+  newPassword: string;
+}
+
+/**
+ * Validates an email address
+ * @param email The email to validate
+ * @returns true if email is valid, false otherwise
+ */
+function isValidEmail(email: string): boolean {
+  if (!email || typeof email !== 'string') return false;
+  
+  // Trim and convert to lowercase
+  email = email.trim().toLowerCase();
+  
+  // Basic email validation regex
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+/**
+ * Cloud Function to update a user's password in Firebase Auth
+ */
+export const updateUserPassword = functions.https.onCall(async (data: UpdatePasswordData, context) => {
+  // Check if the caller is authenticated and has admin privileges
   if (!context.auth?.token.admin) {
     throw new functions.https.HttpsError(
       'permission-denied',
@@ -10,30 +35,108 @@ export const updateUserPassword = functions.https.onCall(async (data, context) =
     );
   }
 
-  const { email, newPassword } = data;
-
-  if (!email || !newPassword) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Email and new password are required'
-    );
-  }
-
   try {
-    // Get user by email
-    const user = await admin.auth().getUserByEmail(email);
-    
-    // Update password
-    await admin.auth().updateUser(user.uid, {
-      password: newPassword,
+    // Log incoming data for debugging
+    console.log('Received update password request:', {
+      userId: data.userId,
+      email: data.email,
+      passwordLength: data.newPassword?.length
     });
 
-    return { success: true };
+    // Validate input
+    if (!data.userId || !data.email || !data.newPassword) {
+      const missingFields = [];
+      if (!data.userId) missingFields.push('userId');
+      if (!data.email) missingFields.push('email');
+      if (!data.newPassword) missingFields.push('newPassword');
+
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        `Missing required fields: ${missingFields.join(', ')}`
+      );
+    }
+
+    // Clean and validate email
+    const cleanEmail = data.email.trim().toLowerCase();
+    if (!isValidEmail(cleanEmail)) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        `Invalid email format: ${cleanEmail}`
+      );
+    }
+
+    // Validate password length
+    if (data.newPassword.length < 6) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Password must be at least 6 characters long'
+      );
+    }
+
+    try {
+      // First verify the user exists
+      const userRecord = await admin.auth().getUser(data.userId);
+      console.log('Found user:', userRecord.uid);
+      
+      // Verify email matches
+      if (userRecord.email?.toLowerCase() !== cleanEmail) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          `Email does not match user record. Expected: ${userRecord.email}, Got: ${cleanEmail}`
+        );
+      }
+
+      // Update the user's password
+      await admin.auth().updateUser(data.userId, {
+        password: data.newPassword
+      });
+
+      console.log(`Successfully updated password for user: ${data.userId}`);
+
+      return {
+        success: true,
+        message: 'Password updated successfully'
+      };
+    } catch (error) {
+      console.error('Error in Firebase Auth operations:', error);
+      
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+
+      if (error instanceof Error && 'code' in error) {
+        const authError = error as { code: string };
+        if (authError.code === 'auth/user-not-found') {
+          throw new functions.https.HttpsError(
+            'not-found',
+            'User not found'
+          );
+        }
+        if (authError.code === 'auth/invalid-password') {
+          throw new functions.https.HttpsError(
+            'invalid-argument',
+            'Invalid password format'
+          );
+        }
+      }
+
+      throw new functions.https.HttpsError(
+        'internal',
+        'Error updating user password',
+        error instanceof Error ? error.message : undefined
+      );
+    }
   } catch (error) {
-    console.error('Error updating user password:', error);
+    console.error('Error in updateUserPassword:', error);
+    
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
     throw new functions.https.HttpsError(
       'internal',
-      'Failed to update user password'
+      'Error updating user password',
+      error instanceof Error ? error.message : undefined
     );
   }
 });

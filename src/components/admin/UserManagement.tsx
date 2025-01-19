@@ -1,17 +1,5 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Typography,
-  Button,
-  TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Table,
   TableBody,
   TableCell,
@@ -19,28 +7,46 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Button,
+  Box,
+  Typography,
+  CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem,
+  Snackbar,
+  Alert,
+  Select,
+  FormControl,
+  InputLabel,
   IconButton,
   Chip,
   InputAdornment,
-  IconButton as MuiIconButton,
-  CircularProgress
+  RadioGroup,
+  FormControlLabel,
+  Radio
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon, Visibility, VisibilityOff, Key as KeyIcon } from '@mui/icons-material';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
-import { db } from '../../config/firebase';
-import { getAuth } from 'firebase/auth';
+import { doc, collection, query, where, getDocs, updateDoc, addDoc, deleteDoc, orderBy } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../config/firebase';
+import { db, functions } from '../../config/firebase';
+import { User } from '../../types/user';
+import { updateUserEmail, createUser, updateUserPassword } from '../../services/auth';
+import { useSnackbar } from '../../contexts/SnackbarContext';
 
-interface User {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  department: string;
-  organization: string;
-  additionalOrganizations: string[];
-  permissionLevel: number;
+// Helper function to generate random password
+function generateRandomPassword(): string {
+  const length = 12;
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * charset.length);
+    password += charset[randomIndex];
+  }
+  return password;
 }
 
 interface Permission {
@@ -113,12 +119,12 @@ function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps
           InputProps={{
             endAdornment: (
               <InputAdornment position="end">
-                <MuiIconButton
+                <IconButton
                   onClick={() => setShowPassword(!showPassword)}
                   edge="end"
                 >
                   {showPassword ? <VisibilityOff /> : <Visibility />}
-                </MuiIconButton>
+                </IconButton>
               </InputAdornment>
             ),
           }}
@@ -137,11 +143,15 @@ function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [open, setOpen] = useState(false);
-  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [passwordMode, setPasswordMode] = useState<'random' | 'custom'>('custom');
+  const [customPassword, setCustomPassword] = useState('');
+  const [generatedPassword, setGeneratedPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isPasswordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<User>>({
     firstName: '',
     lastName: '',
@@ -151,6 +161,7 @@ export function UserManagement() {
     additionalOrganizations: [],
     permissionLevel: undefined
   });
+  const { showSnackbar } = useSnackbar();
 
   useEffect(() => {
     loadInitialData();
@@ -218,11 +229,11 @@ export function UserManagement() {
   };
 
   const handleOpen = () => {
-    setOpen(true);
+    setIsDialogOpen(true);
   };
 
   const handleClose = () => {
-    setOpen(false);
+    setIsDialogOpen(false);
     setEditingUser(null);
     // Reset form data
     setFormData({
@@ -245,7 +256,7 @@ export function UserManagement() {
       ...user,
       permissionLevel: typeof user.permissionLevel === 'number' ? user.permissionLevel : 5
     });
-    setOpen(true);
+    setIsDialogOpen(true);
   };
 
   const handleDelete = async (userId: string) => {
@@ -259,6 +270,61 @@ export function UserManagement() {
     }
   };
 
+  const handleUserUpdate = async (userId: string, updatedData: Partial<User>) => {
+    try {
+      setIsLoading(true);
+      
+      // If email is being updated, use special function to sync with Firebase Auth
+      if (updatedData.email) {
+        await updateUserEmail(userId, updatedData.email);
+      }
+
+      // Update other user data in Firestore
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        ...updatedData,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Refresh user list
+      await loadUsers();
+      
+      showSnackbar('User updated successfully', 'success');
+    } catch (error) {
+      console.error('Error updating user:', error);
+      showSnackbar(error instanceof Error ? error.message : 'Failed to update user', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleNewUser = async (userData: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    organization: string;
+    permissionLevel: number;
+  }) => {
+    try {
+      setIsLoading(true);
+      
+      // Use createUser function that handles both Auth and Firestore
+      await createUser(userData);
+
+      // Refresh user list
+      await loadUsers();
+      
+      showSnackbar('User created successfully', 'success');
+    } catch (error) {
+      console.error('Error creating user:', error);
+      showSnackbar(error instanceof Error ? error.message : 'Failed to create user', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       const userData = {
@@ -269,15 +335,50 @@ export function UserManagement() {
       };
 
       if (editingUser) {
-        await updateDoc(doc(db, 'users', editingUser.id), userData);
+        // Update user data
+        await handleUserUpdate(editingUser.id, userData);
+
+        // If permission level changed, update user claims
+        if (editingUser.permissionLevel !== userData.permissionLevel) {
+          const setUserClaimsFunction = httpsCallable(functions, 'setUserClaims');
+          const result = await setUserClaimsFunction({
+            email: userData.email,
+            permissionLevel: userData.permissionLevel
+          });
+          
+          // Show the message from the claims update
+          const claimsResponse = result.data as { message: string };
+          alert(claimsResponse.message);
+        }
       } else {
-        await addDoc(collection(db, 'users'), userData);
+        // Create new user
+        await handleNewUser({
+          email: userData.email,
+          password: generateRandomPassword(),
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          role: userData.department,
+          organization: userData.organization,
+          permissionLevel: userData.permissionLevel
+        });
+        
+        // Set initial user claims
+        const setUserClaimsFunction = httpsCallable(functions, 'setUserClaims');
+        const result = await setUserClaimsFunction({
+          email: userData.email,
+          permissionLevel: userData.permissionLevel
+        });
+        
+        // Show the message from the claims update
+        const claimsResponse = result.data as { message: string };
+        alert(claimsResponse.message);
       }
 
       await loadUsers();
       handleClose();
     } catch (error) {
       console.error('Error saving user:', error);
+      alert('Failed to save user. Please try again.');
     }
   };
 
@@ -285,29 +386,46 @@ export function UserManagement() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handlePasswordUpdate = async (newPassword: string) => {
+  const handlePasswordUpdate = async (userId: string, email: string, newPassword: string) => {
     try {
-      const user = users.find(u => u.id === selectedUserId);
-      if (!user) return;
+      setIsLoading(true);
+      
+      // Trim and validate email
+      const trimmedEmail = email.trim().toLowerCase();
+      if (!trimmedEmail) {
+        throw new Error('Email is required');
+      }
 
-      // Call the updatePassword cloud function
-      const updatePasswordFunction = httpsCallable(functions, 'updateUserPassword');
-      await updatePasswordFunction({ 
-        email: user.email, 
-        newPassword 
-      });
-
-      // Show success message
-      alert('Password updated successfully');
+      const result = await updateUserPassword(userId, trimmedEmail, newPassword);
+      
+      if (result.data?.success) {
+        showSnackbar('Password updated successfully', 'success');
+        setPasswordDialogOpen(false);
+        // Reset states
+        setCustomPassword('');
+        setGeneratedPassword('');
+        setPasswordMode('custom');
+        setShowPassword(false);
+      } else {
+        throw new Error(result.data?.error || 'Failed to update password');
+      }
     } catch (error) {
       console.error('Error updating password:', error);
-      alert('Failed to update password. Please try again.');
+      showSnackbar(error instanceof Error ? error.message : 'Failed to update password', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const openPasswordDialog = (userId: string) => {
-    setSelectedUserId(userId);
+  const handlePasswordDialogOpen = (user: User) => {
+    if (!user.email) {
+      showSnackbar('User has no email address', 'error');
+      return;
+    }
+    setSelectedUserId(user.id);
     setPasswordDialogOpen(true);
+    // Generate a random password by default
+    setGeneratedPassword(generateRandomPassword());
   };
 
   return (
@@ -318,12 +436,27 @@ export function UserManagement() {
         </Box>
       ) : (
         <>
-          <Typography variant="h4" gutterBottom>
-            User Management
-          </Typography>
-          <Button variant="contained" onClick={handleOpen} sx={{ mb: 2 }}>
-            Add New User
-          </Button>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h4" gutterBottom>
+              User Management
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="outlined"
+                onClick={() => handleSyncEmails()}
+                disabled={isLoading}
+              >
+                Sync User Emails
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleOpen}
+                disabled={isLoading}
+              >
+                Add New User
+              </Button>
+            </Box>
+          </Box>
           <TableContainer component={Paper}>
             <Table>
               <TableHead>
@@ -359,7 +492,7 @@ export function UserManagement() {
                       <IconButton onClick={() => handleDelete(user.id)}>
                         <DeleteIcon />
                       </IconButton>
-                      <IconButton onClick={() => openPasswordDialog(user.id)}>
+                      <IconButton onClick={() => handlePasswordDialogOpen(user)}>
                         <KeyIcon />
                       </IconButton>
                     </TableCell>
@@ -369,7 +502,7 @@ export function UserManagement() {
             </Table>
           </TableContainer>
 
-          <Dialog open={open} onClose={handleClose}>
+          <Dialog open={isDialogOpen} onClose={handleClose}>
             <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
             <DialogContent>
               <TextField
@@ -466,12 +599,112 @@ export function UserManagement() {
             </DialogActions>
           </Dialog>
 
-          <PasswordDialog
-            open={passwordDialogOpen}
-            onClose={() => setPasswordDialogOpen(false)}
-            onSubmit={handlePasswordUpdate}
-            userId={selectedUserId}
-          />
+          <Dialog 
+            open={isPasswordDialogOpen} 
+            onClose={() => {
+              setPasswordDialogOpen(false);
+              setCustomPassword('');
+              setGeneratedPassword('');
+              setPasswordMode('custom');
+              setShowPassword(false);
+            }}
+          >
+            <DialogTitle>Update Password</DialogTitle>
+            <DialogContent>
+              <Box sx={{ mb: 2 }}>
+                <FormControl component="fieldset">
+                  <RadioGroup
+                    row
+                    value={passwordMode}
+                    onChange={(e) => setPasswordMode(e.target.value as 'random' | 'custom')}
+                  >
+                    <FormControlLabel 
+                      value="custom" 
+                      control={<Radio />} 
+                      label="Custom Password" 
+                    />
+                    <FormControlLabel 
+                      value="random" 
+                      control={<Radio />} 
+                      label="Random Password" 
+                    />
+                  </RadioGroup>
+                </FormControl>
+              </Box>
+
+              {passwordMode === 'custom' ? (
+                <TextField
+                  fullWidth
+                  label="New Password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={customPassword}
+                  onChange={(e) => setCustomPassword(e.target.value)}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                        >
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ mb: 2 }}
+                />
+              ) : (
+                <Box sx={{ mb: 2 }}>
+                  <TextField
+                    fullWidth
+                    label="Generated Password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={generatedPassword}
+                    InputProps={{
+                      readOnly: true,
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            onClick={() => setShowPassword(!showPassword)}
+                            edge="end"
+                          >
+                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                  <Button
+                    size="small"
+                    onClick={() => setGeneratedPassword(generateRandomPassword())}
+                    sx={{ mt: 1 }}
+                  >
+                    Generate New Password
+                  </Button>
+                </Box>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setPasswordDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  const user = users.find(u => u.id === selectedUserId);
+                  if (user?.email) {
+                    const newPassword = passwordMode === 'custom' ? customPassword : generatedPassword;
+                    if (newPassword.length < 6) {
+                      showSnackbar('Password must be at least 6 characters long', 'error');
+                      return;
+                    }
+                    handlePasswordUpdate(selectedUserId, user.email, newPassword);
+                  }
+                }}
+                color="primary"
+                disabled={passwordMode === 'custom' ? !customPassword : !generatedPassword}
+              >
+                Update Password
+              </Button>
+            </DialogActions>
+          </Dialog>
         </>
       )}
     </Box>

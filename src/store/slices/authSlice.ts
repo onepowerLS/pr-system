@@ -45,18 +45,16 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
  * User Interface
  * Defines the shape of the user object
  */
-interface User {
+export interface User {
   id: string;
   email: string;
-  name: string;
+  firstName: string;
+  lastName: string;
   role: string;
-  permissionLevel: number;
+  organization: string;
   isActive: boolean;
-  organization: {
-    id: string;
-    name: string;
-  };
-  additionalOrganizations?: string[]; // IDs of additional organizations the user has access to
+  permissionLevel: number;
+  additionalOrganizations?: string[];
 }
 
 /**

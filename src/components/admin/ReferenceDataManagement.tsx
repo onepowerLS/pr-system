@@ -181,6 +181,42 @@ const SEED_DATA = {
   ]
 } as const;
 
+interface ReferenceDataField {
+  name: keyof ReferenceDataItem;
+  label: string;
+  required?: boolean;
+  type?: string;
+}
+
+const commonFields: ReferenceDataField[] = [
+  { name: 'id', label: 'ID', required: true },
+  { name: 'name', label: 'Name', required: true }
+];
+
+const vendorFields: ReferenceDataField[] = [
+  ...commonFields,
+  { name: 'contactName', label: 'Contact Name' } as ReferenceDataField,
+  { name: 'contactEmail', label: 'Contact Email' } as ReferenceDataField,
+  { name: 'contactPhone', label: 'Contact Phone' } as ReferenceDataField,
+  { name: 'address', label: 'Address' } as ReferenceDataField,
+  { name: 'url', label: 'Website URL' } as ReferenceDataField,
+  { name: 'notes', label: 'Notes' } as ReferenceDataField
+];
+
+const organizationFields: ReferenceDataField[] = [
+  ...commonFields,
+  { name: 'shortName', label: 'Short Name' } as ReferenceDataField,
+  { name: 'country', label: 'Country' } as ReferenceDataField,
+  { name: 'timezone', label: 'Timezone' } as ReferenceDataField,
+  { name: 'currency', label: 'Default Currency' } as ReferenceDataField
+];
+
+const permissionFields: ReferenceDataField[] = [
+  ...commonFields,
+  { name: 'level', label: 'Permission Level', type: 'number' } as ReferenceDataField,
+  { name: 'description', label: 'Description' } as ReferenceDataField
+];
+
 export function ReferenceDataManagement() {
   const [selectedType, setSelectedType] = useState<ReferenceDataType>("departments")
   const [items, setItems] = useState<ReferenceDataItem[]>([])
@@ -238,42 +274,14 @@ export function ReferenceDataManagement() {
   };
 
   // Get form fields based on type
-  const getFormFields = (type: ReferenceDataType): Array<{
-    name: keyof ReferenceDataItem;
-    label: string;
-    required?: boolean;
-    type?: string;
-  }> => {
-    const commonFields = [
-      { name: 'name', label: 'Name', required: true },
-      { name: 'code', label: 'Code', required: isCodeBasedIdType(type) }
-    ];
-
+  const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
     switch (type) {
       case 'vendors':
-        return [
-          ...commonFields,
-          { name: 'contactName', label: 'Contact Name' },
-          { name: 'contactEmail', label: 'Contact Email' },
-          { name: 'contactPhone', label: 'Contact Phone' },
-          { name: 'address', label: 'Address' },
-          { name: 'url', label: 'Website URL' },
-          { name: 'notes', label: 'Notes' }
-        ];
+        return vendorFields;
       case 'organizations':
-        return [
-          ...commonFields,
-          { name: 'shortName', label: 'Short Name' },
-          { name: 'country', label: 'Country' },
-          { name: 'timezone', label: 'Timezone' },
-          { name: 'currency', label: 'Default Currency' }
-        ];
+        return organizationFields;
       case 'permissions':
-        return [
-          ...commonFields,
-          { name: 'level', label: 'Permission Level', type: 'number' },
-          { name: 'description', label: 'Description' }
-        ];
+        return permissionFields;
       default:
         return commonFields;
     }

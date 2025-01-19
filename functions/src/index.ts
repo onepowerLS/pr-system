@@ -1,6 +1,10 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import * as nodemailer from 'nodemailer';
+import { updateUserPassword } from './updateUserPassword';
+import { setUserClaims } from './setUserClaims';
+import { setupInitialAdmin } from './setupInitialAdmin';
+import { syncUserEmails } from './syncUserEmails';
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -128,7 +132,7 @@ export const sendPRNotification = functions.https.onCall(async (data, context) =
         }
 
         console.log('Received notification data:', data);
-        console.log('Items with attachments:', data.items?.map(item => ({
+        console.log('Items with attachments:', data.items?.map((item: { description: string; attachments: any[] }) => ({
             description: item.description,
             attachments: item.attachments
         })));
@@ -183,3 +187,8 @@ export const testEmailNotification = functions.https.onCall(async (data, context
         throw new functions.https.HttpsError('internal', 'Failed to send test email');
     }
 });
+
+export { updateUserPassword };
+export { setUserClaims };
+export { setupInitialAdmin };
+export { syncUserEmails };

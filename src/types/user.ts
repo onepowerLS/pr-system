@@ -21,47 +21,52 @@
 import { Organization } from './organization';
 
 /**
+ * User Role Enum
+ * Defines possible user roles and their hierarchy
+ */
+export enum UserRole {
+  ADMIN = 'ADMIN',
+  FINANCE_APPROVER = 'FINANCE_APPROVER',
+  PROCUREMENT_OFFICER = 'PROCUREMENT_OFFICER',
+  REQUESTOR = 'REQUESTOR'
+}
+
+/**
  * User Profile Interface
  * Core user data structure
  */
 export interface User {
   /** Unique identifier */
   id: string;
+  /** Email address */
+  email: string;
   /** User's first name */
   firstName: string;
   /** User's last name */
   lastName: string;
-  /** Email address */
-  email: string;
-  /** User's department */
-  department: string;
-  /** Associated organization */
-  organization: string;
-  /** Additional organizations */
-  additionalOrganizations: string[];
   /** User's role */
   role: UserRole;
+  /** Associated organization */
+  organization: string;
   /** Whether user is active */
   isActive: boolean;
   /** Permission level */
   permissionLevel: number;
-  /** Last login timestamp */
-  lastLogin?: string;
-  /** User preferences */
-  preferences?: UserPreferences;
-  /** Approval limit */
-  approvalLimit?: number;
-  /** Created at timestamp */
-  createdAt?: any;      // Firestore Timestamp
-  /** Updated at timestamp */
-  updatedAt?: any;      // Firestore Timestamp
+  /** Additional organizations */
+  additionalOrganizations?: string[];
 }
 
 /**
- * User Role Enum
- * Defines possible user roles and their hierarchy
+ * User Without Id Interface
+ * User data structure without id
  */
-export type UserRole = 'ADMIN' | 'DEPARTMENT_HEAD' | 'PROCUREMENT' | 'STANDARD_USER';
+export interface UserWithoutId extends Omit<User, 'id'> {}
+
+/**
+ * User Update Data Interface
+ * Data structure for updating user data
+ */
+export interface UserUpdateData extends Partial<UserWithoutId> {}
 
 /**
  * User Permissions Interface
