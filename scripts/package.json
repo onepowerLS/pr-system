@@ -3,7 +3,16 @@
   "version": "1.0.0",
   "description": "Scripts for PR System data import",
   "main": "import_to_firebase.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "migrate": "npm run build && node ../dist/scripts/migrate-reference-data.js"
+  },
   "dependencies": {
     "firebase-admin": "^11.11.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^18.0.0"
   }
 }

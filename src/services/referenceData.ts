@@ -1,26 +1,43 @@
 import { db } from "@/config/firebase";
 import { collection, getDocs, query, where, addDoc, writeBatch, doc } from "firebase/firestore";
-import { ReferenceData } from "@/types/referenceData";
 
-const COLLECTION_PREFIX = "referenceData";
-const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'organizations'];
+export interface OrganizationData {
+  id: string;
+  name: string;
+}
 
-// Default departments for each organization
-const DEFAULT_DEPARTMENTS = {
-  '1pwr_lesotho': [
-    { name: 'Reticulation', active: true },
-    { name: 'Procurement', active: true },
-    { name: 'Finance', active: true },
-    { name: 'HR', active: true },
-    { name: 'IT', active: true }
-  ]
-};
+export interface ReferenceData {
+  id: string;
+  name: string;
+  code?: string;
+  type?: string;
+  active: boolean;
+  organization?: OrganizationData;
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: any;
+}
+
+const COLLECTION_PREFIX = "referenceData_";
+const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'organizations', 'uom', 'permissions'];
 
 class ReferenceDataService {
   private db = db;
 
   private getCollectionName(type: string): string {
-    return `${COLLECTION_PREFIX}_${type}`;
+    return `${COLLECTION_PREFIX}${type}`;
+  }
+
+  private generateId(type: string, code: string): string {
+    if (['currencies', 'uom', 'organizations'].includes(type)) {
+      return code.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    }
+    return null; // Let Firestore auto-generate
+  }
+
+  private handleError(error: any, context: string): never {
+    console.error(`Error ${context}:`, error);
+    throw error;
   }
 
   async getItemsByType(type: string, organization?: string): Promise<ReferenceData[]> {
@@ -34,9 +51,9 @@ class ReferenceDataService {
       let q = collectionRef;
 
       // Only filter by organization for org-dependent types
-      if (!ORG_INDEPENDENT_TYPES.includes(type as any) && organization) {
+      if (!ORG_INDEPENDENT_TYPES.includes(type) && organization) {
         console.log('Applying organization filter:', { type, organization });
-        q = query(collectionRef, where('organization', '==', organization));
+        q = query(collectionRef, where('organization.id', '==', organization));
       }
 
       const querySnapshot = await getDocs(q);
@@ -78,8 +95,7 @@ class ReferenceDataService {
 
       return activeItems;
     } catch (error) {
-      console.error('Error getting reference data items:', error);
-      throw error;
+      return this.handleError(error, 'getting reference data items');
     }
   }
 
@@ -87,32 +103,17 @@ class ReferenceDataService {
     console.log('Getting departments for organization:', organization);
     
     try {
-      const collectionRef = collection(this.db, 'referenceData_departments');
-      
-      // Query for both formats
-      const [stringFormatQuery, objectFormatQuery] = await Promise.all([
-        // Query for string format: organization: "1pwr_lesotho"
-        getDocs(query(collectionRef, where('organization', '==', organization))),
-        // Query for object format: organization: { id: "1pwr_lesotho" }
-        getDocs(query(collectionRef, where('organization.id', '==', organization)))
-      ]);
+      const collectionRef = collection(this.db, this.getCollectionName('departments'));
+      const q = query(collectionRef, where('organization.id', '==', organization));
+      const querySnapshot = await getDocs(q);
 
-      // Combine results from both queries
-      const items = [
-        ...stringFormatQuery.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })),
-        ...objectFormatQuery.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-      ] as ReferenceData[];
+      const items = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ReferenceData[];
 
       // Log the results for debugging
       console.log('Found departments:', {
-        stringFormat: stringFormatQuery.size,
-        objectFormat: objectFormatQuery.size,
         total: items.length,
         items: items.map(item => ({
           id: item.id,
@@ -121,19 +122,9 @@ class ReferenceDataService {
         }))
       });
 
-      // Filter out inactive and normalize organization format
-      return items
-        .filter(item => item.active)
-        .map(item => ({
-          ...item,
-          // Normalize organization to string format if it's an object
-          organization: typeof item.organization === 'string' 
-            ? item.organization 
-            : item.organization.id
-        }));
+      return items.filter(item => item.active);
     } catch (error) {
-      console.error('Error getting departments:', error);
-      return [];
+      return this.handleError(error, 'getting departments');
     }
   }
 
@@ -154,22 +145,42 @@ class ReferenceDataService {
   }
 
   async getVendors(): Promise<ReferenceData[]> {
-    return this.getItemsByType('vendors'); // Don't pass organization for vendors
+    return this.getItemsByType('vendors');
   }
 
-  public async getOrganizations(): Promise<ReferenceData[]> {
-    console.log('Getting organizations');
-    const items = await this.getItemsByType('organizations');
-    console.log('Retrieved organizations:', items.map(item => ({
-      id: item.id,
-      name: item.name,
-      active: item.active
-    })));
-    return items;
+  async getOrganizations(): Promise<ReferenceData[]> {
+    return this.getItemsByType('organizations');
   }
 
   async getCurrencies(): Promise<ReferenceData[]> {
     return this.getItemsByType('currencies');
+  }
+
+  async createItem(type: string, data: Omit<ReferenceData, 'id'>): Promise<ReferenceData> {
+    try {
+      const collectionName = this.getCollectionName(type);
+      const id = this.generateId(type, data.code);
+      const timestamp = new Date().toISOString();
+      
+      const itemData = {
+        ...data,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+
+      if (id) {
+        // Use custom ID for specified types
+        const docRef = doc(this.db, collectionName, id);
+        await writeBatch(this.db).set(docRef, itemData).commit();
+        return { id, ...itemData };
+      } else {
+        // Use auto-generated ID for other types
+        const docRef = await addDoc(collection(this.db, collectionName), itemData);
+        return { id: docRef.id, ...itemData };
+      }
+    } catch (error) {
+      return this.handleError(error, 'creating reference data item');
+    }
   }
 }
 
