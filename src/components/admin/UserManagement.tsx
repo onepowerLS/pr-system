@@ -273,6 +273,21 @@ export function UserManagement() {
     setIsDialogOpen(true);
   };
 
+  const handleClose = () => {
+    setIsDialogOpen(false);
+    setEditingUser(null);
+    // Reset form data
+    setFormData({
+      firstName: '',
+      lastName: '',
+      email: '',
+      department: '',
+      organization: '',
+      additionalOrganizations: [],
+      permissionLevel: 5
+    });
+  };
+
   const handleEdit = (user: User) => {
     console.log('Editing user:', user);
     console.log('Current permissions:', permissions);
