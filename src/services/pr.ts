@@ -470,7 +470,7 @@ export const prService = {
     try {
       console.log('PR Service: Fetching PRs for:', { userId, organization });
       
-      // Query PRs by organization name
+      // Query PRs by organization only
       const q = query(
         collection(db, PR_COLLECTION),
         where('organization', '==', organization)
@@ -483,22 +483,32 @@ export const prService = {
         prs: querySnapshot.docs.map(doc => ({
           id: doc.id,
           prNumber: doc.data().prNumber,
-          organization: doc.data().organization
+          organization: doc.data().organization,
+          status: doc.data().status
         }))
       });
       
       // Convert to array and sort in memory
-      const prs = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...convertTimestamps(doc.data())
-      })) as PRRequest[];
+      const prs = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Convert Firestore timestamps to Date objects
+        const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : null;
+        const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : null;
+        
+        return {
+          id: doc.id,
+          ...data,
+          createdAt,
+          updatedAt
+        };
+      }) as PRRequest[];
 
       // Sort by urgency first, then by creation date
       return prs.sort((a, b) => {
         if (a.isUrgent !== b.isUrgent) {
           return a.isUrgent ? -1 : 1;
         }
-        return (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0);
+        return (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0);
       });
     } catch (error) {
       console.error('Error fetching user PRs:', error);

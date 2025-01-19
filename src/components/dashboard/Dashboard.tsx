@@ -184,15 +184,11 @@ export const Dashboard = () => {
     loadDashboardData();
   }, [user, selectedOrg, dispatch]);
 
-  const filteredPRs = userPRs.filter(pr => {
-    return selectedOrg ? pr.organization === selectedOrg.name : false;
-  });
-
   // Get PRs for the selected status
   const getStatusPRs = () => {
     console.log('Getting status PRs:', {
       selectedStatus,
-      filteredPRs: filteredPRs.map(pr => ({
+      userPRs: userPRs.map(pr => ({
         id: pr.id,
         prNumber: pr.prNumber,
         isUrgent: pr.isUrgent,
@@ -201,7 +197,7 @@ export const Dashboard = () => {
       }))
     });
     
-    const statusPRs = filteredPRs.filter(pr => {
+    const statusPRs = userPRs.filter(pr => {
       console.log('Filtering PR:', {
         id: pr.id,
         status: pr.status,
@@ -311,7 +307,7 @@ export const Dashboard = () => {
         </Grid>
 
         <Grid item xs={12}>
-          <MetricsPanel prs={filteredPRs} />
+          <MetricsPanel prs={userPRs} />
         </Grid>
 
         <Grid item xs={12}>
