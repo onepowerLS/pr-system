@@ -265,11 +265,16 @@ export function UserManagement() {
     console.log('Editing user:', user);
     console.log('Current permissions:', permissions);
     setEditingUser(user);
-    // Set form data directly without resetting
     setFormData({
       ...user,
-      permissionLevel: typeof user.permissionLevel === 'number' ? user.permissionLevel : 5
+      department: user.department || '',
+      organization: user.organization || '',
+      additionalOrganizations: user.additionalOrganizations || []
     });
+    // Load departments for the user's organization
+    if (user.organization) {
+      loadDepartmentsForOrg(user.organization);
+    }
     setIsDialogOpen(true);
   };
 
@@ -442,6 +447,31 @@ export function UserManagement() {
     setGeneratedPassword(generateRandomPassword());
   };
 
+  // Helper functions to get names from IDs
+  const getOrganizationName = (id: string): string => {
+    const org = organizations.find(o => o.id === id);
+    return org?.name || id;
+  };
+
+  const getDepartmentName = (id: string): string => {
+    const dept = departments.find(d => d.id === id);
+    return dept?.name || id;
+  };
+
+  // Load departments for a specific organization
+  const loadDepartmentsForOrg = async (orgId: string) => {
+    if (!orgId) return;
+    try {
+      console.log('Loading departments for organization:', orgId);
+      const loadedDepartments = await referenceDataService.getDepartments(orgId);
+      console.log('Loaded departments:', loadedDepartments);
+      setDepartments(loadedDepartments);
+    } catch (error) {
+      console.error('Error loading departments:', error);
+      showSnackbar('Error loading departments', 'error');
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       {isLoading ? (
@@ -489,12 +519,18 @@ export function UserManagement() {
                   <TableRow key={user.id}>
                     <TableCell>{`${user.firstName} ${user.lastName}`}</TableCell>
                     <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.department}</TableCell>
-                    <TableCell>{user.organization}</TableCell>
+                    <TableCell>{getDepartmentName(user.department || '')}</TableCell>
+                    <TableCell>{getOrganizationName(user.organization || '')}</TableCell>
                     <TableCell>
-                      {user.additionalOrganizations?.map((org) => (
-                        <Chip key={org} label={org} sx={{ m: 0.5 }} />
-                      ))}
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {user.additionalOrganizations?.map((orgId) => (
+                          <Chip 
+                            key={orgId} 
+                            label={getOrganizationName(orgId)}
+                            size="small"
+                          />
+                        ))}
+                      </Box>
                     </TableCell>
                     <TableCell>
                       {permissions.find(p => Number(p.level) === user.permissionLevel)?.name || `Level ${user.permissionLevel}`}
@@ -597,7 +633,7 @@ export function UserManagement() {
                         return (
                           <Chip 
                             key={value} 
-                            label={org?.name || value} 
+                            label={org?.name || value}
                             size="small"
                           />
                         );
