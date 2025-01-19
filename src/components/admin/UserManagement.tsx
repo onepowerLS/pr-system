@@ -71,13 +71,6 @@ interface PasswordDialogProps {
   userId: string;
 }
 
-const organizations = [
-  '1PWR LESOTHO',
-  'SMP',
-  'PUECO',
-  '1PWR BENIN'
-];
-
 function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps) {
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -128,6 +121,7 @@ export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [departments, setDepartments] = useState<ReferenceData[]>([]);
+  const [organizations, setOrganizations] = useState<ReferenceData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -158,7 +152,7 @@ export function UserManagement() {
       await Promise.all([
         loadUsers(), 
         loadPermissions(),
-        loadDepartments()
+        loadOrganizations()
       ]);
     } finally {
       setIsLoading(false);
@@ -226,6 +220,18 @@ export function UserManagement() {
     } catch (error) {
       console.error('Error loading departments:', error);
       showSnackbar('Error loading departments', 'error');
+    }
+  };
+
+  const loadOrganizations = async () => {
+    try {
+      console.log('Loading organizations...');
+      const loadedOrganizations = await referenceDataService.getOrganizations();
+      console.log('Loaded organizations:', loadedOrganizations);
+      setOrganizations(loadedOrganizations);
+    } catch (error) {
+      console.error('Error loading organizations:', error);
+      showSnackbar('Error loading organizations', 'error');
     }
   };
 
@@ -553,11 +559,21 @@ export function UserManagement() {
               <FormControl fullWidth margin="dense">
                 <InputLabel>Organization</InputLabel>
                 <Select
-                  value={formData.organization}
-                  onChange={(e) => setFormData({ ...formData, organization: e.target.value })}
+                  value={formData.organization || ''}
+                  onChange={(e) => {
+                    const newOrg = e.target.value;
+                    setFormData({
+                      ...formData,
+                      organization: newOrg,
+                      department: '' // Reset department when organization changes
+                    });
+                  }}
+                  label="Organization"
                 >
                   {organizations.map((org) => (
-                    <MenuItem key={org} value={org}>{org}</MenuItem>
+                    <MenuItem key={org.id} value={org.id}>
+                      {org.name}
+                    </MenuItem>
                   ))}
                 </Select>
               </FormControl>
@@ -565,21 +581,34 @@ export function UserManagement() {
                 <InputLabel>Additional Organizations</InputLabel>
                 <Select
                   multiple
-                  value={formData.additionalOrganizations}
+                  value={formData.additionalOrganizations || []}
                   onChange={(e) => {
                     const value = e.target.value as string[];
-                    setFormData({ ...formData, additionalOrganizations: value });
+                    setFormData({
+                      ...formData,
+                      additionalOrganizations: value
+                    });
                   }}
+                  label="Additional Organizations"
                   renderValue={(selected) => (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {(selected as string[]).map((value) => (
-                        <Chip key={value} label={value} />
-                      ))}
+                      {(selected as string[]).map((value) => {
+                        const org = organizations.find(o => o.id === value);
+                        return (
+                          <Chip 
+                            key={value} 
+                            label={org?.name || value} 
+                            size="small"
+                          />
+                        );
+                      })}
                     </Box>
                   )}
                 >
                   {organizations.map((org) => (
-                    <MenuItem key={org} value={org}>{org}</MenuItem>
+                    <MenuItem key={org.id} value={org.id}>
+                      {org.name}
+                    </MenuItem>
                   ))}
                 </Select>
               </FormControl>
