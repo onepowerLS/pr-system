@@ -123,6 +123,7 @@ export function UserManagement() {
   const [departments, setDepartments] = useState<ReferenceData[]>([]);
   const [organizations, setOrganizations] = useState<ReferenceData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDepartmentsLoading, setIsDepartmentsLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -152,8 +153,7 @@ export function UserManagement() {
       await Promise.all([
         loadUsers(), 
         loadPermissions(),
-        loadOrganizations(),
-        loadDepartments()
+        loadOrganizations()
       ]);
     } finally {
       setIsLoading(false);
@@ -212,21 +212,15 @@ export function UserManagement() {
     }
   };
 
-  const loadDepartments = async () => {
-    try {
-      console.log('Loading departments...');
-      const loadedDepartments = await referenceDataService.getDepartments(formData.organization || '');
-      console.log('Loaded departments:', loadedDepartments);
-      setDepartments(loadedDepartments);
-    } catch (error) {
-      console.error('Error loading departments:', error);
-      showSnackbar('Error loading departments', 'error');
-    }
-  };
-
+  // Load departments for a specific organization
   const loadDepartmentsForOrg = async (orgId: string) => {
-    if (!orgId) return;
+    if (!orgId) {
+      setDepartments([]);
+      return;
+    }
+    
     try {
+      setIsDepartmentsLoading(true);
       console.log('Loading departments for organization:', orgId);
       const loadedDepartments = await referenceDataService.getDepartments(orgId);
       console.log('Loaded departments:', loadedDepartments);
@@ -234,6 +228,9 @@ export function UserManagement() {
     } catch (error) {
       console.error('Error loading departments:', error);
       showSnackbar('Error loading departments', 'error');
+      setDepartments([]);
+    } finally {
+      setIsDepartmentsLoading(false);
     }
   };
 
@@ -618,13 +615,19 @@ export function UserManagement() {
               value={formData.department || ''}
               onChange={(e) => setFormData({ ...formData, department: e.target.value })}
               label="Department"
-              disabled={!formData.organization} // Disable if no organization selected
+              disabled={!formData.organization || isDepartmentsLoading}
             >
-              {departments.map((dept) => (
-                <MenuItem key={dept.id} value={dept.id}>
-                  {dept.name}
-                </MenuItem>
-              ))}
+              {isDepartmentsLoading ? (
+                <MenuItem disabled>Loading departments...</MenuItem>
+              ) : departments.length === 0 ? (
+                <MenuItem disabled>No departments available</MenuItem>
+              ) : (
+                departments.map((dept) => (
+                  <MenuItem key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </MenuItem>
+                ))
+              )}
             </Select>
           </FormControl>
           <FormControl fullWidth margin="dense">
