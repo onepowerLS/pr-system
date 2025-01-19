@@ -152,7 +152,8 @@ export function UserManagement() {
       await Promise.all([
         loadUsers(), 
         loadPermissions(),
-        loadOrganizations()
+        loadOrganizations(),
+        loadDepartments()
       ]);
     } finally {
       setIsLoading(false);
@@ -223,6 +224,19 @@ export function UserManagement() {
     }
   };
 
+  const loadDepartmentsForOrg = async (orgId: string) => {
+    if (!orgId) return;
+    try {
+      console.log('Loading departments for organization:', orgId);
+      const loadedDepartments = await referenceDataService.getDepartments(orgId);
+      console.log('Loaded departments:', loadedDepartments);
+      setDepartments(loadedDepartments);
+    } catch (error) {
+      console.error('Error loading departments:', error);
+      showSnackbar('Error loading departments', 'error');
+    }
+  };
+
   const loadOrganizations = async () => {
     try {
       console.log('Loading organizations...');
@@ -238,18 +252,14 @@ export function UserManagement() {
   // Update departments when organization changes
   useEffect(() => {
     if (formData.organization) {
-      loadDepartments();
+      loadDepartmentsForOrg(formData.organization);
+    } else {
+      // Clear departments if no organization is selected
+      setDepartments([]);
     }
   }, [formData.organization]);
 
   const handleOpen = () => {
-    setIsDialogOpen(true);
-  };
-
-  const handleClose = () => {
-    setIsDialogOpen(false);
-    setEditingUser(null);
-    // Reset form data
     setFormData({
       firstName: '',
       lastName: '',
@@ -257,8 +267,10 @@ export function UserManagement() {
       department: '',
       organization: '',
       additionalOrganizations: [],
-      permissionLevel: undefined
+      permissionLevel: 5
     });
+    setEditingUser(null);
+    setIsDialogOpen(true);
   };
 
   const handleEdit = (user: User) => {
@@ -458,20 +470,6 @@ export function UserManagement() {
     return dept?.name || id;
   };
 
-  // Load departments for a specific organization
-  const loadDepartmentsForOrg = async (orgId: string) => {
-    if (!orgId) return;
-    try {
-      console.log('Loading departments for organization:', orgId);
-      const loadedDepartments = await referenceDataService.getDepartments(orgId);
-      console.log('Loaded departments:', loadedDepartments);
-      setDepartments(loadedDepartments);
-    } catch (error) {
-      console.error('Error loading departments:', error);
-      showSnackbar('Error loading departments', 'error');
-    }
-  };
-
   return (
     <Box sx={{ p: 3 }}>
       {isLoading ? (
@@ -514,275 +512,276 @@ export function UserManagement() {
                   <TableCell>Actions</TableCell>
                 </TableRow>
               </TableHead>
-              <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>{`${user.firstName} ${user.lastName}`}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{getDepartmentName(user.department || '')}</TableCell>
-                    <TableCell>{getOrganizationName(user.organization || '')}</TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {user.additionalOrganizations?.map((orgId) => (
-                          <Chip 
-                            key={orgId} 
-                            label={getOrganizationName(orgId)}
-                            size="small"
-                          />
-                        ))}
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      {permissions.find(p => Number(p.level) === user.permissionLevel)?.name || `Level ${user.permissionLevel}`}
-                    </TableCell>
-                    <TableCell>
-                      <IconButton onClick={() => handleEdit(user)}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handleDelete(user.id)}>
-                        <DeleteIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handlePasswordDialogOpen(user)}>
-                        <KeyIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow key={user.id}>
+                <TableCell>{`${user.firstName} ${user.lastName}`}</TableCell>
+                <TableCell>{user.email}</TableCell>
+                <TableCell>{getDepartmentName(user.department || '')}</TableCell>
+                <TableCell>{getOrganizationName(user.organization || '')}</TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {user.additionalOrganizations?.map((orgId) => (
+                      <Chip 
+                        key={orgId} 
+                        label={getOrganizationName(orgId)}
+                        size="small"
+                      />
+                    ))}
+                  </Box>
+                </TableCell>
+                <TableCell>
+                  {permissions.find(p => Number(p.level) === user.permissionLevel)?.name || `Level ${user.permissionLevel}`}
+                </TableCell>
+                <TableCell>
+                  <IconButton onClick={() => handleEdit(user)}>
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton onClick={() => handleDelete(user.id)}>
+                    <DeleteIcon />
+                  </IconButton>
+                  <IconButton onClick={() => handlePasswordDialogOpen(user)}>
+                    <KeyIcon />
+                  </IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
-          <Dialog open={isDialogOpen} onClose={handleClose}>
-            <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
-            <DialogContent>
-              <TextField
-                autoFocus
-                margin="dense"
-                label="First Name"
-                fullWidth
-                value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-              />
-              <TextField
-                margin="dense"
-                label="Last Name"
-                fullWidth
-                value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-              />
-              <TextField
-                margin="dense"
-                label="Email"
-                type="email"
-                fullWidth
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
-              <FormControl fullWidth margin="dense">
-                <InputLabel>Department</InputLabel>
-                <Select
-                  value={formData.department || ''}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  label="Department"
-                >
-                  {departments.map((dept) => (
-                    <MenuItem key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth margin="dense">
-                <InputLabel>Organization</InputLabel>
-                <Select
-                  value={formData.organization || ''}
-                  onChange={(e) => {
-                    const newOrg = e.target.value;
-                    setFormData({
-                      ...formData,
-                      organization: newOrg,
-                      department: '' // Reset department when organization changes
-                    });
-                  }}
-                  label="Organization"
-                >
-                  {organizations.map((org) => (
-                    <MenuItem key={org.id} value={org.id}>
-                      {org.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth margin="dense">
-                <InputLabel>Additional Organizations</InputLabel>
-                <Select
-                  multiple
-                  value={formData.additionalOrganizations || []}
-                  onChange={(e) => {
-                    const value = e.target.value as string[];
-                    setFormData({
-                      ...formData,
-                      additionalOrganizations: value
-                    });
-                  }}
-                  label="Additional Organizations"
-                  renderValue={(selected) => (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {(selected as string[]).map((value) => {
-                        const org = organizations.find(o => o.id === value);
-                        return (
-                          <Chip 
-                            key={value} 
-                            label={org?.name || value}
-                            size="small"
-                          />
-                        );
-                      })}
-                    </Box>
-                  )}
-                >
-                  {organizations.map((org) => (
-                    <MenuItem key={org.id} value={org.id}>
-                      {org.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth margin="dense">
-                <InputLabel>Permission Level</InputLabel>
-                <Select
-                  value={formData.permissionLevel?.toString() || '5'}
-                  onChange={(e) => {
-                    const newLevel = Number(e.target.value);
-                    if (!isNaN(newLevel)) {
-                      setFormData(prev => ({ ...prev, permissionLevel: newLevel }));
-                    }
-                  }}
-                >
-                  {permissions.map((permission) => (
-                    <MenuItem key={permission.id} value={permission.level.toString()}>
-                      {permission.name} - {permission.description}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={handleClose}>Cancel</Button>
-              <Button onClick={handleSubmit} variant="contained">
-                {editingUser ? 'Update' : 'Add'}
-              </Button>
-            </DialogActions>
-          </Dialog>
-
-          <Dialog 
-            open={isPasswordDialogOpen} 
-            onClose={() => {
-              setPasswordDialogOpen(false);
-              setCustomPassword('');
-              setGeneratedPassword('');
-              setPasswordMode('custom');
-              setShowPassword(false);
-            }}
-          >
-            <DialogTitle>Update Password</DialogTitle>
-            <DialogContent>
-              <Box sx={{ mb: 2 }}>
-                <FormControl component="fieldset">
-                  <RadioGroup
-                    row
-                    value={passwordMode}
-                    onChange={(e) => setPasswordMode(e.target.value as 'random' | 'custom')}
-                  >
-                    <FormControlLabel 
-                      value="custom" 
-                      control={<Radio />} 
-                      label="Custom Password" 
-                    />
-                    <FormControlLabel 
-                      value="random" 
-                      control={<Radio />} 
-                      label="Random Password" 
-                    />
-                  </RadioGroup>
-                </FormControl>
-              </Box>
-
-              {passwordMode === 'custom' ? (
-                <TextField
-                  fullWidth
-                  label="New Password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={customPassword}
-                  onChange={(e) => setCustomPassword(e.target.value)}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          onClick={() => setShowPassword(!showPassword)}
-                          edge="end"
-                        >
-                          {showPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ mb: 2 }}
-                />
-              ) : (
-                <Box sx={{ mb: 2 }}>
-                  <TextField
-                    fullWidth
-                    label="Generated Password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={generatedPassword}
-                    InputProps={{
-                      readOnly: true,
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            onClick={() => setShowPassword(!showPassword)}
-                            edge="end"
-                          >
-                            {showPassword ? <VisibilityOff /> : <Visibility />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                  <Button
-                    size="small"
-                    onClick={() => setGeneratedPassword(generateRandomPassword())}
-                    sx={{ mt: 1 }}
-                  >
-                    Generate New Password
-                  </Button>
+      <Dialog open={isDialogOpen} onClose={handleClose}>
+        <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="First Name"
+            fullWidth
+            value={formData.firstName}
+            onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+          />
+          <TextField
+            margin="dense"
+            label="Last Name"
+            fullWidth
+            value={formData.lastName}
+            onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+          />
+          <TextField
+            margin="dense"
+            label="Email"
+            type="email"
+            fullWidth
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+          />
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Organization</InputLabel>
+            <Select
+              value={formData.organization || ''}
+              onChange={(e) => {
+                const newOrg = e.target.value;
+                setFormData({
+                  ...formData,
+                  organization: newOrg,
+                  department: '' // Reset department when organization changes
+                });
+              }}
+              label="Organization"
+            >
+              {organizations.map((org) => (
+                <MenuItem key={org.id} value={org.id}>
+                  {org.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Department</InputLabel>
+            <Select
+              value={formData.department || ''}
+              onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+              label="Department"
+              disabled={!formData.organization} // Disable if no organization selected
+            >
+              {departments.map((dept) => (
+                <MenuItem key={dept.id} value={dept.id}>
+                  {dept.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Additional Organizations</InputLabel>
+            <Select
+              multiple
+              value={formData.additionalOrganizations || []}
+              onChange={(e) => {
+                const value = e.target.value as string[];
+                setFormData({
+                  ...formData,
+                  additionalOrganizations: value
+                });
+              }}
+              label="Additional Organizations"
+              renderValue={(selected) => (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {(selected as string[]).map((value) => {
+                    const org = organizations.find(o => o.id === value);
+                    return (
+                      <Chip 
+                        key={value} 
+                        label={org?.name || value}
+                        size="small"
+                      />
+                    );
+                  })}
                 </Box>
               )}
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setPasswordDialogOpen(false)}>Cancel</Button>
-              <Button
-                onClick={() => {
-                  const user = users.find(u => u.id === selectedUserId);
-                  if (user?.email) {
-                    const newPassword = passwordMode === 'custom' ? customPassword : generatedPassword;
-                    if (newPassword.length < 6) {
-                      showSnackbar('Password must be at least 6 characters long', 'error');
-                      return;
-                    }
-                    handlePasswordUpdate(selectedUserId, user.email, newPassword);
-                  }
-                }}
-                color="primary"
-                disabled={passwordMode === 'custom' ? !customPassword : !generatedPassword}
+            >
+              {organizations.map((org) => (
+                <MenuItem key={org.id} value={org.id}>
+                  {org.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Permission Level</InputLabel>
+            <Select
+              value={formData.permissionLevel?.toString() || '5'}
+              onChange={(e) => {
+                const newLevel = Number(e.target.value);
+                if (!isNaN(newLevel)) {
+                  setFormData(prev => ({ ...prev, permissionLevel: newLevel }));
+                }
+              }}
+            >
+              {permissions.map((permission) => (
+                <MenuItem key={permission.id} value={permission.level.toString()}>
+                  {permission.name} - {permission.description}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleSubmit} variant="contained">
+            {editingUser ? 'Update' : 'Add'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog 
+        open={isPasswordDialogOpen} 
+        onClose={() => {
+          setPasswordDialogOpen(false);
+          setCustomPassword('');
+          setGeneratedPassword('');
+          setPasswordMode('custom');
+          setShowPassword(false);
+        }}
+      >
+        <DialogTitle>Update Password</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <FormControl component="fieldset">
+              <RadioGroup
+                row
+                value={passwordMode}
+                onChange={(e) => setPasswordMode(e.target.value as 'random' | 'custom')}
               >
-                Update Password
+                <FormControlLabel 
+                  value="custom" 
+                  control={<Radio />} 
+                  label="Custom Password" 
+                />
+                <FormControlLabel 
+                  value="random" 
+                  control={<Radio />} 
+                  label="Random Password" 
+                />
+              </RadioGroup>
+            </FormControl>
+          </Box>
+
+          {passwordMode === 'custom' ? (
+            <TextField
+              fullWidth
+              label="New Password"
+              type={showPassword ? 'text' : 'password'}
+              value={customPassword}
+              onChange={(e) => setCustomPassword(e.target.value)}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ mb: 2 }}
+            />
+          ) : (
+            <Box sx={{ mb: 2 }}>
+              <TextField
+                fullWidth
+                label="Generated Password"
+                type={showPassword ? 'text' : 'password'}
+                value={generatedPassword}
+                InputProps={{
+                  readOnly: true,
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Button
+                size="small"
+                onClick={() => setGeneratedPassword(generateRandomPassword())}
+                sx={{ mt: 1 }}
+              >
+                Generate New Password
               </Button>
-            </DialogActions>
-          </Dialog>
-        </>
-      )}
-    </Box>
-  );
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPasswordDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              const user = users.find(u => u.id === selectedUserId);
+              if (user?.email) {
+                const newPassword = passwordMode === 'custom' ? customPassword : generatedPassword;
+                if (newPassword.length < 6) {
+                  showSnackbar('Password must be at least 6 characters long', 'error');
+                  return;
+                }
+                handlePasswordUpdate(selectedUserId, user.email, newPassword);
+              }
+            }}
+            color="primary"
+            disabled={passwordMode === 'custom' ? !customPassword : !generatedPassword}
+          >
+            Update Password
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  )}
+</Box>
+);
 }
