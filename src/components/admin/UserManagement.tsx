@@ -212,6 +212,11 @@ export function UserManagement() {
     }
   };
 
+  // Helper function to normalize organization ID
+  const normalizeOrgId = (orgId: string): string => {
+    return orgId.toLowerCase().replace(/\s+/g, '_');
+  };
+
   // Load departments for a specific organization
   const loadDepartmentsForOrg = async (orgId: string) => {
     if (!orgId) {
@@ -290,15 +295,14 @@ export function UserManagement() {
     console.log('Current permissions:', permissions);
     setEditingUser(user);
     setFormData({
-      ...user,
-      department: user.department || '',
-      organization: user.organization || '',
-      additionalOrganizations: user.additionalOrganizations || []
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      department: user.department,
+      organization: normalizeOrgId(user.organization),
+      additionalOrganizations: user.additionalOrganizations || [],
+      permissionLevel: user.permissionLevel || 5
     });
-    // Load departments for the user's organization
-    if (user.organization) {
-      loadDepartmentsForOrg(user.organization);
-    }
     setIsDialogOpen(true);
   };
 
@@ -597,13 +601,13 @@ export function UserManagement() {
                 setFormData({
                   ...formData,
                   organization: newOrg,
-                  department: '' // Reset department when organization changes
+                  department: '' // Clear department when organization changes
                 });
               }}
               label="Organization"
             >
               {organizations.map((org) => (
-                <MenuItem key={org.id} value={org.id}>
+                <MenuItem key={normalizeOrgId(org.id)} value={normalizeOrgId(org.id)}>
                   {org.name}
                 </MenuItem>
               ))}
