@@ -3,6 +3,7 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { ReferenceData } from "@/types/referenceData";
 
 const COLLECTION_PREFIX = "referenceData";
+const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'organizations'];
 
 class ReferenceDataService {
   private db = db;
@@ -18,12 +19,8 @@ class ReferenceDataService {
       const collectionRef = collection(this.db, this.getCollectionName(type));
       let q = collectionRef;
 
-      // For vendors, filter where organization is empty string
-      // For organizations, don't apply any filter
-      // For other types, filter by the specified organization
-      if (type === 'vendors') {
-        q = query(collectionRef, where('organization', '==', ''));
-      } else if (type !== 'organizations' && organization) {
+      // Only filter by organization for org-dependent types
+      if (!ORG_INDEPENDENT_TYPES.includes(type as any) && organization) {
         q = query(collectionRef, where('organization', '==', organization));
       }
 
@@ -44,12 +41,15 @@ class ReferenceDataService {
         }))
       });
 
-      // For organizations, only return active ones
-      if (type === 'organizations') {
-        return items.filter(item => item.active);
-      }
+      // Filter inactive items
+      const activeItems = items.filter(item => item.active);
+      console.log('Filtered to active items:', {
+        type,
+        totalCount: items.length,
+        activeCount: activeItems.length
+      });
 
-      return items;
+      return activeItems;
     } catch (error) {
       console.error('Error getting reference data items:', error);
       throw error;
