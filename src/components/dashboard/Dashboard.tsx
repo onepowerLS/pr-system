@@ -74,31 +74,44 @@ export const Dashboard = () => {
     const loadDashboardData = async () => {
       dispatch(setLoading(true));
       try {
+        // Get organization name
+        const orgName = typeof selectedOrg === 'string' ? selectedOrg : selectedOrg.name;
+
         // Load user's PRs with organization filter
         console.log('Dashboard: Fetching PRs for org:', {
           userId: user.id,
-          organization: selectedOrg,
+          organization: orgName,
           role: user.role
         });
-        const userPRsData = await prService.getUserPRs(user.id, selectedOrg);
+        const userPRsData = await prService.getUserPRs(user.id, orgName);
         console.log('Dashboard: Received PRs:', {
           count: userPRsData.length,
           prs: userPRsData.map(pr => ({
             id: pr.id,
             prNumber: pr.prNumber,
-            isUrgent: pr.isUrgent,
-            status: pr.status
+            status: pr.status,
+            organization: pr.organization
           }))
         });
         dispatch(setUserPRs(userPRsData));
 
         // Load pending approvals if user is an approver
         if (user.role === UserRole.APPROVER || user.role === UserRole.ADMIN) {
-          const pendingApprovalsData = await prService.getPendingApprovals(user.id, selectedOrg);
+          const pendingApprovalsData = await prService.getPendingApprovals(user.id, orgName);
+          console.log('Dashboard: Received pending approvals:', {
+            count: pendingApprovalsData.length,
+            prs: pendingApprovalsData.map(pr => ({
+              id: pr.id,
+              prNumber: pr.prNumber,
+              status: pr.status,
+              organization: pr.organization
+            }))
+          });
           dispatch(setPendingApprovals(pendingApprovalsData));
         }
       } catch (error) {
         console.error('Error loading dashboard data:', error);
+        // Don't rethrow - we want to show empty state rather than crash
       } finally {
         dispatch(setLoading(false));
       }

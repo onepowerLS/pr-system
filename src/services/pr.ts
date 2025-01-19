@@ -468,62 +468,32 @@ export const prService = {
    */
   async getUserPRs(userId: string, organization: string): Promise<PRRequest[]> {
     try {
-      if (!userId || !organization) {
-        console.error('getUserPRs: Missing required parameters', { userId, organization });
-        return [];
-      }
-
-      console.log('Getting PRs for user:', JSON.stringify({ userId, organization }, null, 2));
+      console.log('PR Service: Fetching PRs for:', { userId, organization });
       
-      // Get all PRs for the organization
-      const allPRsQuery = query(
+      // Query PRs by organization only - no ordering to avoid index requirements
+      const q = query(
         collection(db, PR_COLLECTION),
         where('organization', '==', organization)
       );
+      
+      const querySnapshot = await getDocs(q);
+      console.log('PR Service: Found PRs:', querySnapshot.size);
+      
+      // Convert to array and sort in memory
+      const prs = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as PRRequest[];
 
-      const allPRsSnapshot = await getDocs(allPRsQuery);
-      const prs = allPRsSnapshot.docs.map(doc => {
-        const data = doc.data();
-        const isUrgent = data.isUrgent === true || data.metrics?.isUrgent === true;
-        
-        // Process the data
-        const processedData = {
-          ...data,
-          id: doc.id,
-          isUrgent
-        };
-        
-        return calculatePRMetrics(convertTimestamps(processedData) as PRRequest);
-      });
-
-      // Sort PRs by urgency and date
-      const sortedPrs = prs.sort((a, b) => {
-        // First sort by urgency
+      // Sort by urgency first, then by creation date
+      return prs.sort((a, b) => {
         if (a.isUrgent !== b.isUrgent) {
           return a.isUrgent ? -1 : 1;
         }
-        // Then by creation date (newest first)
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0);
       });
-      
-      console.log('Retrieved PRs:', JSON.stringify({
-        count: sortedPrs.length,
-        prs: sortedPrs.map(pr => ({
-          id: pr.id,
-          prNumber: pr.prNumber,
-          status: pr.status,
-          isUrgent: pr.isUrgent,
-          createdAt: pr.createdAt,
-          requestorId: pr.requestorId,
-          submittedBy: pr.submittedBy,
-          requestor: pr.requestor,
-          metrics: pr.metrics
-        }))
-      }, null, 2));
-      
-      return sortedPrs;
     } catch (error) {
-      console.error('Error getting user PRs:', JSON.stringify(error, null, 2));
+      console.error('Error fetching user PRs:', error);
       throw error;
     }
   },
