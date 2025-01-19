@@ -38,6 +38,7 @@ firestore-debug.log*
 ui-debug.log*
 .runtimeconfig.json
 firebase-service-account.json
+*firebase-adminsdk*.json
 google-sheets-credentials.json
 
 # Data files
