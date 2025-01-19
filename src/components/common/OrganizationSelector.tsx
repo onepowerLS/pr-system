@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { Select, MenuItem, FormControl, InputLabel, CircularProgress } from '@mui/material';
 import { referenceDataService } from '../../services/referenceData';
 import { ReferenceData } from '@/types/referenceData';
+import { RootState } from '@/store';
 
 interface OrganizationSelectorProps {
-  value: string;
-  onChange: (value: string) => void;
+  value: string | { id: string; name: string };
+  onChange: (value: { id: string; name: string }) => void;
 }
 
 // Map display names to codes
@@ -26,12 +28,35 @@ const organizationCodeMap: Record<string, string> = Object.entries(organizationD
 export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorProps) => {
   const [organizations, setOrganizations] = useState<ReferenceData[]>([]);
   const [loading, setLoading] = useState(true);
+  const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
     const loadOrganizations = async () => {
       try {
-        const orgs = await referenceDataService.getItemsByType('organizations');
-        setOrganizations(orgs);
+        const allOrgs = await referenceDataService.getItemsByType('organizations');
+        
+        // Filter organizations based on user role
+        let filteredOrgs;
+        if (!user) {
+          filteredOrgs = [];
+        } else if (
+          user.role === 'ADMIN' || 
+          user.role === 'FINANCE_ADMIN' || 
+          user.role === 'PROCUREMENT'
+        ) {
+          // Admin, Finance Admin, and Procurement see all orgs
+          filteredOrgs = allOrgs;
+        } else {
+          // Approvers and Requestors see their primary org and additional orgs
+          const userOrgs = new Set([
+            user.organization?.id,
+            ...(user.additionalOrganizations || [])
+          ].filter(Boolean));
+          
+          filteredOrgs = allOrgs.filter(org => userOrgs.has(org.id));
+        }
+        
+        setOrganizations(filteredOrgs);
       } catch (error) {
         console.error('Error loading organizations:', error);
       } finally {
@@ -39,10 +64,10 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
       }
     };
     loadOrganizations();
-  }, []);
+  }, [user]);
 
-  // Convert code to display name for the select value
-  const displayValue = organizationCodeMap[value] || '';
+  // Convert organization object or string to display value
+  const displayValue = typeof value === 'object' ? value.name : organizationCodeMap[value] || '';
 
   if (loading) {
     return <CircularProgress size={24} />;
@@ -57,9 +82,11 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
         value={displayValue}
         label="Organization"
         onChange={(e) => {
-          // Convert display name back to code when changing
-          const code = organizationDisplayMap[e.target.value as string];
-          onChange(code);
+          // Find the selected organization object
+          const selectedOrg = organizations.find(org => org.name === e.target.value);
+          if (selectedOrg) {
+            onChange({ id: selectedOrg.id, name: selectedOrg.name });
+          }
         }}
       >
         {organizations.map((org) => (

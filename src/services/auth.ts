@@ -1,12 +1,13 @@
 /**
  * @fileoverview Authentication Service Implementation
- * @version 1.3.0
+ * @version 1.3.1
  * 
  * Change History:
  * 1.0.0 - Initial implementation of basic auth functions
  * 1.1.0 - Added error handling and user state management
  * 1.2.0 - Improved logging and error messages, refactored to individual exports
  * 1.3.0 - Updated auth service to handle both UID and email-based user lookups
+ * 1.3.1 - Updated auth service to normalize organization IDs
  * 
  * Description:
  * This module provides authentication services for the PR System application.
@@ -47,6 +48,7 @@ import { auth, db } from '../config/firebase';
 import { User } from '../types/user';
 import { store } from '../store';
 import { setUser, clearUser, setLoading, setError } from '../store/slices/authSlice';
+import { normalizeOrganizationId } from '@/utils/organization';
 
 // Check if we're in development mode
 const isDevelopment = import.meta.env.MODE === 'development';
@@ -164,19 +166,21 @@ export const getUserDetails = async (uid: string): Promise<User | null> => {
     }
 
     const userData = userDoc.data() as Omit<User, 'id'>;
+    
+    // Ensure organization data is properly formatted
+    const organization = typeof userData.organization === 'string'
+      ? { id: normalizeOrganizationId(userData.organization), name: userData.organization }
+      : userData.organization;
+
+    // Normalize additional organization IDs
+    const additionalOrganizations = userData.additionalOrganizations?.map(normalizeOrganizationId) || [];
+
+    // Return user data with normalized organization IDs
     return {
-      id: uid,
+      id: userDoc.id,
       ...userData,
-      // Set default values for required fields if they don't exist
-      role: userData.role || 'USER',
-      permissionLevel: userData.permissionLevel || 4,
-      isActive: userData.isActive ?? true,
-      name: userData.name || '',
-      organization: userData.organization || {
-        id: 'default',
-        name: 'Default Organization',
-        isActive: true
-      }
+      organization,
+      additionalOrganizations
     };
   } catch (error) {
     console.error('auth.ts: Get user details failed:', error);

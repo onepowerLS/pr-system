@@ -56,6 +56,7 @@ interface User {
     id: string;
     name: string;
   };
+  additionalOrganizations?: string[]; // IDs of additional organizations the user has access to
 }
 
 /**
