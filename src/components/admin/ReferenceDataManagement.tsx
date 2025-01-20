@@ -189,34 +189,59 @@ interface ReferenceDataField {
   readOnly?: boolean;
 }
 
+const isCodeBasedIdType = (type: string): boolean => {
+  return CODE_BASED_ID_TYPES.includes(type as any);
+};
+
 const commonFields: ReferenceDataField[] = [
   { name: 'id', label: 'ID' },
   { name: 'name', label: 'Name', required: true }
 ];
 
-const vendorFields: ReferenceDataField[] = [
+const codeBasedFields: ReferenceDataField[] = [
   ...commonFields,
-  { name: 'contactName', label: 'Contact Name' } as ReferenceDataField,
-  { name: 'contactEmail', label: 'Contact Email' } as ReferenceDataField,
-  { name: 'contactPhone', label: 'Contact Phone' } as ReferenceDataField,
-  { name: 'address', label: 'Address' } as ReferenceDataField,
-  { name: 'url', label: 'Website URL' } as ReferenceDataField,
-  { name: 'notes', label: 'Notes' } as ReferenceDataField
+  { name: 'code', label: 'Code', required: true }
+];
+
+const vendorFields: ReferenceDataField[] = [
+  { name: 'name', label: 'Name', required: true },
+  { name: 'contactName', label: 'Contact Name' },
+  { name: 'contactEmail', label: 'Contact Email', type: 'email' },
+  { name: 'contactPhone', label: 'Contact Phone' },
+  { name: 'address', label: 'Address' },
+  { name: 'url', label: 'Website URL', type: 'url' },
+  { name: 'notes', label: 'Notes' }
 ];
 
 const organizationFields: ReferenceDataField[] = [
-  ...commonFields,
-  { name: 'shortName', label: 'Short Name' } as ReferenceDataField,
-  { name: 'country', label: 'Country' } as ReferenceDataField,
-  { name: 'timezone', label: 'Timezone' } as ReferenceDataField,
-  { name: 'currency', label: 'Default Currency' } as ReferenceDataField
+  { name: 'name', label: 'Name', required: true },
+  { name: 'code', label: 'Code', required: true }
 ];
 
 const permissionFields: ReferenceDataField[] = [
-  ...commonFields,
-  { name: 'level', label: 'Permission Level', type: 'number' } as ReferenceDataField,
-  { name: 'description', label: 'Description' } as ReferenceDataField
+  { name: 'name', label: 'Name', required: true },
+  { name: 'code', label: 'Code', required: true },
+  { name: 'description', label: 'Description' },
+  { name: 'level', label: 'Level', type: 'number' }
 ];
+
+// Get form fields based on type
+const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
+  if (isCodeBasedIdType(type)) {
+    return codeBasedFields;
+  }
+
+  switch (type) {
+    case 'vendors':
+      return vendorFields;
+    case 'organizations':
+      return organizationFields;
+    case 'permissions':
+      return permissionFields;
+    default:
+      return commonFields;
+  }
+};
 
 export function ReferenceDataManagement() {
   const [selectedType, setSelectedType] = useState<ReferenceDataType>("departments")
@@ -267,34 +292,6 @@ export function ReferenceDataManagement() {
   // Check if the type is organization-independent
   const isOrgIndependentType = (type: ReferenceDataType): boolean => {
     return ORG_INDEPENDENT_TYPES.includes(type as any);
-  };
-
-  // Check if the type uses code as ID
-  const isCodeBasedIdType = (type: ReferenceDataType): boolean => {
-    return CODE_BASED_ID_TYPES.includes(type as any);
-  };
-
-  // Get form fields based on type
-  const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
-    const fields = (() => {
-      switch (type) {
-        case 'vendors':
-          return vendorFields;
-        case 'organizations':
-          return organizationFields;
-        case 'permissions':
-          return permissionFields;
-        default:
-          return commonFields;
-      }
-    })();
-
-    // For non-code-based types, remove ID field
-    if (!isCodeBasedIdType(type)) {
-      return fields.filter(field => field.name !== 'id');
-    }
-
-    return fields;
   };
 
   // Load organizations on mount
