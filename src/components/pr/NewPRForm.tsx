@@ -214,13 +214,13 @@ export const NewPRForm = () => {
       id: '1pwr_lesotho',
       name: '1PWR LESOTHO'
     },
-    department: null,
-    projectCategory: null,
-    site: null,
-    expenseType: null,
-    vehicle: null,
-    vendor: null,
-    approver: null,
+    department: '',
+    projectCategory: '',
+    site: '',
+    expenseType: '',
+    vehicle: '',
+    vendor: '',
+    approver: '',
     status: 'DRAFT',
     createdBy: user?.id || '',
     createdAt: new Date().toISOString(),
@@ -239,59 +239,67 @@ export const NewPRForm = () => {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load reference data
-  const loadReferenceData = useCallback(async () => {
-    if (!formState.organization || isLoadingData || isInitialized) return;
+  // Load reference data when organization changes
+  useEffect(() => {
+    const loadReferenceData = async () => {
+      if (!formState.organization) {
+        console.log('No organization selected, skipping reference data load');
+        return;
+      }
 
-    try {
       setIsLoadingData(true);
-      setError(null);
+      console.log('Loading reference data for organization:', formState.organization);
 
-      // Load all reference data in parallel
-      const [
-        deptData,
-        projectCatData,
-        sitesData,
-        expenseTypesData,
-        vehiclesData,
-        vendorsData,
-        approversData
-      ] = await Promise.all([
-        referenceDataService.getDepartments(formState.organization),
-        referenceDataService.getItemsByType('projectCategories', formState.organization),
-        referenceDataService.getItemsByType('sites', formState.organization),
-        referenceDataService.getItemsByType('expenseTypes', formState.organization),
-        referenceDataService.getItemsByType('vehicles', formState.organization),
-        referenceDataService.getItemsByType('vendors'),
-        approverService.getApprovers(formState.organization)
-      ]);
+      try {
+        // Load departments first
+        const deptItems = await referenceDataService.getDepartments(formState.organization);
+        console.log('Loaded departments:', deptItems);
+        setDepartments(deptItems);
 
-      // Update all state at once
-      setDepartments(deptData.items || []);
-      setProjectCategories(projectCatData || []);
-      setSites(sitesData || []);
-      setExpenseTypes(expenseTypesData || []);
-      setVehicles(vehiclesData || []);
-      setVendors(vendorsData || []);
-      setApprovers(approversData || []);
-      setIsInitialized(true);
+        // Load other reference data
+        const [
+          projectCategoryItems,
+          siteItems,
+          expenseTypeItems,
+          vehicleItems,
+          vendorItems,
+          approverItems
+        ] = await Promise.all([
+          referenceDataService.getProjectCategories(formState.organization.id),
+          referenceDataService.getSites(formState.organization.id),
+          referenceDataService.getExpenseTypes(formState.organization.id),
+          referenceDataService.getVehicles(formState.organization.id),
+          referenceDataService.getVendors(),
+          approverService.getApprovers(formState.organization.id)
+        ]);
 
-    } catch (error) {
-      console.error('Error loading reference data:', error);
-      setError('Failed to load form data. Please try again.');
-      enqueueSnackbar('Error loading form data. Please try again.', { 
-        variant: 'error',
-        autoHideDuration: 5000
-      });
-    } finally {
-      setIsLoadingData(false);
+        setProjectCategories(projectCategoryItems);
+        setSites(siteItems);
+        setExpenseTypes(expenseTypeItems);
+        setVehicles(vehicleItems);
+        setVendors(vendorItems);
+        setApprovers(approverItems);
+        setAvailableApprovers(approverItems);
+
+      } catch (error) {
+        console.error('Error loading reference data:', error);
+        setError('Failed to load form data. Please try again.');
+        enqueueSnackbar('Failed to load form data', { variant: 'error' });
+      } finally {
+        setIsLoadingData(false);
+        setIsInitialized(true);
+      }
+    };
+
+    if (!isInitialized) {
+      loadReferenceData();
     }
-  }, [formState.organization, isLoadingData, isInitialized, enqueueSnackbar]);
+  }, [formState.organization, isInitialized, enqueueSnackbar]);
 
   // Load data on mount
   useEffect(() => {
-    loadReferenceData();
-  }, [loadReferenceData]);
+    setIsLoading(true);
+  }, []);
 
   // Reset initialization on unmount
   useEffect(() => {

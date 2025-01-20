@@ -49,38 +49,24 @@ class ApproverService {
     }
   }
 
-  async getApprovers(organization: string | { id: string; name: string }): Promise<Approver[]> {
+  async getApprovers(organizationId: string): Promise<Approver[]> {
     try {
-      const normalizedOrgId = this.normalizeOrganizationId(organization);
-      console.log('ApproverService: Getting approvers for organization:', { organization, normalizedOrgId });
-      
       const approversRef = collection(this.db, 'approverList');
-      const q = query(
-        approversRef, 
-        where('isActive', '==', true),
-        where('organization', '==', normalizedOrgId)
-      );
+      const q = query(approversRef, where('organizationId', '==', organizationId));
       const querySnapshot = await getDocs(q);
       
-      const approvers = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
+      const approvers: Approver[] = [];
+      querySnapshot.forEach((doc) => {
+        approvers.push({
           id: doc.id,
-          name: data.Name,
-          email: data.Email,
-          department: data.Department,
-          approvalLimit: data['Approval Limit'],
-          isActive: data['Active Status (Y/N)'] === 'Y',
-          organization: '1PWR LESOTHO'
-        } as Approver;
-      }).filter(a => a.isActive);
+          ...doc.data()
+        } as Approver);
+      });
 
-      console.log(`ApproverService: Found ${approvers.length} approvers for organization ${normalizedOrgId}`);
-      console.log('ApproverService: Approvers:', approvers);
       return approvers;
     } catch (error) {
-      console.error('ApproverService: Error getting approvers:', error);
-      throw new Error(`Failed to get approvers for organization ${normalizedOrgId}. Please try again.`);
+      console.error('Error getting approvers:', error);
+      throw error;
     }
   }
 

@@ -106,12 +106,15 @@ class ReferenceDataService {
     }
   }
 
-  async getDepartments(organization: string): Promise<ReferenceData[]> {
+  async getDepartments(organization: string | OrganizationData): Promise<ReferenceData[]> {
     console.log('Getting departments for organization:', organization);
     
     try {
       const collectionRef = collection(this.db, this.getCollectionName('departments'));
-      const q = query(collectionRef, where('organization.id', '==', organization));
+      const normalizedOrgId = this.normalizeOrganizationId(organization);
+      console.log('Using normalized org ID:', normalizedOrgId);
+      
+      const q = query(collectionRef, where('organization.id', '==', normalizedOrgId));
       const querySnapshot = await getDocs(q);
 
       const items = querySnapshot.docs.map(doc => ({

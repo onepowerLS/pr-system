@@ -173,17 +173,21 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="department-label"
             id="department-select"
-            value={formState.department}
+            value={formState.department || ''}
             onChange={handleChange('department')}
             label="Department"
             disabled={loading}
           >
+            <MenuItem value="">
+              <em>Select a department</em>
+            </MenuItem>
             {departments.map(dept => (
               <MenuItem key={dept.id} value={dept.id}>
                 {dept.name}
               </MenuItem>
             ))}
           </Select>
+          <FormHelperText>Please select your department</FormHelperText>
         </FormControl>
       </Grid>
 
