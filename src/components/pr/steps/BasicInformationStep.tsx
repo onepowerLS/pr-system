@@ -245,7 +245,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           >
             {sites.map(site => (
               <MenuItem key={site.id} value={site.id}>
-                {site.name}
+                {site.code} - {site.name}
               </MenuItem>
             ))}
           </Select>
