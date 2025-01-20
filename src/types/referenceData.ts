@@ -1,11 +1,11 @@
 export interface ReferenceDataItem {
   id: string;
-  name: string;
+  name?: string;
   code?: string;
   organization?: {
     id: string;
     name: string;
-  };
+  } | string;
   description?: string;
   active: boolean;
   // Vendor specific fields
@@ -25,6 +25,13 @@ export interface ReferenceDataItem {
   level?: number;
   actions?: string[];
   scope?: string[];
+  // Vehicle specific fields
+  registrationNumber?: string;
+  year?: number;
+  make?: string;
+  model?: string;
+  vinNumber?: string;
+  engineNumber?: string;
 }
 
 export type ReferenceDataType = 
@@ -36,7 +43,8 @@ export type ReferenceDataType =
   | 'currencies'
   | 'uom'
   | 'organizations'
-  | 'permissions';
+  | 'permissions'
+  | 'vehicles';
 
 // Types that don't depend on organization
 export const ORG_INDEPENDENT_TYPES = [

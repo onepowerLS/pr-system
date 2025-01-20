@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import {
   Box,
   Button,
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogActions,
   FormControl,
   InputLabel,
   Select,
@@ -19,6 +20,7 @@ import {
   Paper,
   Switch,
   FormControlLabel,
+  IconButton,
   Snackbar,
   Alert,
 } from "@mui/material"
@@ -187,6 +189,7 @@ interface ReferenceDataField {
   required?: boolean;
   type?: string;
   readOnly?: boolean;
+  hideInTable?: boolean;
 }
 
 const isCodeBasedIdType = (type: string): boolean => {
@@ -194,12 +197,16 @@ const isCodeBasedIdType = (type: string): boolean => {
 };
 
 const commonFields: ReferenceDataField[] = [
-  { name: 'id', label: 'ID' },
   { name: 'name', label: 'Name', required: true }
 ];
 
 const codeBasedFields: ReferenceDataField[] = [
-  ...commonFields,
+  { name: 'name', label: 'Name', required: true },
+  { name: 'code', label: 'Code', required: true }
+];
+
+const codeIncludedFields: ReferenceDataField[] = [
+  { name: 'name', label: 'Name', required: true },
   { name: 'code', label: 'Code', required: true }
 ];
 
@@ -215,7 +222,11 @@ const vendorFields: ReferenceDataField[] = [
 
 const organizationFields: ReferenceDataField[] = [
   { name: 'name', label: 'Name', required: true },
-  { name: 'code', label: 'Code', required: true }
+  { name: 'code', label: 'Code', required: true },
+  { name: 'shortName', label: 'Short Name' },
+  { name: 'country', label: 'Country' },
+  { name: 'timezone', label: 'Timezone' },
+  { name: 'currency', label: 'Default Currency' }
 ];
 
 const permissionFields: ReferenceDataField[] = [
@@ -223,6 +234,17 @@ const permissionFields: ReferenceDataField[] = [
   { name: 'code', label: 'Code', required: true },
   { name: 'description', label: 'Description' },
   { name: 'level', label: 'Level', type: 'number' }
+];
+
+const vehicleFields: ReferenceDataField[] = [
+  { name: 'code', label: 'Code', type: 'text', required: true },
+  { name: 'registrationNumber', label: 'Registration Number', type: 'text' },
+  { name: 'year', label: 'Year', type: 'number' },
+  { name: 'make', label: 'Make', type: 'text' },
+  { name: 'model', label: 'Model', type: 'text' },
+  { name: 'vinNumber', label: 'VIN Number', type: 'text' },
+  { name: 'engineNumber', label: 'Engine Number', type: 'text' },
+  { name: 'organization', label: 'Organization', type: 'organization' }
 ];
 
 // Get form fields based on type
@@ -238,9 +260,22 @@ const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
       return organizationFields;
     case 'permissions':
       return permissionFields;
+    case 'vehicles':
+      return vehicleFields;
+    case 'departments':
+    case 'sites':
+    case 'expenseTypes':
+    case 'projectCategories':
+      return codeIncludedFields;
     default:
       return commonFields;
   }
+};
+
+// Get display fields based on type - used for the table display
+const getDisplayFields = (type: ReferenceDataType): ReferenceDataField[] => {
+  const fields = getFormFields(type);
+  return fields.filter(field => !field.hideInTable);
 };
 
 export function ReferenceDataManagement() {
@@ -298,12 +333,10 @@ export function ReferenceDataManagement() {
   useEffect(() => {
     const loadOrgs = async () => {
       try {
-        console.log('Loading organizations...');
-        const orgs = await organizationService.getActiveOrganizations();
-        console.log('Loaded organizations:', orgs);
+        const orgs = await referenceDataAdminService.getActiveItems('organizations');
         setOrganizations(orgs);
+        // Only set default organization if none is selected
         if (orgs.length > 0 && !selectedOrganization) {
-          console.log('Setting default organization:', orgs[0]);
           setSelectedOrganization(orgs[0].id);
         }
       } catch (error) {
@@ -318,47 +351,23 @@ export function ReferenceDataManagement() {
     loadOrgs();
   }, []);
 
-  // Load items whenever type or selected organization changes
+  // Load items when type changes
   useEffect(() => {
-    const loadItemsAsync = async () => {
+    const loadItems = async () => {
       try {
-        console.log('Loading items for type:', selectedType);
-        let items = await referenceDataAdminService.getItems(selectedType);
-        console.log('Loaded items (raw):', items);
-        
-        // Ensure all items have an id
-        items = items.map(item => {
-          if (!item.id) {
-            console.error('Item missing id:', item);
-          }
-          return item;
-        });
-        
-        // Only filter by organization for organization-dependent types
-        if (!isOrgIndependentType(selectedType) && selectedOrganization) {
-          console.log('Filtering by organization:', selectedOrganization);
-          items = items.filter(item => {
-            // Handle both old string format and new object format
-            if (typeof item.organization === 'string') {
-              return item.organization === selectedOrganization;
-            }
-            return item.organization?.id === selectedOrganization;
-          });
-          console.log('Filtered items:', items);
-        }
-        
+        const items = await referenceDataAdminService.getItems(selectedType);
         setItems(items);
       } catch (error) {
-        console.error('Error loading items:', error);
+        console.error(`Error loading ${selectedType}:`, error);
         setSnackbar({
           open: true,
-          message: 'Failed to load items',
+          message: `Failed to load ${REFERENCE_DATA_TYPES[selectedType]}`,
           severity: 'error'
         });
       }
     };
-    loadItemsAsync();
-  }, [selectedType, selectedOrganization]);
+    loadItems();
+  }, [selectedType]);
 
   useEffect(() => {
     const updateCurrencies = async () => {
@@ -426,8 +435,6 @@ export function ReferenceDataManagement() {
 
   const handleAdd = () => {
     const newItem: Partial<ReferenceDataItem> = {
-      name: '',
-      code: '',
       active: true
     };
     setEditItem(newItem);
@@ -445,119 +452,55 @@ export function ReferenceDataManagement() {
       itemCopy.actions = itemCopy.actions || [];
       itemCopy.scope = itemCopy.scope || [];
     }
-
-    // For non-code-based types, ensure we keep the original ID
-    if (!isCodeBasedIdType(selectedType)) {
-      itemCopy.id = item.id;
-    }
     
+    // For vehicles, ensure organization is properly structured
+    if (selectedType === 'vehicles' && itemCopy.organization) {
+      // If organization is a string ID, convert it to an organization object
+      if (typeof itemCopy.organization === 'string') {
+        const org = organizations.find(o => o.id === itemCopy.organization);
+        if (org) {
+          itemCopy.organization = {
+            id: org.id,
+            name: org.name || org.id
+          };
+        }
+      }
+    }
+
     setEditItem(itemCopy);
     setIsDialogOpen(true);
     setFormErrors({});
   };
 
-  const handleSave = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault(); // Prevent form submission
-    
+  const handleSave = async (editedItem: any) => {
     try {
-      if (!editItem || !validateForm(editItem)) {
-        console.log('Form validation failed:', formErrors);
-        return;
-      }
-
-      // Ensure we have required fields
-      if (!editItem.name?.trim() || (isCodeBasedIdType(selectedType) && !editItem.code?.trim())) {
-        console.log('Required fields missing');
-        return;
-      }
-
-      // Build base item with required fields
-      const itemToSave: Partial<ReferenceDataItem> = {
-        name: editItem.name.trim(),
-        active: editItem.active ?? true
-      };
-
-      // Only include non-empty optional fields
-      const optionalFields = ['contactName', 'contactEmail', 'contactPhone', 'address', 'url', 'notes'] as const;
-      for (const field of optionalFields) {
-        const value = editItem[field]?.trim();
-        if (value) {
-          itemToSave[field] = value;
+      // For vehicles, ensure organization is properly structured
+      if (selectedType === 'vehicles' && editedItem.organization) {
+        // If organization is a string ID, convert it to an organization object
+        if (typeof editedItem.organization === 'string') {
+          const org = organizations.find(o => o.id === editedItem.organization);
+          if (org) {
+            editedItem.organization = org;
+          }
         }
       }
 
-      // Copy any other fields from editItem that we haven't handled
-      for (const [key, value] of Object.entries(editItem)) {
-        if (
-          key !== 'name' && 
-          key !== 'active' && 
-          !optionalFields.includes(key as any) && 
-          value !== undefined && 
-          value !== null && 
-          value !== ''
-        ) {
-          itemToSave[key] = value;
-        }
-      }
-
-      // Handle permissions specially
-      if (selectedType === 'permissions') {
-        const newId = editItem.code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-        if (editItem.id && editItem.id !== newId) {
-          await referenceDataAdminService.deleteItem(selectedType, editItem.id);
-          itemToSave.id = newId;
-          await referenceDataAdminService.addItem(selectedType, itemToSave);
-        } else if (!editItem.id) {
-          itemToSave.id = newId;
-          await referenceDataAdminService.addItem(selectedType, itemToSave);
-        } else {
-          await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
-        }
-      } else if (isCodeBasedIdType(selectedType)) {
-        // Handle code-based ID types
-        const newId = editItem.code.toLowerCase().trim();
-        if (editItem.id && editItem.id !== newId) {
-          await referenceDataAdminService.deleteItem(selectedType, editItem.id);
-          itemToSave.id = newId;
-          await referenceDataAdminService.addItem(selectedType, itemToSave);
-        } else if (!editItem.id) {
-          itemToSave.id = newId;
-          await referenceDataAdminService.addItem(selectedType, itemToSave);
-        } else {
-          await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
-        }
-      } else {
-        // Handle regular items (including vendors)
-        if (editItem.id) {
-          await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
-        } else {
-          await referenceDataAdminService.addItem(selectedType, itemToSave);
-        }
-      }
-
-      // Refresh items list
+      await referenceDataAdminService.updateItem(selectedType, editedItem);
+      setSnackbar({
+        open: true,
+        message: 'Item updated successfully',
+        severity: 'success',
+      });
+      setIsDialogOpen(false);
+      // Refresh data
       const updatedItems = await referenceDataAdminService.getItems(selectedType);
       setItems(updatedItems);
-
-      setIsDialogOpen(false);
-      setEditItem(null);
-      setFormErrors({});
-      
-      // Show success message using global snackbar
-      const itemType = REFERENCE_DATA_TYPES[selectedType].slice(0, -1); // Remove 's' from plural
-      setSnackbar({
-        open: true,
-        message: `${itemType} ${itemToSave.code} ${editItem.id ? 'updated' : 'added'} successfully`,
-        severity: 'success',
-        autoHideDuration: 3000
-      });
     } catch (error) {
-      console.error('Error saving item:', error);
+      console.error('Error submitting form:', error);
       setSnackbar({
         open: true,
-        message: `Failed to save item: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        message: 'Error updating item',
         severity: 'error',
-        autoHideDuration: 3000
       });
     }
   };
@@ -609,6 +552,44 @@ export function ReferenceDataManagement() {
     const error = formErrors[field.name];
     const helperText = error || '';
 
+    if (field.type === 'organization') {
+      const [organizations, setOrganizations] = useState<Organization[]>([]);
+      useEffect(() => {
+        const loadOrganizations = async () => {
+          try {
+            const orgs = await referenceDataAdminService.getItems('organizations');
+            setOrganizations(orgs);
+          } catch (error) {
+            console.error('Error loading organizations:', error);
+          }
+        };
+        loadOrganizations();
+      }, []);
+
+      return (
+        <FormControl key={field.name} fullWidth margin="normal">
+          <InputLabel>{field.label}</InputLabel>
+          <Select
+            value={editItem?.organization?.id || ''}
+            onChange={(e) => {
+              const org = organizations.find(o => o.id === e.target.value);
+              setEditItem({ ...editItem, organization: org || null });
+            }}
+            label={field.label}
+          >
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
+            {organizations.map((org) => (
+              <MenuItem key={org.id} value={org.id}>
+                {org.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      );
+    }
+
     return (
       <FormControl 
         key={field.name} 
@@ -639,6 +620,130 @@ export function ReferenceDataManagement() {
     );
   };
 
+  const filteredItems = useMemo(() => {
+    console.log('Filtering by organization:', selectedOrganization);
+    if (!selectedOrganization || isOrgIndependentType(selectedType)) {
+      return items;
+    }
+
+    return items.filter(item => {
+      // Handle both nested organization object and organization ID string
+      const itemOrgId = typeof item.organization === 'string' 
+        ? item.organization 
+        : item.organization?.id;
+      
+      return itemOrgId === selectedOrganization;
+    });
+  }, [items, selectedOrganization, selectedType]);
+
+  console.log('Filtered items:', filteredItems);
+
+  const EditDialog = ({ open, onClose, onSubmit, item, type }: any) => {
+    const [editItem, setEditItem] = useState<any>(item || {});
+    const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+    const [organizations, setOrganizations] = useState<Organization[]>([]);
+
+    useEffect(() => {
+      setEditItem(item || {});
+    }, [item]);
+
+    useEffect(() => {
+      const loadOrganizations = async () => {
+        try {
+          const orgs = await referenceDataAdminService.getActiveItems('organizations');
+          setOrganizations(orgs);
+        } catch (error) {
+          console.error('Error loading organizations:', error);
+        }
+      };
+
+      if (open) {
+        loadOrganizations();
+      }
+    }, [open]);
+
+    const handleChange = (field: string, value: any) => {
+      setEditItem(prev => ({
+        ...prev,
+        [field]: value
+      }));
+      // Clear error when field is changed
+      if (formErrors[field]) {
+        setFormErrors(prev => ({
+          ...prev,
+          [field]: ''
+        }));
+      }
+    };
+
+    const renderFormField = (field: ReferenceDataField) => {
+      const error = formErrors[field.name];
+      const helperText = error || '';
+
+      if (field.type === 'organization') {
+        return (
+          <FormControl key={field.name} fullWidth margin="normal">
+            <InputLabel>{field.label}</InputLabel>
+            <Select
+              value={editItem?.organization?.id || editItem?.organization || ''}
+              onChange={(e) => {
+                const selectedValue = e.target.value;
+                if (!selectedValue) {
+                  handleChange('organization', null);
+                } else {
+                  const org = organizations.find(o => o.id === selectedValue);
+                  handleChange('organization', org);
+                }
+              }}
+              label={field.label}
+            >
+              <MenuItem value="">
+                <em>None</em>
+              </MenuItem>
+              {organizations.map((org) => (
+                <MenuItem key={org.id} value={org.id}>
+                  {org.name || org.id}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        );
+      }
+
+      return (
+        <TextField
+          key={field.name}
+          fullWidth
+          margin="normal"
+          label={field.label}
+          type={field.type || 'text'}
+          value={editItem[field.name] || ''}
+          onChange={(e) => handleChange(field.name, e.target.value)}
+          error={!!error}
+          helperText={helperText}
+          required={field.required}
+        />
+      );
+    };
+
+    return (
+      <Dialog open={open} onClose={onClose}>
+        <DialogTitle>
+          {item?.id ? 'Edit' : 'Add'} {REFERENCE_DATA_TYPES[type]}
+        </DialogTitle>
+        <DialogContent>
+          {getFormFields(type).map(field => renderFormField(field))}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={() => onSubmit(editItem)} variant="contained" color="primary">
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
   return (
     <Box p={3}>
       <Box mb={3} display="flex" gap={2}>
@@ -646,36 +751,19 @@ export function ReferenceDataManagement() {
           <InputLabel>Type</InputLabel>
           <Select
             value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value as ReferenceDataType)}
             label="Type"
-            onChange={handleTypeChange}
           >
-            {Object.entries(REFERENCE_DATA_TYPES).map(([value, label]) => (
-              <MenuItem key={value} value={value}>
+            {Object.entries(REFERENCE_DATA_TYPES).map(([type, label]) => (
+              <MenuItem key={type} value={type}>
                 {label}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
 
-        {!isOrgIndependentType(selectedType) && (
-          <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel>Organization</InputLabel>
-            <Select
-              value={selectedOrganization}
-              label="Organization"
-              onChange={(e) => setSelectedOrganization(e.target.value as string)}
-            >
-              {organizations.map((org) => (
-                <MenuItem key={org.id} value={org.id}>
-                  {org.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        )}
-
-        <Button variant="contained" color="primary" onClick={handleAdd}>
-          Add New
+        <Button variant="contained" onClick={handleAdd}>
+          Add {REFERENCE_DATA_TYPES[selectedType]}
         </Button>
       </Box>
 
@@ -683,87 +771,56 @@ export function ReferenceDataManagement() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>ID</TableCell>
-              {selectedType !== 'vendors' && selectedType !== 'departments' && <TableCell>Code</TableCell>}
-              <TableCell>Name</TableCell>
-              {selectedType === 'vendors' ? (
-                <>
-                  <TableCell>Approval Date</TableCell>
-                  <TableCell>Contact Name</TableCell>
-                  <TableCell>Contact Email</TableCell>
-                  <TableCell>Contact Phone</TableCell>
-                  <TableCell>Address</TableCell>
-                  <TableCell>URL</TableCell>
-                  <TableCell>Notes</TableCell>
-                </>
-              ) : selectedType === 'permissions' ? (
-                <>
-                  <TableCell>Level</TableCell>
-                  <TableCell>Description</TableCell>
-                </>
-              ) : !isOrgIndependentType(selectedType) && selectedType !== 'departments' ? (
-                <TableCell>Organization</TableCell>
-              ) : null}
+              {getDisplayFields(selectedType).map((field) => (
+                <TableCell key={field.name}>{field.label}</TableCell>
+              ))}
               <TableCell>Active</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {items.map((item) => (
+            {filteredItems.map((item) => (
               <TableRow key={item.id}>
-                <TableCell>{item.id}</TableCell>
-                {selectedType !== 'vendors' && selectedType !== 'departments' && <TableCell>{item.code}</TableCell>}
-                <TableCell>{item.name}</TableCell>
-                {selectedType === 'vendors' ? (
-                  <>
-                    <TableCell>{formatDateForDisplay(item.approvalDate)}</TableCell>
-                    <TableCell>{item.contactName}</TableCell>
-                    <TableCell>{item.contactEmail}</TableCell>
-                    <TableCell>{item.contactPhone}</TableCell>
-                    <TableCell>{item.address}</TableCell>
-                    <TableCell>{item.url}</TableCell>
-                    <TableCell>{item.notes}</TableCell>
-                  </>
-                ) : selectedType === 'permissions' ? (
-                  <>
-                    <TableCell>{item.level}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                  </>
-                ) : !isOrgIndependentType(selectedType) && selectedType !== 'departments' ? (
-                  <TableCell>
-                    {typeof item.organization === 'string' 
-                      ? organizations.find(org => org.id === item.organization)?.name
-                      : organizations.find(org => org.id === item.organization?.id)?.name}
+                {getDisplayFields(selectedType).map((field) => (
+                  <TableCell key={field.name}>
+                    {field.type === 'organization' 
+                      ? (typeof item.organization === 'string' 
+                          ? organizations.find(o => o.id === item.organization)?.name 
+                          : item.organization?.name) || 'None'
+                      : item[field.name]}
                   </TableCell>
-                ) : null}
+                ))}
                 <TableCell>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={item.active}
-                        onChange={async () => {
-                          await handleSave({ ...item, active: !item.active })
-                        }}
-                      />
-                    }
-                    label=""
+                  <Switch
+                    checked={item.active}
+                    onChange={async () => {
+                      try {
+                        await handleSave({ ...item, active: !item.active });
+                      } catch (error) {
+                        console.error('Error toggling active state:', error);
+                        setSnackbar({
+                          open: true,
+                          message: 'Failed to update active state',
+                          severity: 'error'
+                        });
+                      }
+                    }}
                   />
                 </TableCell>
                 <TableCell>
                   <Button onClick={() => handleEdit(item)}>Edit</Button>
                   <Button 
                     onClick={() => {
-                      console.log('Delete clicked for item:', item);
-                      if (item.id) {
-                        handleDelete(item.id);
-                      } else {
+                      if (!item.id) {
                         console.error('Cannot delete item without id:', item);
                         setSnackbar({
                           open: true,
                           message: 'Cannot delete item: missing ID',
                           severity: 'error'
                         });
+                        return;
                       }
+                      handleDelete(item.id);
                     }}
                   >
                     Delete
@@ -775,33 +832,13 @@ export function ReferenceDataManagement() {
         </Table>
       </TableContainer>
 
-      <Dialog open={isDialogOpen} onClose={() => setIsDialogOpen(false)}>
-        <DialogTitle>
-          {editItem?.id ? 'Edit' : 'Add'} {REFERENCE_DATA_TYPES[selectedType]}
-        </DialogTitle>
-        <DialogContent>
-          <Box component="form" onSubmit={handleFormSubmit} sx={{ mt: 2 }}>
-            {getFormFields(selectedType).map((field, index) => (
-              renderField(field)
-            ))}
-            
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={editItem?.active || false}
-                  onChange={(e) => setEditItem({ ...editItem, active: e.target.checked } as ReferenceDataItem)}
-                />
-              }
-              label="Active"
-              sx={{ mb: 2 }}
-            />
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-              <Button onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" variant="contained" onClick={handleSave}>Save</Button>
-            </Box>
-          </Box>
-        </DialogContent>
-      </Dialog>
+      <EditDialog 
+        open={isDialogOpen} 
+        onClose={() => setIsDialogOpen(false)} 
+        onSubmit={handleSave} 
+        item={editItem} 
+        type={selectedType} 
+      />
 
       <Snackbar
         open={snackbar.open}

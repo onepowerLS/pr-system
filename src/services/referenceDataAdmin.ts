@@ -1,9 +1,9 @@
 import { ReferenceDataItem } from "@/types/referenceData"
 import { db } from "@/config/firebase"
-import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, writeBatch, setDoc, getDoc } from "firebase/firestore"
+import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, writeBatch, setDoc, getDoc, deleteField } from "firebase/firestore"
 
 const COLLECTION_PREFIX = "referenceData"
-const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations', 'departments', 'sites', 'expenseTypes', 'projectCategories', 'vehicles']
+const CODE_BASED_ID_TYPES = ['currencies', 'uom'] as const;
 
 export class ReferenceDataAdminService {
   private getCollectionName(type: string) {
@@ -12,12 +12,10 @@ export class ReferenceDataAdminService {
 
   async getItems(type: string): Promise<ReferenceDataItem[]> {
     const collectionName = this.getCollectionName(type);
-    console.log(`Getting items from collection: ${collectionName}`);
     const collectionRef = collection(db, collectionName);
     const snapshot = await getDocs(collectionRef);
     const items = snapshot.docs.map(doc => {
       const data = doc.data();
-      console.log('Document data:', { id: doc.id, ...data });
       return {
         ...data,
         id: doc.id || data.id || '', // Ensure we get the ID from either the document or the data
@@ -89,12 +87,17 @@ export class ReferenceDataAdminService {
     return results;
   }
 
-  async updateItem(type: string, id: string, item: Partial<ReferenceDataItem>): Promise<void> {
+  async updateItem(type: string, item: ReferenceDataItem): Promise<void> {
     const collectionName = this.getCollectionName(type);
-    console.log(`Updating item in collection: ${collectionName} with ID: ${id}`, item);
+    const { id, ...itemWithoutId } = item;
+    
+    if (!id) {
+      throw new Error('Cannot update item without an ID');
+    }
+
     const docRef = doc(db, collectionName, id);
     await updateDoc(docRef, {
-      ...item,
+      ...itemWithoutId,
       updatedAt: new Date().toISOString()
     });
     console.log(`Updated item in collection: ${collectionName} with ID: ${id}`);
@@ -126,7 +129,6 @@ export class ReferenceDataAdminService {
 
   async getActiveItems(type: string): Promise<ReferenceDataItem[]> {
     const collectionName = this.getCollectionName(type);
-    console.log(`Getting active items from collection: ${collectionName}`);
     const collectionRef = collection(db, collectionName);
     const q = query(collectionRef, where("active", "==", true))
     const snapshot = await getDocs(q);
@@ -136,6 +138,247 @@ export class ReferenceDataAdminService {
     })) as ReferenceDataItem[];
     console.log(`Retrieved ${items.length} active items from collection: ${collectionName}`);
     return items;
+  }
+
+  async checkVehicleDataState(): Promise<void> {
+    const collectionName = this.getCollectionName('vehicles');
+    const collectionRef = collection(db, collectionName);
+    const snapshot = await getDocs(collectionRef);
+    
+    console.log('Current vehicle data state:');
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      console.log(`Vehicle ${doc.id}:`, {
+        name: data.name,
+        code: data.code,
+        registrationNumber: data.registrationNumber,
+        // Log the raw data too in case we need it
+        raw: data
+      });
+    });
+  }
+
+  async migrateVehicleData(): Promise<void> {
+    const collectionName = this.getCollectionName('vehicles');
+    console.log('Starting vehicle data migration');
+    
+    try {
+      const vehicles = await this.getItems('vehicles');
+      console.log('Found vehicles to migrate:', vehicles);
+      
+      const batch = writeBatch(db);
+      let migratedCount = 0;
+      
+      for (const vehicle of vehicles) {
+        console.log('Processing vehicle:', vehicle);
+        const docRef = doc(db, collectionName, vehicle.id);
+        
+        // Only migrate if we have either name or code
+        if (vehicle.name || vehicle.code) {
+          const updates: Record<string, any> = {
+            registrationNumber: vehicle.code || '',  // Move current code to registration
+            code: vehicle.name || '',               // Move current name to code
+          };
+          
+          // Remove the name field
+          updates.name = deleteField();
+          
+          console.log(`Migrating vehicle ${vehicle.id}:`, updates);
+          batch.update(docRef, updates);
+          migratedCount++;
+        }
+      }
+      
+      if (migratedCount > 0) {
+        await batch.commit();
+        console.log(`Successfully migrated ${migratedCount} vehicles`);
+      } else {
+        console.log('No vehicles needed migration');
+      }
+    } catch (error) {
+      console.error('Error during vehicle migration:', error);
+      throw error;
+    }
+  }
+
+  async recoverVehicleData(): Promise<void> {
+    const collectionName = this.getCollectionName('vehicles');
+    console.log('Starting vehicle data recovery');
+    
+    try {
+      // Read and parse CSV file
+      const csvText = await fetch('/Vehicle.csv').then(res => res.text());
+      const lines = csvText.split('\n');
+      const registrationMap = new Map<string, string>();
+      
+      // Skip header row and parse CSV
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const [designation, registration] = line.split(',');
+        if (designation && registration) {
+          // Convert designation to lowercase and replace spaces with underscores for matching
+          const normalizedKey = designation.toLowerCase().replace(/ /g, '_');
+          registrationMap.set(normalizedKey, registration.trim());
+        }
+      }
+      
+      console.log('Registration map from CSV:', Object.fromEntries(registrationMap));
+
+      const vehicles = await this.getItems('vehicles');
+      console.log('Found vehicles to recover:', vehicles);
+      
+      // Get organization data
+      const orgRef = doc(db, 'organizations', '1pwr_lesotho');
+      const orgDoc = await getDoc(orgRef);
+      const orgData = orgDoc.data();
+      
+      if (!orgData) {
+        throw new Error('Could not find 1PWR Lesotho organization');
+      }
+
+      // Create minimal organization object to avoid undefined fields
+      const orgObject = {
+        id: '1pwr_lesotho',
+        name: orgData.name || '1PWR LSO',
+        shortName: orgData.shortName || 'LSO',
+        currency: orgData.currency || 'LSL'
+      };
+
+      console.log('Using organization data:', orgObject);
+
+      // Update vehicles with registration numbers from CSV
+      const batch = writeBatch(db);
+      let updatedCount = 0;
+      
+      for (const vehicle of vehicles) {
+        console.log('Processing vehicle:', vehicle);
+        const docRef = doc(db, collectionName, vehicle.id);
+        
+        // Get registration from CSV if it exists
+        const registration = registrationMap.get(vehicle.id) || '';
+        
+        const updates: Record<string, any> = {
+          registrationNumber: registration,
+          code: vehicle.registrationNumber || vehicle.code || vehicle.id, // Keep existing code or use ID
+          organization: orgObject
+        };
+        
+        if (vehicle.name) {
+          updates.name = deleteField();
+        }
+        
+        console.log(`Updating vehicle ${vehicle.id} with:`, updates);
+        batch.update(docRef, updates);
+        updatedCount++;
+      }
+      
+      if (updatedCount > 0) {
+        await batch.commit();
+        console.log(`Successfully updated ${updatedCount} vehicles with CSV data`);
+      }
+      
+    } catch (error) {
+      console.error('Error during vehicle recovery:', error);
+      throw error;
+    }
+  }
+
+  async migrateVehicleRegistrationNumbers(): Promise<void> {
+    const vehicles = await this.getItems('vehicles');
+    console.log(`Found ${vehicles.length} vehicles to migrate`);
+
+    for (const vehicle of vehicles) {
+      if (vehicle.registrationNumber && !vehicle.code) {
+        console.log(`Migrating vehicle ${vehicle.id}: ${vehicle.registrationNumber} -> code`);
+        await this.updateItem('vehicles', {
+          ...vehicle,
+          code: vehicle.registrationNumber,
+          registrationNumber: undefined
+        });
+      }
+    }
+    console.log('Vehicle registration migration complete');
+  }
+
+  private validateItem(type: string, item: any): string[] {
+    const errors: string[] = [];
+
+    // Basic validation
+    if (!item) {
+      errors.push('Item is required');
+      return errors;
+    }
+
+    // Type-specific validation
+    switch (type) {
+      case 'organizations':
+        // Organization specific validation
+        if (!item.name) errors.push('Name is required');
+        if (!item.country) errors.push('Country is required');
+        if (!item.currency) errors.push('Currency is required');
+        break;
+
+      case 'vendors':
+        // Vendor specific validation
+        if (!item.name) errors.push('Name is required');
+        if (!item.organization) errors.push('Organization is required');
+        break;
+
+      case 'categories':
+        // Category specific validation
+        if (!item.name) errors.push('Name is required');
+        if (!item.organization) errors.push('Organization is required');
+        break;
+
+      case 'units':
+        // Unit specific validation
+        if (!item.name) errors.push('Name is required');
+        break;
+        
+      case 'vehicles':
+        // All fields are optional
+        break;
+    }
+
+    return errors;
+  }
+
+  private getFieldsForType(type: string) {
+    // This method is not implemented in the provided code
+    // You need to implement it according to your requirements
+    // For example:
+    switch (type) {
+      case 'organizations':
+        return [
+          { name: 'name', label: 'Name', required: true },
+          { name: 'country', label: 'Country', required: true },
+          { name: 'currency', label: 'Currency', required: true },
+        ];
+      case 'vendors':
+        return [
+          { name: 'name', label: 'Name', required: true },
+          { name: 'organization', label: 'Organization', required: true },
+        ];
+      case 'categories':
+        return [
+          { name: 'name', label: 'Name', required: true },
+          { name: 'organization', label: 'Organization', required: true },
+        ];
+      case 'units':
+        return [
+          { name: 'name', label: 'Name', required: true },
+        ];
+      case 'vehicles':
+        return [
+          { name: 'name', label: 'Name' },
+          { name: 'code', label: 'Code' },
+          { name: 'registrationNumber', label: 'Registration Number' },
+        ];
+      default:
+        return [];
+    }
   }
 }
 
