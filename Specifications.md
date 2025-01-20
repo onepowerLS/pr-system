@@ -48,3 +48,71 @@
 - Only active items are returned by the reference data service
 - Inactive items are still stored but not available for selection
 - This allows "soft deletion" of items that may be referenced by historical records
+
+## User Management
+
+### User Status and Activation
+- Users have an `isActive` field (boolean) to control their system access
+- Only active users can:
+  - Log into the system
+  - Be selected as approvers
+  - Perform actions within their permission level
+- User activation status can be toggled by administrators in the User Management interface
+- When a user is deactivated:
+  - They cannot log in
+  - They are removed from approver selection dropdowns
+  - Their existing approvals remain valid for historical records
+
+### Permission Levels
+- Level 1: Global Approvers
+  - Can approve PRs across all organizations
+  - Not restricted by organization boundaries
+- Level 2: Organization Approvers
+  - Can only approve PRs within their assigned organization
+  - Organization assignment is normalized using the same rules as reference data
+  - Example: An approver assigned to "1PWR LESOTHO" can approve PRs for organization ID "1pwr_lesotho"
+- Level 3: Department Approvers (Future)
+  - Will be able to approve PRs within their department
+  - Department must match exactly
+- Level 4: Finance Team
+  - Can approve financial aspects of PRs
+  - Access to financial reports and summaries
+- Level 5: Regular Users
+  - Can create and submit PRs
+  - Can view their own PR history
+
+### Organization Assignment
+- Users can be assigned to one primary organization
+- Additional organization access can be granted through the `additionalOrganizations` field
+- Organization IDs are normalized for consistency:
+  - Converted to lowercase
+  - Special characters replaced with underscores
+  - Example: "1PWR LESOTHO" becomes "1pwr_lesotho"
+- Organization matching uses normalized IDs for comparison
+
+## Approver System
+
+### Approver Selection
+- Approvers are filtered based on:
+  - Active status (`isActive` must be true)
+  - Permission level (Level 1 or 2)
+  - Organization match (for Level 2 approvers)
+- Global approvers (Level 1) are available across all organizations
+- Organization approvers (Level 2) are only available for their assigned organization
+- Organization matching uses normalized IDs to ensure consistent comparison
+  - Example: "1PWR LESOTHO" and "1pwr_lesotho" are treated as the same organization
+
+### Approver Display
+- Approvers are shown in dropdowns with their full name
+- The approver list is filtered to show only relevant approvers based on:
+  - The PR's organization
+  - The approver's permission level
+  - The approver's active status
+- Inactive approvers are automatically excluded from selection
+
+### Historical Records
+- Approved PRs maintain their approver information even if:
+  - The approver is later deactivated
+  - The approver's organization assignment changes
+  - The approver's permission level changes
+- This ensures audit trail integrity while preventing new selections of invalid approvers
