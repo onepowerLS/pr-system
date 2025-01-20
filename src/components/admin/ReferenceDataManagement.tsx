@@ -197,7 +197,9 @@ const codeIncludedFields: ReferenceDataField[] = [
 ];
 
 const vendorFields: ReferenceDataField[] = [
+  { name: 'code', label: 'Code', type: 'text', required: true },
   { name: 'name', label: 'Name', required: true },
+  { name: 'approved', label: 'Approved', type: 'boolean' },
   { name: 'contactName', label: 'Contact Name' },
   { name: 'contactEmail', label: 'Contact Email', type: 'email' },
   { name: 'contactPhone', label: 'Contact Phone' },
@@ -581,6 +583,29 @@ export function ReferenceDataManagement() {
     const error = formErrors[field.name];
     const helperText = error || '';
 
+    if (field.type === 'boolean') {
+      return (
+        <FormControl key={field.name} fullWidth margin="normal">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={!!editItem?.[field.name]}
+                onChange={(e) => {
+                  if (editItem) {
+                    setEditItem({
+                      ...editItem,
+                      [field.name]: e.target.checked
+                    });
+                  }
+                }}
+              />
+            }
+            label={field.label}
+          />
+        </FormControl>
+      );
+    }
+
     if (field.type === 'organization') {
       const [organizations, setOrganizations] = useState<Organization[]>([]);
       useEffect(() => {
@@ -714,6 +739,25 @@ export function ReferenceDataManagement() {
         );
       }
 
+      if (field.type === 'boolean') {
+        return (
+          <FormControl key={field.name} fullWidth margin="normal" error={!!error}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={!!editItem[field.name]}
+                  onChange={(e) => setEditItem({
+                    ...editItem,
+                    [field.name]: e.target.checked
+                  })}
+                />
+              }
+              label={field.label}
+            />
+          </FormControl>
+        );
+      }
+
       return (
         <TextField
           key={field.name}
@@ -814,7 +858,23 @@ export function ReferenceDataManagement() {
                       ? (typeof item.organization === 'string' 
                           ? organizations.find(o => o.id === item.organization)?.name 
                           : item.organization?.name) || 'None'
-                      : item[field.name]}
+                      : field.type === 'boolean'
+                        ? <Switch
+                            checked={!!item[field.name]}
+                            onChange={async () => {
+                              try {
+                                await handleSave({ ...item, [field.name]: !item[field.name] });
+                              } catch (error) {
+                                console.error(`Error toggling ${field.name} state:`, error);
+                                setSnackbar({
+                                  open: true,
+                                  message: `Failed to update ${field.name} state`,
+                                  severity: 'error'
+                                });
+                              }
+                            }}
+                          />
+                        : item[field.name]}
                   </TableCell>
                 ))}
                 <TableCell>
