@@ -2,12 +2,12 @@ export interface ReferenceDataItem {
   id: string;
   name?: string;
   code?: string;
-  organization?: {
-    id: string;
-    name: string;
-  } | string;
+  organizationId?: string;
   description?: string;
   active: boolean;
+  createdAt: string;
+  updatedAt: string;
+
   // Vendor specific fields
   approvalDate?: string;
   contactName?: string;
@@ -16,21 +16,30 @@ export interface ReferenceDataItem {
   address?: string;
   url?: string;
   notes?: string;
+
   // Organization specific fields
   shortName?: string;
   country?: string;
   timezone?: string;
   currency?: string;
+
   // Permission specific fields
   level?: number;
   actions?: string[];
   scope?: string[];
+
   // Vehicle specific fields
+  /** Registration number of the vehicle (required) */
   registrationNumber?: string;
+  /** Manufacturing year of the vehicle (required) */
   year?: number;
+  /** Manufacturer of the vehicle (required) */
   make?: string;
+  /** Model of the vehicle (required) */
   model?: string;
+  /** Vehicle Identification Number (optional) */
   vinNumber?: string;
+  /** Engine number for identification (optional) */
   engineNumber?: string;
 }
 
@@ -50,8 +59,7 @@ export type ReferenceDataType =
 export const ORG_INDEPENDENT_TYPES = [
   'currencies',
   'uom',
-  'organizations',
-  'permissions'
+  'organizations'
 ] as const;
 
 // Types that use code as ID

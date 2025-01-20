@@ -1,5 +1,5 @@
 import { db } from "@/config/firebase";
-import { collection, getDocs, query, where, addDoc, writeBatch, doc } from "firebase/firestore";
+import { collection, getDocs, query, where, addDoc, writeBatch, doc, setDoc } from "firebase/firestore";
 
 export interface OrganizationData {
   id: string;
@@ -13,6 +13,7 @@ export interface ReferenceData {
   type?: string;
   active: boolean;
   organization?: OrganizationData;
+  organizationId?: string;
   createdAt?: string;
   updatedAt?: string;
   [key: string]: any;
@@ -60,7 +61,12 @@ class ReferenceDataService {
       if (!ORG_INDEPENDENT_TYPES.includes(type) && organization) {
         const normalizedOrgId = this.normalizeOrganizationId(organization);
         console.log('Applying organization filter:', { type, organization, normalizedOrgId });
-        q = query(collectionRef, where('organization.id', '==', normalizedOrgId));
+        
+        // Query for both old and new organization field formats
+        q = query(
+          collectionRef, 
+          where('organizationId', '==', normalizedOrgId)
+        );
       }
 
       const querySnapshot = await getDocs(q);
@@ -167,26 +173,36 @@ class ReferenceDataService {
   }
 
   async createItem(type: string, data: Omit<ReferenceData, 'id'>): Promise<ReferenceData> {
+    console.log('Creating reference data item:', { type, data });
+    
     try {
       const collectionName = this.getCollectionName(type);
-      const id = this.generateId(type, data.code);
+      const collectionRef = collection(this.db, collectionName);
+
+      // Handle organization field
+      if (data.organization) {
+        const normalizedOrgId = this.normalizeOrganizationId(data.organization);
+        data.organizationId = normalizedOrgId;
+      }
+
+      // Generate ID for code-based types
+      const id = data.code ? this.generateId(type, data.code) : null;
       const timestamp = new Date().toISOString();
-      
+
       const itemData = {
         ...data,
+        active: true,
         createdAt: timestamp,
         updatedAt: timestamp
       };
 
       if (id) {
-        // Use custom ID for specified types
-        const docRef = doc(this.db, collectionName, id);
-        await writeBatch(this.db).set(docRef, itemData).commit();
-        return { id, ...itemData };
+        const docRef = doc(collectionRef, id);
+        await setDoc(docRef, itemData);
+        return { ...itemData, id };
       } else {
-        // Use auto-generated ID for other types
-        const docRef = await addDoc(collection(this.db, collectionName), itemData);
-        return { id: docRef.id, ...itemData };
+        const docRef = await addDoc(collectionRef, itemData);
+        return { ...itemData, id: docRef.id };
       }
     } catch (error) {
       return this.handleError(error, 'creating reference data item');

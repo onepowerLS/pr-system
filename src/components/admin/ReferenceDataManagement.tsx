@@ -333,11 +333,14 @@ export function ReferenceDataManagement() {
   useEffect(() => {
     const loadOrgs = async () => {
       try {
-        const orgs = await referenceDataAdminService.getActiveItems('organizations');
+        const orgs = await organizationService.getActiveOrganizations();
+        console.log('Loaded organizations:', orgs);
         setOrganizations(orgs);
-        // Only set default organization if none is selected
+        // Only set default organization if none is selected and we have orgs
         if (orgs.length > 0 && !selectedOrganization) {
-          setSelectedOrganization(orgs[0].id);
+          const defaultOrg = orgs[0];
+          console.log('Setting default organization:', defaultOrg);
+          setSelectedOrganization(defaultOrg.id);
         }
       } catch (error) {
         console.error('Error loading organizations:', error);
@@ -351,12 +354,28 @@ export function ReferenceDataManagement() {
     loadOrgs();
   }, []);
 
-  // Load items when type changes
+  // Load items when type or organization changes
   useEffect(() => {
     const loadItems = async () => {
       try {
-        const items = await referenceDataAdminService.getItems(selectedType);
-        setItems(items);
+        let loadedItems;
+        if (isOrgIndependentType(selectedType)) {
+          console.log('Loading items for org-independent type:', selectedType);
+          loadedItems = await referenceDataAdminService.getItems(selectedType);
+        } else {
+          if (!selectedOrganization) {
+            console.log('No organization selected, clearing items');
+            setItems([]);
+            return;
+          }
+          console.log('Loading items for type and organization:', {
+            type: selectedType,
+            organizationId: selectedOrganization
+          });
+          loadedItems = await referenceDataAdminService.getItemsByOrganization(selectedType, selectedOrganization);
+        }
+        console.log('Loaded items:', loadedItems);
+        setItems(loadedItems);
       } catch (error) {
         console.error(`Error loading ${selectedType}:`, error);
         setSnackbar({
@@ -367,7 +386,7 @@ export function ReferenceDataManagement() {
       }
     };
     loadItems();
-  }, [selectedType]);
+  }, [selectedType, selectedOrganization]);
 
   useEffect(() => {
     const updateCurrencies = async () => {
@@ -474,24 +493,32 @@ export function ReferenceDataManagement() {
 
   const handleSave = async (editedItem: any) => {
     try {
+      const { id, ...updates } = editedItem;
+      
       // For vehicles, ensure organization is properly structured
-      if (selectedType === 'vehicles' && editedItem.organization) {
-        // If organization is a string ID, convert it to an organization object
-        if (typeof editedItem.organization === 'string') {
-          const org = organizations.find(o => o.id === editedItem.organization);
+      if (selectedType === 'vehicles') {
+        if (typeof updates.organization === 'string') {
+          const org = organizations.find(o => o.id === updates.organization);
           if (org) {
-            editedItem.organization = org;
+            updates.organization = org;
           }
+        }
+        // Ensure organizationId is set
+        if (!updates.organizationId && updates.organization?.id) {
+          updates.organizationId = updates.organization.id;
         }
       }
 
-      await referenceDataAdminService.updateItem(selectedType, editedItem);
+      console.log('Saving item:', { id, updates });
+      await referenceDataAdminService.updateItem(selectedType, id, updates);
+      
       setSnackbar({
         open: true,
         message: 'Item updated successfully',
         severity: 'success',
       });
       setIsDialogOpen(false);
+      
       // Refresh data
       const updatedItems = await referenceDataAdminService.getItems(selectedType);
       setItems(updatedItems);
@@ -499,7 +526,7 @@ export function ReferenceDataManagement() {
       console.error('Error submitting form:', error);
       setSnackbar({
         open: true,
-        message: 'Error updating item',
+        message: error instanceof Error ? error.message : 'Error updating item',
         severity: 'error',
       });
     }
@@ -557,7 +584,7 @@ export function ReferenceDataManagement() {
       useEffect(() => {
         const loadOrganizations = async () => {
           try {
-            const orgs = await referenceDataAdminService.getItems('organizations');
+            const orgs = await referenceDataAdminService.getActiveItems('organizations');
             setOrganizations(orgs);
           } catch (error) {
             console.error('Error loading organizations:', error);
@@ -622,19 +649,14 @@ export function ReferenceDataManagement() {
 
   const filteredItems = useMemo(() => {
     console.log('Filtering by organization:', selectedOrganization);
-    if (!selectedOrganization || isOrgIndependentType(selectedType)) {
+    if (isOrgIndependentType(selectedType)) {
       return items;
     }
-
     return items.filter(item => {
-      // Handle both nested organization object and organization ID string
-      const itemOrgId = typeof item.organization === 'string' 
-        ? item.organization 
-        : item.organization?.id;
-      
+      const itemOrgId = item.organizationId || item.organization?.id;
       return itemOrgId === selectedOrganization;
     });
-  }, [items, selectedOrganization, selectedType]);
+  }, [items, selectedType, selectedOrganization]);
 
   console.log('Filtered items:', filteredItems);
 
@@ -650,7 +672,7 @@ export function ReferenceDataManagement() {
     useEffect(() => {
       const loadOrganizations = async () => {
         try {
-          const orgs = await referenceDataAdminService.getActiveItems('organizations');
+          const orgs = await organizationService.getActiveOrganizations();
           setOrganizations(orgs);
         } catch (error) {
           console.error('Error loading organizations:', error);
@@ -677,35 +699,30 @@ export function ReferenceDataManagement() {
     };
 
     const renderFormField = (field: ReferenceDataField) => {
+      const value = editItem[field.name] || '';
       const error = formErrors[field.name];
       const helperText = error || '';
 
       if (field.type === 'organization') {
         return (
-          <FormControl key={field.name} fullWidth margin="normal">
+          <FormControl key={field.name} fullWidth margin="normal" error={!!error}>
             <InputLabel>{field.label}</InputLabel>
             <Select
-              value={editItem?.organization?.id || editItem?.organization || ''}
-              onChange={(e) => {
-                const selectedValue = e.target.value;
-                if (!selectedValue) {
-                  handleChange('organization', null);
-                } else {
-                  const org = organizations.find(o => o.id === selectedValue);
-                  handleChange('organization', org);
-                }
-              }}
+              value={editItem.organizationId || ''}
+              onChange={(e) => setEditItem({
+                ...editItem,
+                organizationId: e.target.value
+              })}
               label={field.label}
+              required={field.required}
             >
-              <MenuItem value="">
-                <em>None</em>
-              </MenuItem>
               {organizations.map((org) => (
                 <MenuItem key={org.id} value={org.id}>
-                  {org.name || org.id}
+                  {org.name}
                 </MenuItem>
               ))}
             </Select>
+            {helperText && <FormHelperText>{helperText}</FormHelperText>}
           </FormControl>
         );
       }
@@ -713,12 +730,14 @@ export function ReferenceDataManagement() {
       return (
         <TextField
           key={field.name}
+          label={field.label}
+          value={value}
+          onChange={(e) => setEditItem({
+            ...editItem,
+            [field.name]: e.target.value
+          })}
           fullWidth
           margin="normal"
-          label={field.label}
-          type={field.type || 'text'}
-          value={editItem[field.name] || ''}
-          onChange={(e) => handleChange(field.name, e.target.value)}
           error={!!error}
           helperText={helperText}
           required={field.required}
@@ -761,6 +780,27 @@ export function ReferenceDataManagement() {
             ))}
           </Select>
         </FormControl>
+
+        {!isOrgIndependentType(selectedType) && (
+          <FormControl sx={{ minWidth: 200 }}>
+            <InputLabel>Organization</InputLabel>
+            <Select
+              value={selectedOrganization || ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                console.log('Selected organization:', value);
+                setSelectedOrganization(value);
+              }}
+              label="Organization"
+            >
+              {organizations.map((org) => (
+                <MenuItem key={org.id} value={org.id}>
+                  {org.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
 
         <Button variant="contained" onClick={handleAdd}>
           Add {REFERENCE_DATA_TYPES[selectedType]}

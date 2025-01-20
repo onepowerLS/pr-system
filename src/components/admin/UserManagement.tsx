@@ -163,7 +163,7 @@ export function UserManagement() {
   const loadPermissions = async () => {
     try {
       console.log('Loading permissions...');
-      const permissionsRef = collection(db, 'referenceData_permissions');
+      const permissionsRef = collection(db, 'rd_permissions');
       const permissionsQuery = query(permissionsRef);
       const querySnapshot = await getDocs(permissionsQuery);
       const loadedPermissions: Permission[] = [];

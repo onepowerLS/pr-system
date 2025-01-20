@@ -18,10 +18,12 @@ export class OrganizationService {
     const collectionRef = collection(db, COLLECTION_NAME)
     const q = query(collectionRef, where("active", "==", true))
     const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({
+    const organizations = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     })) as Organization[]
+    console.log('Retrieved organizations (full data):', organizations);
+    return organizations;
   }
 }
 
