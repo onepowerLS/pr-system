@@ -186,10 +186,11 @@ interface ReferenceDataField {
   label: string;
   required?: boolean;
   type?: string;
+  readOnly?: boolean;
 }
 
 const commonFields: ReferenceDataField[] = [
-  { name: 'id', label: 'ID', required: true },
+  { name: 'id', label: 'ID' },
   { name: 'name', label: 'Name', required: true }
 ];
 
@@ -275,16 +276,25 @@ export function ReferenceDataManagement() {
 
   // Get form fields based on type
   const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
-    switch (type) {
-      case 'vendors':
-        return vendorFields;
-      case 'organizations':
-        return organizationFields;
-      case 'permissions':
-        return permissionFields;
-      default:
-        return commonFields;
+    const fields = (() => {
+      switch (type) {
+        case 'vendors':
+          return vendorFields;
+        case 'organizations':
+          return organizationFields;
+        case 'permissions':
+          return permissionFields;
+        default:
+          return commonFields;
+      }
+    })();
+
+    // For non-code-based types, remove ID field
+    if (!isCodeBasedIdType(type)) {
+      return fields.filter(field => field.name !== 'id');
     }
+
+    return fields;
   };
 
   // Load organizations on mount
@@ -396,9 +406,9 @@ export function ReferenceDataManagement() {
     updateCurrencies();
   }, [selectedType]);
 
-  const validateForm = (item: Partial<ReferenceDataItem> | null): boolean => {
+  const validateForm = (item: Partial<ReferenceDataItem>): boolean => {
     if (!item) {
-      setFormErrors({ name: 'Item is required', code: 'Item is required' });
+      setFormErrors({ name: 'Item is required' });
       return false;
     }
 
@@ -408,7 +418,8 @@ export function ReferenceDataManagement() {
       errors.name = 'Name is required';
     }
 
-    if (!item.code?.trim()) {
+    // Only require code for code-based ID types
+    if (isCodeBasedIdType(selectedType) && !item.code?.trim()) {
       errors.code = 'Code is required';
     }
 
@@ -437,6 +448,11 @@ export function ReferenceDataManagement() {
       itemCopy.actions = itemCopy.actions || [];
       itemCopy.scope = itemCopy.scope || [];
     }
+
+    // For non-code-based types, ensure we keep the original ID
+    if (!isCodeBasedIdType(selectedType)) {
+      itemCopy.id = item.id;
+    }
     
     setEditItem(itemCopy);
     setIsDialogOpen(true);
@@ -453,38 +469,68 @@ export function ReferenceDataManagement() {
       }
 
       // Ensure we have required fields
-      if (!editItem.code?.trim() || !editItem.name?.trim()) {
+      if (!editItem.name?.trim() || (isCodeBasedIdType(selectedType) && !editItem.code?.trim())) {
         console.log('Required fields missing');
         return;
       }
 
-      const itemToSave = { 
-        ...editItem,  // Keep all existing fields
-        code: editItem.code.trim(),
+      // Build base item with required fields
+      const itemToSave: Partial<ReferenceDataItem> = {
         name: editItem.name.trim(),
         active: editItem.active ?? true
       };
 
-      // Generate new ID for permissions based on code
+      // Only include non-empty optional fields
+      const optionalFields = ['contactName', 'contactEmail', 'contactPhone', 'address', 'url', 'notes'] as const;
+      for (const field of optionalFields) {
+        const value = editItem[field]?.trim();
+        if (value) {
+          itemToSave[field] = value;
+        }
+      }
+
+      // Copy any other fields from editItem that we haven't handled
+      for (const [key, value] of Object.entries(editItem)) {
+        if (
+          key !== 'name' && 
+          key !== 'active' && 
+          !optionalFields.includes(key as any) && 
+          value !== undefined && 
+          value !== null && 
+          value !== ''
+        ) {
+          itemToSave[key] = value;
+        }
+      }
+
+      // Handle permissions specially
       if (selectedType === 'permissions') {
         const newId = editItem.code.toLowerCase().replace(/[^a-z0-9]+/g, '_');
         if (editItem.id && editItem.id !== newId) {
-          // Delete old document
           await referenceDataAdminService.deleteItem(selectedType, editItem.id);
-          // Set new ID
           itemToSave.id = newId;
-          // Add as new document
           await referenceDataAdminService.addItem(selectedType, itemToSave);
         } else if (!editItem.id) {
-          // New item - set ID based on code
           itemToSave.id = newId;
           await referenceDataAdminService.addItem(selectedType, itemToSave);
         } else {
-          // Update existing item (ID hasn't changed)
+          await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
+        }
+      } else if (isCodeBasedIdType(selectedType)) {
+        // Handle code-based ID types
+        const newId = editItem.code.toLowerCase().trim();
+        if (editItem.id && editItem.id !== newId) {
+          await referenceDataAdminService.deleteItem(selectedType, editItem.id);
+          itemToSave.id = newId;
+          await referenceDataAdminService.addItem(selectedType, itemToSave);
+        } else if (!editItem.id) {
+          itemToSave.id = newId;
+          await referenceDataAdminService.addItem(selectedType, itemToSave);
+        } else {
           await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
         }
       } else {
-        // Handle non-permission items as before
+        // Handle regular items (including vendors)
         if (editItem.id) {
           await referenceDataAdminService.updateItem(selectedType, editItem.id, itemToSave);
         } else {
@@ -560,6 +606,41 @@ export function ReferenceDataManagement() {
       setSelectedType(savedType as ReferenceDataType);
     }
   }, []);
+
+  const renderField = (field: ReferenceDataField) => {
+    const value = editItem?.[field.name] || '';
+    const error = formErrors[field.name];
+    const helperText = error || '';
+
+    return (
+      <FormControl 
+        key={field.name} 
+        fullWidth 
+        margin="normal" 
+        error={!!error}
+      >
+        <TextField
+          label={field.label}
+          value={value}
+          onChange={(e) => {
+            if (editItem) {
+              setEditItem({
+                ...editItem,
+                [field.name]: e.target.value
+              });
+            }
+          }}
+          error={!!error}
+          helperText={helperText}
+          required={field.required}
+          type={field.type || 'text'}
+          InputProps={{
+            readOnly: field.readOnly
+          }}
+        />
+      </FormControl>
+    );
+  };
 
   return (
     <Box p={3}>
@@ -704,18 +785,7 @@ export function ReferenceDataManagement() {
         <DialogContent>
           <Box component="form" onSubmit={handleFormSubmit} sx={{ mt: 2 }}>
             {getFormFields(selectedType).map((field, index) => (
-              <TextField
-                key={index}
-                fullWidth
-                label={field.label}
-                value={editItem?.[field.name] || ''}
-                onChange={(e) => setEditItem({ ...editItem, [field.name]: e.target.value } as ReferenceDataItem)}
-                sx={{ mb: 2 }}
-                type={field.type}
-                required={field.required}
-                error={!!formErrors[field.name]}
-                helperText={formErrors[field.name]}
-              />
+              renderField(field)
             ))}
             
             <FormControlLabel
