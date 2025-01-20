@@ -210,39 +210,25 @@ export class ReferenceDataAdminService {
     const collectionName = this.getCollectionName(type);
     console.log(`Getting items for type ${type} and organization ${organizationId}`);
 
-    // Try different formats of the organization ID
+    // Standardize the organization ID
     const standardizedId = this.standardizeOrgId(organizationId);
     console.log(`Standardized organization ID: ${standardizedId}`);
 
     try {
       const collectionRef = collection(db, collectionName);
       
-      // Query by organizationId field
-      const q1 = query(collectionRef, 
+      // Query only by organizationId field
+      const q = query(collectionRef, 
         where('active', '==', true),
         where('organizationId', '==', standardizedId)
       );
-      const snapshot1 = await getDocs(q1);
-      
-      // Query by organization.id field
-      const q2 = query(collectionRef, 
-        where('active', '==', true),
-        where('organization.id', '==', standardizedId)
-      );
-      const snapshot2 = await getDocs(q2);
+      const snapshot = await getDocs(q);
 
-      // Combine results, using a Set to deduplicate by ID
-      const itemsMap = new Map<string, ReferenceDataItem>();
-      [...snapshot1.docs, ...snapshot2.docs].forEach(doc => {
-        if (!itemsMap.has(doc.id)) {
-          itemsMap.set(doc.id, {
-            ...doc.data(),
-            id: doc.id
-          } as ReferenceDataItem);
-        }
-      });
+      const items = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      } as ReferenceDataItem));
 
-      const items = Array.from(itemsMap.values());
       console.log(`Found ${items.length} items with organization ID: ${standardizedId}`);
       return items;
     } catch (error) {
