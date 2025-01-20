@@ -266,7 +266,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           >
             {expenseTypes.map(type => (
               <MenuItem key={type.id} value={type.id}>
-                {type.name}
+                {type.code} - {type.name}
               </MenuItem>
             ))}
           </Select>
