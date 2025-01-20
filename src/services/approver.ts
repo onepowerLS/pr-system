@@ -14,6 +14,12 @@ interface Approver {
 class ApproverService {
   private db = getFirestore();
 
+  private normalizeOrganizationId(orgId: string | { id: string; name: string }): string {
+    if (!orgId) return '';
+    const id = typeof orgId === 'string' ? orgId : orgId.id;
+    return id.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  }
+
   async getActiveApprovers(): Promise<Approver[]> {
     try {
       console.log('ApproverService: Getting active approvers');
@@ -43,13 +49,16 @@ class ApproverService {
     }
   }
 
-  async getApprovers(organization: string): Promise<Approver[]> {
+  async getApprovers(organization: string | { id: string; name: string }): Promise<Approver[]> {
     try {
-      console.log('ApproverService: Getting approvers for organization:', organization);
+      const normalizedOrgId = this.normalizeOrganizationId(organization);
+      console.log('ApproverService: Getting approvers for organization:', { organization, normalizedOrgId });
+      
       const approversRef = collection(this.db, 'approverList');
       const q = query(
         approversRef, 
-        where('isActive', '==', true)
+        where('isActive', '==', true),
+        where('organization', '==', normalizedOrgId)
       );
       const querySnapshot = await getDocs(q);
       
@@ -66,17 +75,18 @@ class ApproverService {
         } as Approver;
       }).filter(a => a.isActive);
 
-      console.log(`ApproverService: Found ${approvers.length} approvers for organization ${organization}`);
+      console.log(`ApproverService: Found ${approvers.length} approvers for organization ${normalizedOrgId}`);
       console.log('ApproverService: Approvers:', approvers);
       return approvers;
     } catch (error) {
       console.error('ApproverService: Error getting approvers:', error);
-      throw new Error(`Failed to get approvers for organization ${organization}. Please try again.`);
+      throw new Error(`Failed to get approvers for organization ${normalizedOrgId}. Please try again.`);
     }
   }
 
-  async getDepartmentApprovers(organization: string, department: string): Promise<Approver[]> {
+  async getDepartmentApprovers(organization: string | { id: string; name: string }, department: string): Promise<Approver[]> {
     try {
+      const normalizedOrgId = this.normalizeOrganizationId(organization);
       console.log('ApproverService: Getting approvers for department:', department);
       const approversRef = collection(this.db, 'approverList');
       const q = query(approversRef);
@@ -95,7 +105,8 @@ class ApproverService {
         } as Approver;
       }).filter(a => 
         a.isActive && 
-        a.department === department
+        a.department === department && 
+        a.organization === normalizedOrgId
       );
 
       console.log(`ApproverService: Found ${approvers.length} approvers for department ${department}`);

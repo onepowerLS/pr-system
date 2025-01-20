@@ -27,6 +27,7 @@ import {
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
 import { organizations } from '../../../services/localReferenceData';
+import { OrganizationSelector } from '../../common/OrganizationSelector';
 
 interface BasicInformationStepProps {
   formState: FormState;
@@ -123,31 +124,15 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     <Grid container spacing={3}>
       {/* Organization */}
       <Grid item xs={12}>
-        <FormControl fullWidth>
-          <InputLabel htmlFor="organization-select" id="organization-label">Organization</InputLabel>
-          <Select
-            labelId="organization-label"
-            id="organization-select"
-            value={formState.organization}
-            label="Organization"
-            onChange={handleChange('organization')}
-            required
-            error={!formState.organization}
-            inputProps={{
-              'aria-labelledby': 'organization-label',
-              'aria-label': 'Organization'
-            }}
-          >
-            {organizations.map((org) => (
-              <MenuItem key={org.id} value={org.name}>
-                {org.name}
-              </MenuItem>
-            ))}
-          </Select>
-          <FormHelperText error={!formState.organization}>
-            {!formState.organization ? 'Organization is required' : ''}
-          </FormHelperText>
-        </FormControl>
+        <OrganizationSelector
+          value={formState.organization}
+          onChange={(org) => {
+            setFormState(prev => ({
+              ...prev,
+              organization: org
+            }));
+          }}
+        />
       </Grid>
 
       {/* Requestor */}

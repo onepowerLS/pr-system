@@ -58,7 +58,7 @@
  * - services/pr.ts: PR data service
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { useSnackbar } from 'notistack';
@@ -124,8 +124,8 @@ interface Quote {
 }
 
 // Main form state interface
-interface FormState {
-  organization: string;
+export interface FormState {
+  organization: { id: string; name: string } | null;
   requestor: string;
   email: string;
   department: string;
@@ -144,33 +144,12 @@ interface FormState {
   isUrgent: boolean;
 }
 
-// Initial form state with default values
-const initialState: FormState = {
-  organization: '1PWR LESOTHO', // Default organization
-  requestor: '',
-  email: '',
-  department: '',
-  projectCategory: '',
-  description: '',
-  site: '',
-  expenseType: '',
-  vehicle: '',
-  estimatedAmount: 0,
-  currency: 'LSL',
-  requiredDate: new Date().toISOString().split('T')[0],
-  approvers: [],
-  preferredVendor: '',
-  lineItems: [],
-  quotes: [],
-  isUrgent: false,
-};
-
 // Business rule thresholds
 const PR_AMOUNT_THRESHOLDS = {
   ADMIN_APPROVAL: 1000,    // Requires admin approval above this amount
   QUOTES_REQUIRED: 5000,   // Requires multiple quotes above this amount
   FINANCE_APPROVAL: 50000  // Requires finance approval above this amount
-};
+} as const;
 
 /**
  * NewPRForm Component
@@ -202,13 +181,15 @@ export const NewPRForm = () => {
            prev.loading === next.loading;
   });
 
-  // Initialize state
-  const [activeStep, setActiveStep] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  // Error state
   const [error, setError] = useState<string | null>(null);
 
-  // Reference data states
+  // Form loading states
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeStep, setActiveStep] = useState(0);
+
+  // Reference data state
   const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
   const [projectCategories, setProjectCategories] = useState<ReferenceDataItem[]>([]);
   const [sites, setSites] = useState<ReferenceDataItem[]>([]);
@@ -218,89 +199,127 @@ export const NewPRForm = () => {
   const [approvers, setApprovers] = useState<any[]>([]);
   const [availableApprovers, setAvailableApprovers] = useState<any[]>([]);
 
-  // State for form requirements
+  // Business rule state
   const [requiresQuotes, setRequiresQuotes] = useState(false);
   const [requiresFinanceApproval, setRequiresFinanceApproval] = useState(false);
   const [isApprovedVendor, setIsApprovedVendor] = useState(false);
 
-  // Memoize initial form state
+  // Initial form state
   const initialFormState = useMemo(() => ({
-    ...initialState,
-    organization: user?.organization || initialState.organization,
-    requestor: user?.name || '',
+    id: '',
+    title: '',
+    description: '',
+    amount: 0,
+    organization: {
+      id: '1pwr_lesotho',
+      name: '1PWR LESOTHO'
+    },
+    department: null,
+    projectCategory: null,
+    site: null,
+    expenseType: null,
+    vehicle: null,
+    vendor: null,
+    approver: null,
+    status: 'DRAFT',
+    createdBy: user?.id || '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    requestor: user ? `${user.firstName} ${user.lastName}` : '',
     email: user?.email || '',
-    department: user?.department || ''
+    requester: {
+      id: user?.id || '',
+      name: user ? `${user.firstName} ${user.lastName}` : '',
+      email: user?.email || ''
+    }
   }), [user]);
 
   // Form state
   const [formState, setFormState] = useState<FormState>(initialFormState);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Memoize loadReferenceData function
+  // Load reference data
   const loadReferenceData = useCallback(async () => {
-    if (authLoading || !formState.organization) {
-      return;
-    }
+    if (!formState.organization || isLoadingData || isInitialized) return;
 
     try {
-      setLoading(true);
+      setIsLoadingData(true);
+      setError(null);
+
+      // Load all reference data in parallel
       const [
         deptData,
-        projectData,
-        siteData,
-        expenseData,
-        vehicleData,
-        vendorData,
-        approverData
+        projectCatData,
+        sitesData,
+        expenseTypesData,
+        vehiclesData,
+        vendorsData,
+        approversData
       ] = await Promise.all([
         referenceDataService.getDepartments(formState.organization),
-        referenceDataService.getProjectCategories(formState.organization),
-        referenceDataService.getSites(formState.organization),
-        referenceDataService.getExpenseTypes(formState.organization),
-        referenceDataService.getVehicles(formState.organization),
-        referenceDataService.getVendors(), // Don't pass organization for vendors
+        referenceDataService.getItemsByType('projectCategories', formState.organization),
+        referenceDataService.getItemsByType('sites', formState.organization),
+        referenceDataService.getItemsByType('expenseTypes', formState.organization),
+        referenceDataService.getItemsByType('vehicles', formState.organization),
+        referenceDataService.getItemsByType('vendors'),
         approverService.getApprovers(formState.organization)
       ]);
 
-      setDepartments(deptData);
-      setProjectCategories(projectData);
-      setSites(siteData);
-      setExpenseTypes(expenseData);
-      setVehicles(vehicleData);
-      setVendors(vendorData);
-      setAvailableApprovers(approverData);
+      // Update all state at once
+      setDepartments(deptData.items || []);
+      setProjectCategories(projectCatData || []);
+      setSites(sitesData || []);
+      setExpenseTypes(expenseTypesData || []);
+      setVehicles(vehiclesData || []);
+      setVendors(vendorsData || []);
+      setApprovers(approversData || []);
+      setIsInitialized(true);
+
     } catch (error) {
-      console.error('NewPRForm: Error loading reference data:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load form data');
+      console.error('Error loading reference data:', error);
+      setError('Failed to load form data. Please try again.');
       enqueueSnackbar('Error loading form data. Please try again.', { 
         variant: 'error',
         autoHideDuration: 5000
       });
     } finally {
-      setLoading(false);
+      setIsLoadingData(false);
     }
-  }, [formState.organization, authLoading, enqueueSnackbar]);
+  }, [formState.organization, isLoadingData, isInitialized, enqueueSnackbar]);
 
-  // Handle auth loading state
-  useEffect(() => {
-    if (!authLoading && !user) {
-      navigate('/login');
-    }
-  }, [authLoading, user, navigate]);
-
-  // Load reference data
+  // Load data on mount
   useEffect(() => {
     loadReferenceData();
   }, [loadReferenceData]);
+
+  // Reset initialization on unmount
+  useEffect(() => {
+    return () => {
+      setIsInitialized(false);
+    };
+  }, []);
+
+  // Handle auth loading state
+  useEffect(() => {
+    if (!authLoading) {
+      setIsLoading(false);
+    }
+  }, [authLoading]);
 
   // Update form state when user changes
   useEffect(() => {
     if (user) {
       setFormState(prev => ({
         ...prev,
-        requestor: user.name || prev.requestor,
-        email: user.email || prev.email,
-        department: user.department || prev.department,
-        organization: user.organization || prev.organization
+        requestor: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        createdBy: user.id,
+        requester: {
+          id: user.id,
+          name: `${user.firstName} ${user.lastName}`,
+          email: user.email
+        }
       }));
     }
   }, [user]);
@@ -388,7 +407,7 @@ export const NewPRForm = () => {
             vehicles={vehicles}
             vendors={vendors}
             approvers={availableApprovers}
-            loading={loading}
+            loading={isLoading}
           />
         );
       case 1:
@@ -396,7 +415,7 @@ export const NewPRForm = () => {
           <LineItemsStep
             formState={formState}
             setFormState={setFormState}
-            loading={loading}
+            loading={isLoading}
           />
         );
       case 2:
@@ -408,14 +427,14 @@ export const NewPRForm = () => {
             projectCategories={projectCategories}
             sites={sites}
             approvers={availableApprovers}
-            loading={loading}
+            loading={isLoading}
             onSubmit={handleSubmit}
           />
         );
       default:
         return null;
     }
-  }, [formState, setFormState, departments, projectCategories, sites, expenseTypes, vehicles, vendors, availableApprovers, loading]);
+  }, [formState, setFormState, departments, projectCategories, sites, expenseTypes, vehicles, vendors, availableApprovers, isLoading]);
 
   // Handle next step
   const handleNextStep = () => {
@@ -734,7 +753,7 @@ export const NewPRForm = () => {
 
   const handleSubmit = async () => {
     console.log('Submitting form...', formState);
-    setSubmitting(true);
+    setIsSubmitting(true);
     setError(null);
 
     try {
@@ -750,7 +769,7 @@ export const NewPRForm = () => {
       
       if (!basicInfoValid || !lineItemsValid || !quotesValid) {
         console.log('Form validation failed:', { basicInfoValid, lineItemsValid, quotesValid });
-        setSubmitting(false);
+        setIsSubmitting(false);
         return;
       }
 
@@ -758,7 +777,7 @@ export const NewPRForm = () => {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formState.email)) {
         enqueueSnackbar('Please enter a valid email address', { variant: 'error' });
-        setSubmitting(false);
+        setIsSubmitting(false);
         return;
       }
 
@@ -775,7 +794,7 @@ export const NewPRForm = () => {
       } catch (err) {
         console.error('Amount validation error:', err);
         enqueueSnackbar('Please enter a valid estimated amount', { variant: 'error' });
-        setSubmitting(false);
+        setIsSubmitting(false);
         return;
       }
 
@@ -790,39 +809,39 @@ export const NewPRForm = () => {
           role: user?.role || '',
           department: user?.department || ''
         },
-        organization: formState.organization.trim(),
-        department: formState.department.trim(),
-        projectCategory: formState.projectCategory.trim(),
-        description: formState.description.trim(),
-        site: formState.site.trim(),
-        expenseType: formState.expenseType.trim(),
+        organization: formState.organization?.name || '',
+        department: formState.department,
+        projectCategory: formState.projectCategory,
+        description: formState.description,
+        site: formState.site,
+        expenseType: formState.expenseType,
         estimatedAmount: amount,
-        currency: formState.currency.trim(),
+        currency: formState.currency,
         requiredDate: formState.requiredDate,
         status: PRStatus.SUBMITTED,
         isUrgent: formState.isUrgent,
         lineItems: formState.lineItems.map(item => ({
-          description: item.description.trim(),
+          description: item.description,
           quantity: Number(item.quantity),
-          uom: item.uom.trim(),
-          notes: item.notes?.trim() || '',
+          uom: item.uom,
+          notes: item.notes || '',
           attachments: item.attachments
         })),
         quotes: formState.quotes.map(quote => ({
-          vendorName: quote.vendorName.trim(),
+          vendorName: quote.vendorName,
           amount: Number(quote.amount),
-          currency: quote.currency.trim(),
-          notes: quote.notes?.trim() || ''
+          currency: quote.currency,
+          notes: quote.notes || ''
         }))
       };
 
       // Add optional fields only if they exist and are not undefined/null/empty
       if (formState.vehicle && formState.vehicle.trim() !== '') {
-        prData.vehicle = formState.vehicle.trim();
+        prData.vehicle = formState.vehicle;
       }
       
       if (formState.preferredVendor && formState.preferredVendor.trim() !== '') {
-        prData.preferredVendor = formState.preferredVendor.trim();
+        prData.preferredVendor = formState.preferredVendor;
       }
 
       if (formState.approvers?.length > 0) {
@@ -844,7 +863,7 @@ export const NewPRForm = () => {
       // Refresh PR data before navigating
       if (user) {
         console.log('Refreshing PR data for user:', user.id);
-        const updatedPRs = await prService.getUserPRs(user.id, formState.organization);
+        const updatedPRs = await prService.getUserPRs(user.id, formState.organization?.id || '');
         console.log('Updated PRs:', updatedPRs);
         dispatch(setUserPRs(updatedPRs));
       }
@@ -862,7 +881,7 @@ export const NewPRForm = () => {
         autoHideDuration: 5000 
       });
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -962,8 +981,8 @@ export const NewPRForm = () => {
         <TextField
           fullWidth
           label="Organization"
-          value={formState.organization}
-          onChange={(e) => handleInputChange('organization', e.target.value)}
+          value={formState.organization?.name || ''}
+          onChange={(e) => handleInputChange('organization', { id: e.target.value, name: e.target.value })}
           required
           disabled
         />
@@ -1326,7 +1345,7 @@ export const NewPRForm = () => {
         <Grid container spacing={2}>
           <Grid item xs={12} md={6}>
             <Typography variant="body2" color="textSecondary">
-              Organization: {formState.organization}
+              Organization: {formState.organization?.name}
             </Typography>
           </Grid>
           <Grid item xs={12} md={6}>
@@ -1414,10 +1433,10 @@ export const NewPRForm = () => {
           variant="contained"
           color="primary"
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={isSubmitting}
           aria-label="Submit purchase request"
         >
-          {submitting ? <CircularProgress size={24} /> : 'Submit Purchase Request'}
+          {isSubmitting ? <CircularProgress size={24} /> : 'Submit Purchase Request'}
         </Button>
       </Box>
     </Box>
@@ -1441,7 +1460,7 @@ export const NewPRForm = () => {
             Try Again
           </Button>
         </Box>
-      ) : loading ? (
+      ) : isLoading ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 3 }}>
           <CircularProgress />
           <Typography sx={{ mt: 2 }}>Loading...</Typography>

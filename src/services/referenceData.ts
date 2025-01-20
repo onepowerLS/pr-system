@@ -40,7 +40,13 @@ class ReferenceDataService {
     throw error;
   }
 
-  async getItemsByType(type: string, organization?: string): Promise<ReferenceData[]> {
+  private normalizeOrganizationId(orgId: string | OrganizationData): string {
+    if (!orgId) return '';
+    const id = typeof orgId === 'string' ? orgId : orgId.id;
+    return id.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  }
+
+  async getItemsByType(type: string, organization?: string | OrganizationData): Promise<ReferenceData[]> {
     console.log('Getting reference data items:', { type, organization });
     
     try {
@@ -52,8 +58,9 @@ class ReferenceDataService {
 
       // Only filter by organization for org-dependent types
       if (!ORG_INDEPENDENT_TYPES.includes(type) && organization) {
-        console.log('Applying organization filter:', { type, organization });
-        q = query(collectionRef, where('organization.id', '==', organization));
+        const normalizedOrgId = this.normalizeOrganizationId(organization);
+        console.log('Applying organization filter:', { type, organization, normalizedOrgId });
+        q = query(collectionRef, where('organization.id', '==', normalizedOrgId));
       }
 
       const querySnapshot = await getDocs(q);

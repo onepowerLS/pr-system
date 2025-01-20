@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { Select, MenuItem, FormControl, InputLabel, CircularProgress, FormHelperText } from '@mui/material';
 import { referenceDataService } from '../../services/referenceData';
@@ -135,9 +135,14 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
   }, [user, value, onChange]);
 
   // Convert organization object or string to display value
-  const displayValue = value 
-    ? (typeof value === 'object' ? value.name : value)
-    : '';
+  const displayValue = useMemo(() => {
+    if (!value) return '';
+    if (typeof value === 'object') return value.name;
+    
+    // If value is a string, try to find matching organization
+    const org = organizations.find(o => o.id === value || o.name === value);
+    return org ? org.name : value;
+  }, [value, organizations]);
 
   if (loading) {
     return <CircularProgress size={24} />;
