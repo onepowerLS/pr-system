@@ -1,18 +1,21 @@
 {
   "name": "pr-system-scripts",
   "version": "1.0.0",
-  "description": "Scripts for PR System data import",
-  "main": "import_to_firebase.js",
-  "type": "module",
+  "description": "",
   "scripts": {
     "build": "tsc",
-    "migrate": "npm run build && node ../dist/scripts/migrate-reference-data.js"
+    "migrate": "npm run build && node ../dist/scripts/migrate-reference-data.js",
+    "migrate-orgs": "ts-node migrateOrganizations.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "dotenv": "^16.4.7",
+    "firebase": "^11.2.0",
     "firebase-admin": "^11.11.1"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^18.0.0"
+    "@types/node": "^18.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   }
 }

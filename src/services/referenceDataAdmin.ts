@@ -1,10 +1,10 @@
 import { ReferenceDataItem } from "@/types/referenceData"
 import { db } from "@/config/firebase"
-import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, writeBatch, setDoc, getDoc, deleteField } from "firebase/firestore"
+import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, writeBatch, setDoc, getDoc, deleteField, or } from "firebase/firestore"
 
 const COLLECTION_PREFIX = "referenceData_"
 const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations'] as const;
-const ORGANIZATION_INDEPENDENT_TYPES = ['currencies', 'uom', 'organizations'] as const;
+const ORGANIZATION_INDEPENDENT_TYPES = ['currencies', 'uom', 'organizations', 'vendors'] as const;
 
 export class ReferenceDataAdminService {
   private getCollectionName(type: string): string {
@@ -45,8 +45,16 @@ export class ReferenceDataAdminService {
     const collectionRef = collection(db, collectionName);
 
     // Validate organization requirements
-    if (!ORGANIZATION_INDEPENDENT_TYPES.includes(type as any) && !item.organizationId) {
-      throw new Error(`Organization ID is required for type: ${type}`);
+    if (!ORGANIZATION_INDEPENDENT_TYPES.includes(type as any)) {
+      if (!item.organizationId && !item.organization?.id) {
+        throw new Error(`Organization ID is required for type: ${type}`);
+      }
+      // Standardize organization ID
+      const orgId = this.standardizeOrgId(item.organizationId || item.organization?.id || '');
+      item.organizationId = orgId;
+      if (item.organization) {
+        item.organization.id = orgId;
+      }
     }
 
     // For code-based ID types, use code as ID
@@ -121,19 +129,32 @@ export class ReferenceDataAdminService {
     // For non-independent types, ensure organizationId is present
     if (!ORGANIZATION_INDEPENDENT_TYPES.includes(type as any)) {
       // Get existing item to preserve organizationId if not in updates
-      if (!updates.organizationId) {
-        const docRef = doc(db, collectionName, id);
-        const docSnap = await getDoc(docRef);
-        if (!docSnap.exists()) {
-          throw new Error(`Item not found: ${id}`);
-        }
-        const existingData = docSnap.data();
-        updates.organizationId = existingData.organizationId || existingData.organization?.id;
+      const docRef = doc(db, collectionName, id);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) {
+        throw new Error(`Item not found: ${id}`);
       }
+      const existingData = docSnap.data();
       
-      if (!updates.organizationId) {
+      // Check for organizationId in updates or organization.id
+      const updatesOrgId = updates.organizationId || updates.organization?.id;
+      const existingOrgId = existingData.organizationId || existingData.organization?.id;
+      
+      // Only require organizationId for new items or if explicitly changing it
+      if (!updatesOrgId && !existingOrgId) {
         throw new Error(`Organization ID is required for type: ${type}`);
       }
+
+      // Preserve existing organizationId if not provided in updates
+      if (!updatesOrgId) {
+        updates.organizationId = existingOrgId;
+      } else {
+        updates.organizationId = updatesOrgId;
+      }
+    } else {
+      // For organization-independent types, remove any organization-related fields
+      delete updates.organizationId;
+      delete updates.organization;
     }
 
     const docRef = doc(db, collectionName, id);
@@ -181,70 +202,53 @@ export class ReferenceDataAdminService {
     return items;
   }
 
+  private standardizeOrgId(id: string): string {
+    return id.toLowerCase().replace(/\s+/g, '_')
+  }
+
   async getItemsByOrganization(type: string, organizationId: string): Promise<ReferenceDataItem[]> {
     const collectionName = this.getCollectionName(type);
     console.log(`Getting items for type ${type} and organization ${organizationId}`);
 
-    const collectionRef = collection(db, collectionName);
-    
-    // Try all possible organization ID formats
-    const possibleIds = [
-      organizationId,                    // Original (e.g., "1pwr_lesotho")
-      organizationId.toUpperCase(),      // Uppercase (e.g., "1PWR_LESOTHO")
-      organizationId.replace('_', ' '),  // Space instead of underscore (e.g., "1pwr lesotho")
-      organizationId.toUpperCase().replace('_', ' '), // Uppercase with space (e.g., "1PWR LESOTHO")
-    ];
+    // Try different formats of the organization ID
+    const standardizedId = this.standardizeOrgId(organizationId);
+    console.log(`Standardized organization ID: ${standardizedId}`);
 
-    console.log('Trying organization IDs:', possibleIds);
-    
-    let items: ReferenceDataItem[] = [];
-    
-    // Try each format with organizationId field
-    for (const id of possibleIds) {
-      const q = query(collectionRef, where('organizationId', '==', id));
-      const snapshot = await getDocs(q);
+    try {
+      const collectionRef = collection(db, collectionName);
       
-      if (!snapshot.empty) {
-        console.log(`Found items with organizationId: ${id}`);
-        items = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          id: doc.id,
-        } as ReferenceDataItem));
-        break;
-      }
-    }
+      // Query by organizationId field
+      const q1 = query(collectionRef, 
+        where('active', '==', true),
+        where('organizationId', '==', standardizedId)
+      );
+      const snapshot1 = await getDocs(q1);
+      
+      // Query by organization.id field
+      const q2 = query(collectionRef, 
+        where('active', '==', true),
+        where('organization.id', '==', standardizedId)
+      );
+      const snapshot2 = await getDocs(q2);
 
-    // If still no results, try with organization.id
-    if (items.length === 0) {
-      console.log('Trying organization.id field...');
-      for (const id of possibleIds) {
-        const q = query(collectionRef, where('organization.id', '==', id));
-        const snapshot = await getDocs(q);
-        
-        if (!snapshot.empty) {
-          console.log(`Found items with organization.id: ${id}`);
-          items = snapshot.docs.map(doc => {
-            const data = doc.data();
-            // Convert old format to new format
-            if (data.organization && !data.organizationId) {
-              data.organizationId = data.organization.id;
-            }
-            return {
-              ...data,
-              id: doc.id,
-            } as ReferenceDataItem;
-          });
-          break;
+      // Combine results, using a Set to deduplicate by ID
+      const itemsMap = new Map<string, ReferenceDataItem>();
+      [...snapshot1.docs, ...snapshot2.docs].forEach(doc => {
+        if (!itemsMap.has(doc.id)) {
+          itemsMap.set(doc.id, {
+            ...doc.data(),
+            id: doc.id
+          } as ReferenceDataItem);
         }
-      }
-    }
+      });
 
-    console.log(`Found ${items.length} items for type ${type} and organization ${organizationId}`);
-    if (items.length > 0) {
-      console.log('Sample item:', items[0]);
+      const items = Array.from(itemsMap.values());
+      console.log(`Found ${items.length} items with organization ID: ${standardizedId}`);
+      return items;
+    } catch (error) {
+      console.error('Error getting items by organization:', error);
+      throw error;
     }
-    
-    return items;
   }
 
   async checkVehicleDataState(): Promise<void> {

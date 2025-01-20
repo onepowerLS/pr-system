@@ -1,15 +1,19 @@
 {
   "compilerOptions": {
-    "target": "es2022",
-    "module": "esnext",
+    "target": "ES2020",
+    "module": "CommonJS",
     "moduleResolution": "node",
-    "lib": ["es2022"],
-    "strict": false,
     "esModuleInterop": true,
+    "outDir": "../dist/scripts",
+    "rootDir": ".",
+    "strict": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "outDir": "../dist/scripts"
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../src/*"]
+    }
   },
-  "include": ["migrate-reference-data.ts"],
-  "exclude": ["node_modules", "*.js"]
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules"]
 }

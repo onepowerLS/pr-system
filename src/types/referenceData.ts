@@ -18,9 +18,15 @@ export interface ReferenceDataItem {
   notes?: string;
 
   // Organization specific fields
-  shortName?: string;
+  /** Code used as unique identifier (e.g., '1PWR_LSO') */
+  code?: string;
+  /** Display name for the organization (e.g., '1PWR Lesotho') */
+  name?: string;
+  /** Country where the organization is located */
   country?: string;
-  timezone?: string;
+  /** Timezone offset from GMT in hours (e.g., +2 for SAST) */
+  timezoneOffset?: number;
+  /** Currency code used by the organization (e.g., 'LSL') */
   currency?: string;
 
   // Permission specific fields

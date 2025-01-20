@@ -47,7 +47,7 @@ const REFERENCE_DATA_TYPES = {
 type ReferenceDataType = keyof typeof REFERENCE_DATA_TYPES
 
 const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'uom', 'permissions', 'organizations'] as const;
-const CODE_BASED_ID_TYPES = ['currencies', 'uom'] as const;
+const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations'] as const;
 
 const SEED_DATA = {
   departments: [
@@ -58,73 +58,59 @@ const SEED_DATA = {
     { id: 'procurement', name: 'Procurement', active: true },
   ],
   organizations: [
-    { 
-      id: '1pwr_lesotho',
+    {
       code: '1PWR_LSO',
-      name: '1PWR LESOTHO',
-      shortName: '1PWR LSO',
+      name: '1PWR Lesotho',
       country: 'Lesotho',
-      timezone: 'Africa/Maseru',
+      timezoneOffset: 2,
       currency: 'LSL',
       active: true
     },
-    { 
-      id: '1pwr_benin',
+    {
       code: '1PWR_BEN',
-      name: '1PWR BENIN',
-      shortName: '1PWR BEN',
+      name: '1PWR Benin',
       country: 'Benin',
-      timezone: 'Africa/Porto-Novo',
+      timezoneOffset: 1,
       currency: 'XOF',
       active: true
     },
-    { 
-      id: '1pwr_zambia',
+    {
       code: '1PWR_ZAM',
-      name: '1PWR ZAMBIA',
-      shortName: '1PWR ZAM',
+      name: '1PWR Zambia',
       country: 'Zambia',
-      timezone: 'Africa/Lusaka',
+      timezoneOffset: 2,
       currency: 'ZMW',
-      active: false
+      active: true
     },
-    { 
-      id: 'pueco_lesotho',
+    {
       code: 'PUECO_LSO',
-      name: 'PUECO LESOTHO',
-      shortName: 'PUECO LSO',
+      name: 'PUECO Lesotho',
       country: 'Lesotho',
-      timezone: 'Africa/Maseru',
+      timezoneOffset: 2,
       currency: 'LSL',
       active: true
     },
-    { 
-      id: 'pueco_benin',
+    {
       code: 'PUECO_BEN',
-      name: 'PUECO BENIN',
-      shortName: 'PUECO BEN',
+      name: 'PUECO Benin',
       country: 'Benin',
-      timezone: 'Africa/Porto-Novo',
+      timezoneOffset: 1,
       currency: 'XOF',
-      active: false
+      active: true
     },
-    { 
-      id: 'neo1',
+    {
       code: 'NEO1',
       name: 'NEO1',
-      shortName: 'NEO1',
       country: 'Lesotho',
-      timezone: 'Africa/Maseru',
+      timezoneOffset: 2,
       currency: 'LSL',
       active: true
     },
-    { 
-      id: 'smp',
+    {
       code: 'SMP',
       name: 'SMP',
-      shortName: 'SMP',
       country: 'Lesotho',
-      timezone: 'Africa/Maseru',
+      timezoneOffset: 2,
       currency: 'LSL',
       active: true
     }
@@ -221,12 +207,11 @@ const vendorFields: ReferenceDataField[] = [
 ];
 
 const organizationFields: ReferenceDataField[] = [
-  { name: 'name', label: 'Name', required: true },
   { name: 'code', label: 'Code', required: true },
-  { name: 'shortName', label: 'Short Name' },
-  { name: 'country', label: 'Country' },
-  { name: 'timezone', label: 'Timezone' },
-  { name: 'currency', label: 'Default Currency' }
+  { name: 'name', label: 'Name', required: true },
+  { name: 'country', label: 'Country', required: true },
+  { name: 'timezoneOffset', label: 'Timezone Offset (GMT)', type: 'number', required: true },
+  { name: 'currency', label: 'Currency', required: true },
 ];
 
 const permissionFields: ReferenceDataField[] = [
@@ -249,7 +234,7 @@ const vehicleFields: ReferenceDataField[] = [
 
 // Get form fields based on type
 const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
-  if (isCodeBasedIdType(type)) {
+  if (isCodeBasedIdType(type) && type !== 'organizations') {
     return codeBasedFields;
   }
 
@@ -495,6 +480,16 @@ export function ReferenceDataManagement() {
     try {
       const { id, ...updates } = editedItem;
       
+      // Standardize organization ID if present
+      if (!isOrgIndependentType(selectedType) && selectedOrganization) {
+        const standardizeOrgId = (id: string) => id.toLowerCase().replace(/\s+/g, '_');
+        const standardizedOrgId = standardizeOrgId(selectedOrganization);
+        updates.organizationId = standardizedOrgId;
+        if (updates.organization) {
+          updates.organization.id = standardizedOrgId;
+        }
+      }
+
       // For vehicles, ensure organization is properly structured
       if (selectedType === 'vehicles') {
         if (typeof updates.organization === 'string') {
@@ -509,12 +504,19 @@ export function ReferenceDataManagement() {
         }
       }
 
-      console.log('Saving item:', { id, updates });
-      await referenceDataAdminService.updateItem(selectedType, id, updates);
+      console.log('Saving item:', { id, updates, editedItem, fullItem: items.find(i => i.id === id) });
+      
+      if (id) {
+        // Update existing item
+        await referenceDataAdminService.updateItem(selectedType, id, updates);
+      } else {
+        // Add new item
+        await referenceDataAdminService.addItem(selectedType, updates);
+      }
       
       setSnackbar({
         open: true,
-        message: 'Item updated successfully',
+        message: id ? 'Item updated successfully' : 'Item added successfully',
         severity: 'success',
       });
       setIsDialogOpen(false);
@@ -652,51 +654,36 @@ export function ReferenceDataManagement() {
     if (isOrgIndependentType(selectedType)) {
       return items;
     }
+    const standardizeOrgId = (id: string) => id.toLowerCase().replace(/\s+/g, '_');
+    const standardizedSelectedOrg = standardizeOrgId(selectedOrganization);
     return items.filter(item => {
       const itemOrgId = item.organizationId || item.organization?.id;
-      return itemOrgId === selectedOrganization;
+      return itemOrgId && standardizeOrgId(itemOrgId) === standardizedSelectedOrg;
     });
   }, [items, selectedType, selectedOrganization]);
 
   console.log('Filtered items:', filteredItems);
 
-  const EditDialog = ({ open, onClose, onSubmit, item, type }: any) => {
+  const ReferenceDataForm = ({ open, onClose, item, type, onSubmit }: {
+    open: boolean;
+    onClose: () => void;
+    item?: ReferenceDataItem;
+    type: ReferenceDataType;
+    onSubmit: (item: any) => void;
+  }) => {
     const [editItem, setEditItem] = useState<any>(item || {});
-    const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-    const [organizations, setOrganizations] = useState<Organization[]>([]);
 
+    // Ensure we preserve organization data when editing
     useEffect(() => {
-      setEditItem(item || {});
+      if (item) {
+        setEditItem({
+          ...item,
+          organizationId: item.organizationId || item.organization?.id
+        });
+      } else {
+        setEditItem({});
+      }
     }, [item]);
-
-    useEffect(() => {
-      const loadOrganizations = async () => {
-        try {
-          const orgs = await organizationService.getActiveOrganizations();
-          setOrganizations(orgs);
-        } catch (error) {
-          console.error('Error loading organizations:', error);
-        }
-      };
-
-      if (open) {
-        loadOrganizations();
-      }
-    }, [open]);
-
-    const handleChange = (field: string, value: any) => {
-      setEditItem(prev => ({
-        ...prev,
-        [field]: value
-      }));
-      // Clear error when field is changed
-      if (formErrors[field]) {
-        setFormErrors(prev => ({
-          ...prev,
-          [field]: ''
-        }));
-      }
-    };
 
     const renderFormField = (field: ReferenceDataField) => {
       const value = editItem[field.name] || '';
@@ -872,7 +859,7 @@ export function ReferenceDataManagement() {
         </Table>
       </TableContainer>
 
-      <EditDialog 
+      <ReferenceDataForm 
         open={isDialogOpen} 
         onClose={() => setIsDialogOpen(false)} 
         onSubmit={handleSave} 
