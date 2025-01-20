@@ -229,7 +229,7 @@ const vehicleFields: ReferenceDataField[] = [
   { name: 'model', label: 'Model', type: 'text' },
   { name: 'vinNumber', label: 'VIN Number', type: 'text' },
   { name: 'engineNumber', label: 'Engine Number', type: 'text' },
-  { name: 'organization', label: 'Organization', type: 'organization' }
+  { name: 'organizationId', label: 'Organization ID', type: 'text', readOnly: true, hideInTable: true }
 ];
 
 // Get form fields based on type
