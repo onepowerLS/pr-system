@@ -5,10 +5,10 @@ interface Approver {
   id: string;
   name: string;
   email: string;
-  department: string;
-  approvalLimit: number;
+  permissionLevel: number;  // 1 for global, 2 for organization
+  organization?: string;  // Only for Level 2 approvers
+  department?: string;
   isActive: boolean;
-  organization?: string;
 }
 
 class ApproverService {
@@ -23,20 +23,20 @@ class ApproverService {
   async getActiveApprovers(): Promise<Approver[]> {
     try {
       console.log('ApproverService: Getting active approvers');
-      const approversRef = collection(this.db, 'approverList');
-      const q = query(approversRef, where('isActive', '==', true));
+      const usersRef = collection(this.db, 'users');
+      const q = query(usersRef, where('isActive', '==', true));
       const querySnapshot = await getDocs(q);
       
       const approvers = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
-          name: data.Name,
-          email: data.Email,
-          department: data.Department,
-          approvalLimit: data['Approval Limit'],
-          isActive: data['Active Status (Y/N)'] === 'Y',
-          organization: '1PWR LESOTHO'
+          name: `${data.firstName} ${data.lastName}`.trim(),
+          email: data.email || '',
+          permissionLevel: data.permissionLevel || 0,
+          organization: data.organization || '',
+          department: data.department || '',
+          isActive: data.isActive === true
         } as Approver;
       });
 
@@ -51,18 +51,76 @@ class ApproverService {
 
   async getApprovers(organizationId: string): Promise<Approver[]> {
     try {
-      const approversRef = collection(this.db, 'approverList');
-      const q = query(approversRef, where('organizationId', '==', organizationId));
+      console.log('ApproverService: Getting approvers for organization:', organizationId);
+      const usersRef = collection(this.db, 'users');
+      
+      // Query users with permission level 1 or 2 and isActive=true
+      const q = query(
+        usersRef,
+        where('permissionLevel', 'in', [1, 2]),
+        where('isActive', '==', true)
+      );
+      
       const querySnapshot = await getDocs(q);
       
-      const approvers: Approver[] = [];
-      querySnapshot.forEach((doc) => {
-        approvers.push({
+      // Log all users found with their raw data
+      console.log('ApproverService: Raw users:', querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
           id: doc.id,
-          ...doc.data()
-        } as Approver);
-      });
+          firstName: data.firstName,
+          lastName: data.lastName,
+          permissionLevel: data.permissionLevel,
+          organization: data.organization,
+          organizationId: data.organizationId,
+          // Log all fields that might contain the organization
+          allFields: Object.keys(data).filter(key => 
+            typeof key === 'string' && 
+            key.toLowerCase().includes('org')
+          ).reduce((obj, key) => ({
+            ...obj,
+            [key]: data[key]
+          }), {})
+        };
+      }));
+      
+      // Filter and map users to approvers
+      const approvers = querySnapshot.docs
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: `${data.firstName} ${data.lastName}`.trim(),
+            email: data.email || '',
+            permissionLevel: data.permissionLevel,
+            organization: data.organization,
+            department: data.department,
+            isActive: data.isActive === true
+          } as Approver;
+        })
+        .filter(approver => {
+          // Log each approver and whether they pass the filter
+          const isGlobal = approver.permissionLevel === 1;
+          const normalizedApproverOrg = this.normalizeOrganizationId(approver.organization || '');
+          const normalizedTargetOrg = this.normalizeOrganizationId(organizationId);
+          const isOrgMatch = approver.permissionLevel === 2 && normalizedApproverOrg === normalizedTargetOrg;
+          console.log('ApproverService: Filtering approver:', {
+            approver,
+            isGlobal,
+            isOrgMatch,
+            organizationId,
+            organizationComparison: {
+              approverOrg: approver.organization,
+              normalizedApproverOrg,
+              targetOrg: organizationId,
+              normalizedTargetOrg,
+              isEqual: normalizedApproverOrg === normalizedTargetOrg
+            }
+          });
+          return isGlobal || isOrgMatch;
+        });
 
+      console.log(`ApproverService: Found ${approvers.length} approvers:`, approvers);
       return approvers;
     } catch (error) {
       console.error('Error getting approvers:', error);
@@ -74,23 +132,22 @@ class ApproverService {
     try {
       const normalizedOrgId = this.normalizeOrganizationId(organization);
       console.log('ApproverService: Getting approvers for department:', department);
-      const approversRef = collection(this.db, 'approverList');
-      const q = query(approversRef);
+      const usersRef = collection(this.db, 'users');
+      const q = query(usersRef);
       const querySnapshot = await getDocs(q);
       
       const approvers = querySnapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
-          name: data.Name,
-          email: data.Email,
-          department: data.Department,
-          approvalLimit: data['Approval Limit'],
-          isActive: data['Active Status (Y/N)'] === 'Y',
-          organization: '1PWR LESOTHO'
+          name: `${data.firstName} ${data.lastName}`.trim(),
+          email: data.email || '',
+          permissionLevel: data.permissionLevel || 0,
+          organization: data.organization || '',
+          department: data.department || '',
+          isActive: data.isActive === true
         } as Approver;
       }).filter(a => 
-        a.isActive && 
         a.department === department && 
         a.organization === normalizedOrgId
       );
