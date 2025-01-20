@@ -198,6 +198,7 @@ export const NewPRForm = () => {
   const [vendors, setVendors] = useState<ReferenceDataItem[]>([]);
   const [approvers, setApprovers] = useState<any[]>([]);
   const [availableApprovers, setAvailableApprovers] = useState<any[]>([]);
+  const [currencies, setCurrencies] = useState<ReferenceDataItem[]>([]);
 
   // Business rule state
   const [requiresQuotes, setRequiresQuotes] = useState(false);
@@ -263,14 +264,16 @@ export const NewPRForm = () => {
           expenseTypeItems,
           vehicleItems,
           vendorItems,
-          approverItems
+          approverItems,
+          currencyItems
         ] = await Promise.all([
           referenceDataService.getProjectCategories(formState.organization.id),
           referenceDataService.getSites(formState.organization.id),
           referenceDataService.getExpenseTypes(formState.organization.id),
           referenceDataService.getVehicles(formState.organization.id),
           referenceDataService.getVendors(),
-          approverService.getApprovers(formState.organization.id)
+          approverService.getApprovers(formState.organization.id),
+          referenceDataService.getCurrencies()
         ]);
 
         setProjectCategories(projectCategoryItems);
@@ -280,6 +283,7 @@ export const NewPRForm = () => {
         setVendors(vendorItems);
         setApprovers(approverItems);
         setAvailableApprovers(approverItems);
+        setCurrencies(currencyItems);
 
       } catch (error) {
         console.error('Error loading reference data:', error);
@@ -415,7 +419,8 @@ export const NewPRForm = () => {
             vehicles={vehicles}
             vendors={vendors}
             approvers={availableApprovers}
-            loading={isLoading}
+            currencies={currencies}
+            loading={isLoadingData}
           />
         );
       case 1:
@@ -442,7 +447,7 @@ export const NewPRForm = () => {
       default:
         return null;
     }
-  }, [formState, setFormState, departments, projectCategories, sites, expenseTypes, vehicles, vendors, availableApprovers, isLoading]);
+  }, [formState, setFormState, departments, projectCategories, sites, expenseTypes, vehicles, vendors, availableApprovers, currencies, isLoadingData, isLoading]);
 
   // Handle next step
   const handleNextStep = () => {

@@ -46,6 +46,7 @@ interface BasicInformationStepProps {
     department?: string;
     approvalLimit?: number;
   }>;
+  currencies: ReferenceDataItem[];
   loading: boolean;
 }
 
@@ -59,6 +60,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   vehicles,
   vendors,
   approvers,
+  currencies,
   loading,
 }) => {
   const handleChange = (field: keyof FormState) => (
@@ -68,8 +70,10 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     setFormState(prev => {
       // Handle expense type changes
       if (field === 'expenseType') {
-        const isVehicleExpense = expenseTypes.find(type => type.id === value)?.name === '4 - Vehicle';
-        const wasVehicleExpense = expenseTypes.find(type => type.id === prev.expenseType)?.name === '4 - Vehicle';
+        const selectedType = expenseTypes.find(type => type.id === value);
+        const previousType = expenseTypes.find(type => type.id === prev.expenseType);
+        const isVehicleExpense = selectedType?.code === '4';
+        const wasVehicleExpense = previousType?.code === '4';
         
         if (isVehicleExpense) {
           // When switching to vehicle expense type
@@ -100,17 +104,22 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   };
 
   // Show vehicle field only for vehicle expense type
-  const showVehicleField = expenseTypes.find(type => type.id === formState.expenseType)?.name === '4 - Vehicle';
+  const showVehicleField = expenseTypes.find(type => type.id === formState.expenseType)?.code === '4';
+
+  // Filter vehicles by organization
+  const filteredVehicles = vehicles.filter(vehicle => 
+    vehicle.active && vehicle.organizationId === formState.organization?.id
+  );
 
   // Validate that vehicle is selected if expense type is vehicle
   React.useEffect(() => {
-    if (showVehicleField && !formState.vehicle && vehicles.length > 0) {
+    if (showVehicleField && !formState.vehicle && filteredVehicles.length > 0) {
       setFormState(prev => ({
         ...prev,
         vehicle: undefined
       }));
     }
-  }, [showVehicleField, vehicles]);
+  }, [showVehicleField, filteredVehicles]);
 
   if (loading) {
     return (
@@ -286,9 +295,9 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               label="Vehicle"
               disabled={loading}
             >
-              {vehicles.map(vehicle => (
+              {filteredVehicles.map(vehicle => (
                 <MenuItem key={vehicle.id} value={vehicle.id}>
-                  {vehicle.name}
+                  {vehicle.code} - {vehicle.name}
                 </MenuItem>
               ))}
             </Select>
@@ -353,9 +362,13 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             label="Currency"
             disabled={loading}
           >
-            <MenuItem value="LSL">LSL - Lesotho Loti</MenuItem>
-            <MenuItem value="USD">USD - US Dollar</MenuItem>
-            <MenuItem value="ZAR">ZAR - South African Rand</MenuItem>
+            {currencies
+              .filter(currency => currency.active)
+              .map(currency => (
+                <MenuItem key={currency.id} value={currency.code}>
+                  {currency.code} - {currency.name}
+                </MenuItem>
+            ))}
           </Select>
         </FormControl>
       </Grid>
