@@ -108,10 +108,11 @@
 ### Approver Selection
 - Approvers are filtered based on:
   - Active status (`isActive` must be true)
-  - Permission level (Level 1 or 2)
-  - Organization match (for Level 2 approvers)
-- Global approvers (Level 1) are available across all organizations
-- Organization approvers (Level 2) are only available for their assigned organization
+  - Permission level (APPROVER role)
+  - Organization match (must be associated with the PR's organization)
+- Organization matching includes:
+  - Primary organization assignment
+  - Additional organization assignments
 - Organization matching uses normalized IDs to ensure consistent comparison
   - Example: "1PWR LESOTHO" and "1pwr_lesotho" are treated as the same organization
 
@@ -119,13 +120,22 @@
 - Approvers are shown in dropdowns with their full name
 - The approver list is filtered to show only relevant approvers based on:
   - The PR's organization
-  - The approver's permission level
+  - The approver's organization assignments (primary and additional)
   - The approver's active status
 - Inactive approvers are automatically excluded from selection
 
 ### Historical Records
 - Approved PRs maintain their approver information even if:
   - The approver is later deactivated
-  - The approver's organization assignment changes
+  - The approver's organization assignments change
   - The approver's permission level changes
 - This ensures audit trail integrity while preventing new selections of invalid approvers
+
+### Organization Assignment
+- Users can be assigned to one primary organization
+- Additional organization access can be granted through the `additionalOrganizations` field
+- Organization IDs are normalized for consistency:
+  - Converted to lowercase
+  - Special characters replaced with underscores
+  - Example: "1PWR LESOTHO" becomes "1pwr_lesotho"
+- Organization matching uses normalized IDs for comparison
