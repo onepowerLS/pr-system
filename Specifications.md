@@ -64,22 +64,35 @@
   - Their existing approvals remain valid for historical records
 
 ### Permission Levels
-- Level 1: Global Approvers
-  - Can approve PRs across all organizations
-  - Not restricted by organization boundaries
-- Level 2: Organization Approvers
-  - Can only approve PRs within their assigned organization
-  - Organization assignment is normalized using the same rules as reference data
+- Level 1: Administrator (ADMIN)
+  - Full system access
+  - Can manage all aspects of the system
+  - Access to all organizations and features
+  - Can edit Admin Dashboard
+
+- Level 2: Approver (APPROVER)
+  - Can approve requests within their assigned organizations
+  - Can view (but not edit) Admin Dashboard
+  - Organization assignment determines approval scope
   - Example: An approver assigned to "1PWR LESOTHO" can approve PRs for organization ID "1pwr_lesotho"
-- Level 3: Department Approvers (Future)
-  - Will be able to approve PRs within their department
-  - Department must match exactly
-- Level 4: Finance Team
-  - Can approve financial aspects of PRs
-  - Access to financial reports and summaries
-- Level 5: Regular Users
+
+- Level 3: Procurement Officer (PROC)
+  - Can manage the procurement process
+  - Can view Admin Dashboard
+  - Can edit select Admin Dashboard items
+  - Responsible for vendor management and PR processing
+
+- Level 4: Finance Admin (FIN_AD)
+  - Can process procurement requests
+  - Can view (but not edit) Admin Dashboard
+  - Access to financial aspects of PRs
+  - Can review and process financial details
+
+- Level 5: Requester (REQ)
   - Can create and submit PRs
   - Can view their own PR history
+  - Basic access level for regular users
+  - No administrative access
 
 ### Organization Assignment
 - Users can be assigned to one primary organization

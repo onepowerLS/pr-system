@@ -25,10 +25,11 @@ import { Organization } from './organization';
  * Defines possible user roles and their hierarchy
  */
 export enum UserRole {
-  ADMIN = 'ADMIN',
-  FINANCE_APPROVER = 'FINANCE_APPROVER',
-  PROCUREMENT_OFFICER = 'PROCUREMENT_OFFICER',
-  REQUESTOR = 'REQUESTOR'
+  ADMIN = 'ADMIN',           // Level 1: Full system access
+  APPROVER = 'APPROVER',     // Level 2: Can approve requests within their orgs
+  PROC = 'PROC',            // Level 3: Can manage procurement process
+  FIN_AD = 'FIN_AD',        // Level 4: Can process procurement requests
+  REQ = 'REQ'              // Level 5: Can create and view requests
 }
 
 /**
