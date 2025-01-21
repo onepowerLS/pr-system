@@ -201,6 +201,7 @@ const codeIncludedFields: ReferenceDataField[] = [
 const vendorFields: ReferenceDataField[] = [
   { name: 'code', label: 'Code', type: 'text', required: true },
   { name: 'name', label: 'Name', required: true },
+  { name: 'active', label: 'Active', type: 'boolean' },
   { name: 'approved', label: 'Approved', type: 'boolean' },
   { name: 'productsServices', label: 'Products/Services', type: 'text' },
   { name: 'contactName', label: 'Contact Name' },
@@ -271,6 +272,7 @@ function getDisplayFields(type: ReferenceDataType): ReferenceDataField[] {
       return [
         { name: 'code', label: 'Code' },
         { name: 'name', label: 'Name' },
+        { name: 'active', label: 'Active', type: 'boolean' },
         { name: 'approved', label: 'Approved', type: 'boolean' },
         { name: 'productsServices', label: 'Products/Services' },
         { name: 'contactName', label: 'Contact Name' },
