@@ -1,16 +1,13 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import {
   Box,
   Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   FormControl,
+  FormControlLabel,
   InputLabel,
-  Select,
   MenuItem,
-  TextField,
+  Select,
+  Typography,
   Table,
   TableBody,
   TableCell,
@@ -18,22 +15,33 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Switch,
-  FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
   IconButton,
   Snackbar,
   Alert,
-  FormHelperText
+  FormHelperText,
+  Chip,
+  Tooltip,
+  Switch
 } from "@mui/material"
-import { Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material"
+import { Edit as EditIcon, Delete as DeleteIcon, Info as InfoIcon } from "@mui/icons-material"
 import { ReferenceDataItem } from "@/types/referenceData"
-import { Organization } from "@/types/organization"
-import { referenceDataAdminService } from "@/services/referenceDataAdmin"
-import { organizationService } from "@/services/organizationService"
-import { doc, setDoc } from "firebase/firestore"
-import { db } from "@/config/firebase"
+import { useSelector } from 'react-redux'
+import { RootState } from '@/store'
+import { 
+  REFERENCE_DATA_ACCESS, 
+  hasEditAccess, 
+  PERMISSION_NAMES,
+  REFERENCE_DATA_TYPES
+} from '@/config/permissions'
+import { referenceDataAdminService } from '@/services/referenceDataAdmin'
+import { organizationService } from '@/services/organizationService'
 
-const REFERENCE_DATA_TYPES = {
+const REFERENCE_DATA_TYPE_LABELS = {
   departments: "Departments",
   projectCategories: "Project Categories",
   sites: "Sites",
@@ -46,7 +54,7 @@ const REFERENCE_DATA_TYPES = {
   permissions: "Permissions"
 } as const
 
-type ReferenceDataType = keyof typeof REFERENCE_DATA_TYPES
+type ReferenceDataType = keyof typeof REFERENCE_DATA_TYPE_LABELS
 
 const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'uom', 'permissions', 'organizations'] as const;
 const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations'] as const;
@@ -205,7 +213,14 @@ const vendorFields: ReferenceDataField[] = [
   { name: 'approved', label: 'Approved', type: 'boolean' },
   { name: 'productsServices', label: 'Products/Services', type: 'text' },
   { name: 'contactName', label: 'Contact Name' },
-  { name: 'contactEmail', label: 'Contact Email', type: 'email' },
+  { name: 'contactEmail', label: 'Contact Email', type: 'email', sx: { 
+    width: '150px', 
+    maxWidth: '150px',
+    whiteSpace: 'normal', 
+    wordWrap: 'break-word',
+    wordBreak: 'break-all',
+    overflow: 'hidden'
+  } },
   { name: 'contactPhone', label: 'Contact Phone' },
   { name: 'address', label: 'Address' },
   { name: 'city', label: 'City' },
@@ -270,44 +285,47 @@ function getDisplayFields(type: ReferenceDataType): ReferenceDataField[] {
   switch (type) {
     case 'vendors':
       return [
-        { name: 'code', label: 'Code' },
-        { name: 'name', label: 'Name' },
-        { name: 'active', label: 'Active', type: 'boolean' },
-        { name: 'approved', label: 'Approved', type: 'boolean' },
-        { name: 'productsServices', label: 'Products/Services' },
-        { name: 'contactName', label: 'Contact Name' },
-        { name: 'contactPhone', label: 'Contact Phone' },
-        { name: 'contactEmail', label: 'Contact Email' },
-        { name: 'url', label: 'Website URL' },
-        { name: 'city', label: 'City' },
-        { name: 'country', label: 'Country' },
-        { name: 'notes', label: 'Notes' }
+        { name: 'code', label: 'Code', sx: { width: '100px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'name', label: 'Name', sx: { width: '150px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'active', label: 'Active', type: 'boolean', sx: { width: '80px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'approved', label: 'Approved', type: 'boolean', sx: { width: '80px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'productsServices', label: 'Products/Services', sx: { width: '150px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'contactName', label: 'Contact Name', sx: { width: '150px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'contactPhone', label: 'Contact Phone', sx: { width: '120px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'contactEmail', label: 'Contact Email', sx: { 
+          width: '150px', 
+          maxWidth: '150px',
+          whiteSpace: 'normal', 
+          wordWrap: 'break-word',
+          wordBreak: 'break-all',
+          overflow: 'hidden'
+        } },
+        { name: 'url', label: 'Website URL', sx: { width: '150px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'city', label: 'City', sx: { width: '100px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'country', label: 'Country', sx: { width: '100px', whiteSpace: 'normal', wordWrap: 'break-word' } },
+        { name: 'notes', label: 'Notes', sx: { width: '150px', whiteSpace: 'normal', wordWrap: 'break-word' } }
       ];
     case 'organizations':
-      return organizationFields;
+      return organizationFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     case 'permissions':
-      return permissionFields;
+      return permissionFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     case 'vehicles':
-      return vehicleFields.filter(f => !f.hideInTable);
+      return vehicleFields.filter(f => !f.hideInTable).map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     case 'departments':
     case 'sites':
     case 'expenseTypes':
     case 'projectCategories':
-      return codeIncludedFields;
+      return codeIncludedFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     case 'currencies':
     case 'uom':
-      return codeBasedFields;
+      return codeBasedFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     default:
-      return commonFields;
+      return commonFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
   }
-}
+};
 
 const isOrgIndependentType = (type: string): boolean => {
   return ORG_INDEPENDENT_TYPES.includes(type as any);
-};
-
-const shouldShowOrgSelect = (type: string): boolean => {
-  return !isOrgIndependentType(type);
 };
 
 const getAutocompleteAttribute = (fieldName: string): string => {
@@ -331,8 +349,14 @@ const getAutocompleteAttribute = (fieldName: string): string => {
   }
 };
 
-export function ReferenceDataManagement() {
-  const [selectedType, setSelectedType] = useState<ReferenceDataType>("departments");
+interface ReferenceDataManagementProps {
+  isReadOnly: boolean;
+}
+
+export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementProps) {
+  const { user } = useSelector((state: RootState) => state.auth);
+
+  const [selectedType, setSelectedType] = useState<ReferenceDataType>('departments');
   const [items, setItems] = useState<ReferenceDataItem[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrganization, setSelectedOrganization] = useState('');
@@ -349,110 +373,71 @@ export function ReferenceDataManagement() {
     severity: 'success'
   });
 
-  // Reset form when dialog is closed
-  useEffect(() => {
-    if (!isDialogOpen) {
-      setEditItem(null);
-      setFormErrors({});
-    }
-  }, [isDialogOpen]);
+  const canEdit = useMemo(() => {
+    return user?.permissionLevel ? hasEditAccess(user.permissionLevel, selectedType) : false;
+  }, [user?.permissionLevel, selectedType]);
 
-  const handleAddNew = () => {
-    console.log('Opening add dialog for type:', selectedType);
-    setEditItem({
-      active: true,
-      approved: false,
-      name: '',
-      code: '',
-    });
-    setIsDialogOpen(true);
-  };
+  // Get editable roles for the current type
+  const getEditableRoles = useMemo(() => (type: string): string => {
+    const access = REFERENCE_DATA_ACCESS[type];
+    return access ? access.editableBy.join(', ') : 'None';
+  }, []);
 
-  const handleEdit = (item: ReferenceDataItem) => {
-    console.log('Opening edit dialog for item:', item);
-    setEditItem(item);
-    setIsDialogOpen(true);
-  };
+  // Memoize the shouldShowOrgSelect function to prevent unnecessary re-renders
+  const shouldShowOrgSelect = useMemo(() => {
+    // Show org selector for all users that can access admin portal
+    return user?.permissionLevel === 1 || user?.permissionLevel === 2;
+  }, [user?.permissionLevel]);
 
-  const handleCloseDialog = () => {
-    console.log('Closing dialog');
-    setIsDialogOpen(false);
-    setEditItem(null);
-    setFormErrors({});
-  };
-
-  // Convert date from "DD-MMM-YY" to "YYYY-MM-DD"
-  const formatDateForInput = (dateStr: string): string => {
-    if (!dateStr) return '';
+  const loadOrganizations = useCallback(async () => {
+    // Only load organizations if we need to show the selector
+    if (!shouldShowOrgSelect) return;
+    
     try {
-      const date = new Date(dateStr);
-      return date.toISOString().split('T')[0];
-    } catch (e) {
-      console.error('Error parsing date:', e);
-      return '';
-    }
-  }
-
-  // Convert date from "YYYY-MM-DD" to display format
-  const formatDateForDisplay = (dateStr: string): string => {
-    if (!dateStr) return '';
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: '2-digit'
+      const orgs = await organizationService.getOrganizations();
+      setOrganizations(orgs);
+      // Set default organization if none selected
+      if (orgs.length > 0 && !selectedOrganization) {
+        setSelectedOrganization(orgs[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading organizations:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to load organizations',
+        severity: 'error'
       });
-    } catch (e) {
-      console.error('Error formatting date:', e);
-      return dateStr;
     }
-  }
+  }, [shouldShowOrgSelect, selectedOrganization]);
 
-  // Load organizations only if needed
+  const loadItems = async () => {
+    try {
+      const data = await referenceDataAdminService.getItems(selectedType, selectedOrganization);
+      setItems(data);
+    } catch (error) {
+      console.error(`Error loading ${selectedType}:`, error);
+      setSnackbar({
+        open: true,
+        message: `Failed to load ${selectedType}`,
+        severity: 'error'
+      });
+    }
+  };
+
   useEffect(() => {
-    const loadOrganizations = async () => {
-      if (!shouldShowOrgSelect(selectedType)) {
-        return;
-      }
-
-      try {
-        const orgs = await organizationService.getOrganizations();
-        setOrganizations(orgs);
-        if (orgs.length > 0 && !selectedOrganization) {
-          setSelectedOrganization(orgs[0].id);
-        }
-      } catch (error) {
-        console.error('Error loading organizations:', error);
-        setSnackbar({
-          open: true,
-          message: 'Failed to load organizations',
-          severity: 'error'
-        });
-      }
-    };
-
     loadOrganizations();
-  }, [selectedType]);
+  }, [loadOrganizations]);
 
-  // Load items based on type
   useEffect(() => {
-    const loadItems = async () => {
-      try {
-        const loadedItems = await referenceDataAdminService.getItems(selectedType);
-        setItems(loadedItems);
-      } catch (error) {
-        console.error(`Error loading ${selectedType}:`, error);
-        setSnackbar({
-          open: true,
-          message: `Failed to load ${selectedType}`,
-          severity: 'error'
-        });
-      }
-    };
-
     loadItems();
-  }, [selectedType]);
+  }, [selectedType, selectedOrganization]);
+
+  useEffect(() => {
+    const savedType = localStorage.getItem('selectedReferenceDataType');
+    if (savedType && Object.keys(REFERENCE_DATA_TYPE_LABELS).includes(savedType)) {
+      setSelectedType(savedType as ReferenceDataType);
+    }
+  }, []);
 
   const filteredItems = useMemo(() => {
     let result = [...items];
@@ -601,7 +586,7 @@ export function ReferenceDataManagement() {
       
       // Close dialog and refresh data
       setIsDialogOpen(false);
-      const updatedItems = await referenceDataAdminService.getItems(selectedType);
+      const updatedItems = await referenceDataAdminService.getItems(selectedType, selectedOrganization);
       setItems(updatedItems);
       
     } catch (error) {
@@ -626,7 +611,7 @@ export function ReferenceDataManagement() {
       console.log('Delete successful');
       
       // Refresh the items list
-      const updatedItems = await referenceDataAdminService.getItems(selectedType);
+      const updatedItems = await referenceDataAdminService.getItems(selectedType, selectedOrganization);
       setItems(updatedItems);
       
       setSnackbar({
@@ -649,13 +634,6 @@ export function ReferenceDataManagement() {
     setSelectedType(newType);
     localStorage.setItem('selectedReferenceDataType', newType);
   };
-
-  useEffect(() => {
-    const savedType = localStorage.getItem('selectedReferenceDataType');
-    if (savedType && Object.keys(REFERENCE_DATA_TYPES).includes(savedType)) {
-      setSelectedType(savedType as ReferenceDataType);
-    }
-  }, []);
 
   const renderField = (field: ReferenceDataField) => {
     const value = editItem?.[field.name] || '';
@@ -773,7 +751,7 @@ export function ReferenceDataManagement() {
       fullWidth
     >
       <DialogTitle>
-        {editItem?.id ? `Edit ${REFERENCE_DATA_TYPES[selectedType]}` : `Add ${REFERENCE_DATA_TYPES[selectedType]}`}
+        {editItem?.id ? `Edit ${REFERENCE_DATA_TYPE_LABELS[selectedType]}` : `Add ${REFERENCE_DATA_TYPE_LABELS[selectedType]}`}
       </DialogTitle>
       <form onSubmit={handleFormSubmit}>
         <DialogContent>
@@ -789,219 +767,136 @@ export function ReferenceDataManagement() {
     </Dialog>
   );
 
+  const handleAddNew = () => {
+    console.log('Opening add dialog for type:', selectedType);
+    setEditItem({
+      active: true,
+      approved: false,
+      name: '',
+      code: '',
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleEdit = (item: ReferenceDataItem) => {
+    console.log('Opening edit dialog for item:', item);
+    setEditItem(item);
+    setIsDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    console.log('Closing dialog');
+    setIsDialogOpen(false);
+    setEditItem(null);
+    setFormErrors({});
+  };
+
+  // Convert date from "DD-MMM-YY" to "YYYY-MM-DD"
+  const formatDateForInput = (dateStr: string): string => {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      return date.toISOString().split('T')[0];
+    } catch (e) {
+      console.error('Error parsing date:', e);
+      return '';
+    }
+  }
+
+  // Convert date from "YYYY-MM-DD" to display format
+  const formatDateForDisplay = (dateStr: string): string => {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: '2-digit'
+      });
+    } catch (e) {
+      console.error('Error formatting date:', e);
+      return dateStr;
+    }
+  }
+
   return (
     <Box>
-      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
-        <FormControl sx={{ minWidth: 200 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <FormControl sx={{ minWidth: 200, mr: 2 }}>
           <InputLabel>Type</InputLabel>
           <Select
             value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value as ReferenceDataType)}
             label="Type"
+            onChange={(e) => {
+              const newType = e.target.value as ReferenceDataType;
+              setSelectedType(newType);
+              localStorage.setItem('selectedReferenceDataType', newType);
+            }}
           >
-            {Object.entries(REFERENCE_DATA_TYPES).map(([value, label]) => (
-              <MenuItem key={value} value={value}>
-                {label}
-              </MenuItem>
+            {Object.entries(REFERENCE_DATA_TYPE_LABELS).map(([value, label]) => (
+              <MenuItem key={value} value={value}>{label}</MenuItem>
             ))}
           </Select>
         </FormControl>
 
-        {shouldShowOrgSelect(selectedType) && (
-          <FormControl sx={{ minWidth: 200 }}>
+        {shouldShowOrgSelect && (
+          <FormControl sx={{ minWidth: 200, mr: 2 }}>
             <InputLabel>Organization</InputLabel>
             <Select
               value={selectedOrganization}
-              onChange={(e) => setSelectedOrganization(e.target.value)}
               label="Organization"
+              onChange={(e) => setSelectedOrganization(e.target.value)}
             >
               {organizations.map((org) => (
-                <MenuItem key={org.id} value={org.id}>
-                  {org.name}
-                </MenuItem>
+                <MenuItem key={org.id} value={org.id}>{org.name}</MenuItem>
               ))}
             </Select>
           </FormControl>
         )}
 
-        <Button 
-          variant="contained" 
-          onClick={handleAddNew}
-          sx={{ ml: 'auto' }}
-        >
-          Add {REFERENCE_DATA_TYPES[selectedType]}
-        </Button>
+        {!isReadOnly && canEdit && (
+          <Button 
+            variant="contained" 
+            onClick={handleAddNew}
+            sx={{ ml: 'auto' }}
+          >
+            Add {REFERENCE_DATA_TYPE_LABELS[selectedType]}
+          </Button>
+        )}
       </Box>
 
       <TableContainer component={Paper}>
-        <Table>
+        <Table size="small" sx={{ tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
               {getDisplayFields(selectedType).map((field) => (
-                <TableCell 
-                  key={field.name}
-                  sx={{
-                    ...(field.name === 'productsServices' || 
-                       field.name === 'contactName' || 
-                       field.name === 'contactPhone' || 
-                       field.name === 'notes' ||
-                       field.name === 'url'
-                      ? {
-                          width: 125,
-                          minWidth: 125,
-                          maxWidth: 125,
-                          whiteSpace: 'normal',
-                          wordWrap: 'break-word',
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word',
-                          hyphens: 'auto'
-                        }
-                      : field.name === 'contactEmail'
-                      ? {
-                          width: 150,
-                          minWidth: 150,
-                          maxWidth: 150,
-                          whiteSpace: 'normal',
-                          wordWrap: 'break-word',
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word',
-                          hyphens: 'auto'
-                        }
-                      : field.name === 'city'
-                      ? {
-                          width: 100,
-                          minWidth: 100,
-                          maxWidth: 100,
-                          whiteSpace: 'normal',
-                          wordWrap: 'break-word',
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word',
-                          hyphens: 'auto'
-                        }
-                      : field.name === 'name'
-                      ? {
-                          width: 200,
-                          minWidth: 200,
-                          maxWidth: 200,
-                          whiteSpace: 'normal',
-                          wordWrap: 'break-word',
-                          wordBreak: 'break-word',
-                          overflowWrap: 'break-word',
-                          hyphens: 'auto'
-                        }
-                      : {
-                          width: 'auto',
-                          minWidth: 'auto',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis'
-                        })
-                  }}
-                >
+                <TableCell key={field.name} sx={field.sx}>
                   {field.label}
                 </TableCell>
               ))}
-              <TableCell sx={{ width: 120 }}>Actions</TableCell>
+              {!isReadOnly && canEdit && <TableCell sx={{ width: 120 }}>Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredItems.map((item) => (
               <TableRow key={item.id}>
                 {getDisplayFields(selectedType).map((field) => (
-                  <TableCell 
-                    key={field.name}
-                    sx={{
-                      ...(field.name === 'productsServices' || 
-                         field.name === 'contactName' || 
-                         field.name === 'contactPhone' || 
-                         field.name === 'notes' ||
-                         field.name === 'url'
-                        ? {
-                            width: 125,
-                            minWidth: 125,
-                            maxWidth: 125,
-                            whiteSpace: 'normal',
-                            wordWrap: 'break-word',
-                            wordBreak: 'break-word',
-                            overflowWrap: 'break-word',
-                            hyphens: 'auto'
-                          }
-                        : field.name === 'contactEmail'
-                        ? {
-                            width: 150,
-                            minWidth: 150,
-                            maxWidth: 150,
-                            whiteSpace: 'normal',
-                            wordWrap: 'break-word',
-                            wordBreak: 'break-word',
-                            overflowWrap: 'break-word',
-                            hyphens: 'auto'
-                          }
-                        : field.name === 'city'
-                        ? {
-                            width: 100,
-                            minWidth: 100,
-                            maxWidth: 100,
-                            whiteSpace: 'normal',
-                            wordWrap: 'break-word',
-                            wordBreak: 'break-word',
-                            overflowWrap: 'break-word',
-                            hyphens: 'auto'
-                          }
-                        : field.name === 'name'
-                        ? {
-                            width: 200,
-                            minWidth: 200,
-                            maxWidth: 200,
-                            whiteSpace: 'normal',
-                            wordWrap: 'break-word',
-                            wordBreak: 'break-word',
-                            overflowWrap: 'break-word',
-                            hyphens: 'auto'
-                          }
-                        : {
-                            width: 'auto',
-                            minWidth: 'auto',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis'
-                          })
-                    }}
-                  >
-                    {field.type === 'organization' 
-                      ? (typeof item.organization === 'string' 
-                          ? organizations.find(o => o.id === item.organization)?.name 
-                          : item.organization?.name) || 'None'
-                      : field.type === 'boolean'
-                        ? <Switch
-                            checked={!!item[field.name]}
-                            onChange={async () => {
-                              try {
-                                const updates = { ...item, [field.name]: !item[field.name] };
-                                await referenceDataAdminService.updateItem(selectedType, item.id, updates);
-                                const updatedItems = await referenceDataAdminService.getItems(selectedType);
-                                setItems(updatedItems);
-                              } catch (error) {
-                                console.error(`Error toggling ${field.name} state:`, error);
-                                setSnackbar({
-                                  open: true,
-                                  message: `Failed to update ${field.name} state`,
-                                  severity: 'error'
-                                });
-                              }
-                            }}
-                          />
-                        : item[field.name]}
+                  <TableCell key={field.name} sx={field.sx}>
+                    {field.type === 'boolean' 
+                      ? item[field.name] ? 'Yes' : 'No'
+                      : item[field.name]}
                   </TableCell>
                 ))}
-                <TableCell sx={{ width: 120 }}>
-                  <IconButton onClick={() => handleEdit(item)}>
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton onClick={() => handleDelete(item.id)}>
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
+                {!isReadOnly && canEdit && (
+                  <TableCell sx={{ width: 120 }}>
+                    <IconButton onClick={() => handleEdit(item)}>
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton onClick={() => handleDelete(item.id)}>
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
