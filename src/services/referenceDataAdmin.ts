@@ -4,7 +4,7 @@ import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, w
 
 const COLLECTION_PREFIX = "referenceData_"
 const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations'] as const;
-const ORGANIZATION_INDEPENDENT_TYPES = ['currencies', 'uom', 'organizations', 'vendors'] as const;
+const ORGANIZATION_INDEPENDENT_TYPES = ['currencies', 'uom', 'organizations', 'vendors', 'permissions'] as const;
 
 export class ReferenceDataAdminService {
   private getCollectionName(type: string): string {
