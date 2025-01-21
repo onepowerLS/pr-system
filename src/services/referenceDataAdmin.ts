@@ -55,6 +55,10 @@ export class ReferenceDataAdminService {
       if (item.organization) {
         item.organization.id = orgId;
       }
+    } else if (type === 'vendors') {
+      // For vendors, ensure organizationId is null and remove organization object
+      item.organizationId = null;
+      delete (item as any).organization;
     }
 
     // For code-based ID types, use code as ID
