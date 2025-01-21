@@ -99,6 +99,21 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // Helper functions to format display values
+  const formatDisplayValue = (value: string): string => {
+    if (!value) return 'Not specified';
+    // Convert snake_case or lowercase to Title Case
+    return value
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const getDisplayName = (item: { id: string; name: string } | undefined): string => {
+    if (!item) return 'Not specified';
+    return item.name || formatDisplayValue(item.id);
+  };
+
   const handleViewFile = (file: any) => {
     window.open(file.url, '_blank');
   };
@@ -124,10 +139,18 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             Requestor Information
           </Typography>
           <Box sx={{ mt: 2 }}>
-            <Typography><strong>Name:</strong> {formState.requestor}</Typography>
-            <Typography><strong>Email:</strong> {formState.email}</Typography>
-            <Typography><strong>Department:</strong> {formState.department}</Typography>
-            <Typography><strong>Organization:</strong> {formState.organization}</Typography>
+            <Typography variant="body1">
+              <strong>Name:</strong> {formState.requestor}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Email:</strong> {formState.email}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Organization:</strong> {getDisplayName(formState.organization)}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Department:</strong> {formatDisplayValue(formState.department)}
+            </Typography>
           </Box>
         </Paper>
       </Grid>
@@ -139,22 +162,21 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             Project Details
           </Typography>
           <Box sx={{ mt: 2 }}>
-            <Box sx={{ display: 'flex' }}>
-              <Typography sx={{ mr: 1 }}><strong>Project Category:</strong></Typography>
-              <Typography>{getProjectCategoryName()}</Typography>
-            </Box>
-            <Box sx={{ display: 'flex' }}>
-              <Typography sx={{ mr: 1 }}><strong>Description:</strong></Typography>
-              <Typography>{formState.description}</Typography>
-            </Box>
-            <Box sx={{ display: 'flex' }}>
-              <Typography sx={{ mr: 1 }}><strong>Site:</strong></Typography>
-              <Typography>{getSiteName()}</Typography>
-            </Box>
-            <Box sx={{ display: 'flex' }}>
-              <Typography sx={{ mr: 1 }}><strong>Required Date:</strong></Typography>
-              <Typography>{formState.requiredDate}</Typography>
-            </Box>
+            <Typography variant="body1">
+              <strong>Project Category:</strong> {formatDisplayValue(formState.projectCategory)}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Description:</strong> {formState.description}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Site:</strong> {formatDisplayValue(formState.site)}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Required Date:</strong> {formState.requiredDate}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Urgency Level:</strong> {formState.isUrgent ? 'Urgent' : 'Normal'}
+            </Typography>
             {formState.isUrgent && (
               <Box sx={{ mt: 1 }}>
                 <Chip 
@@ -176,16 +198,23 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             Financial Details
           </Typography>
           <Box sx={{ mt: 2 }}>
-            <Typography>
+            <Typography variant="body1">
               <strong>Estimated Amount:</strong> {formState.estimatedAmount} {formState.currency}
             </Typography>
-            <Typography><strong>Expense Type:</strong> {formState.expenseType}</Typography>
-            {formState.expenseType === 'Vehicle' && formState.vehicle && (
-              <Typography><strong>Vehicle:</strong> {formState.vehicle}</Typography>
+            <Typography variant="body1">
+              <strong>Expense Type:</strong> {formatDisplayValue(formState.expenseType)}
+            </Typography>
+            {formState.expenseType === 'Vehicle' && (
+              <Typography variant="body1">
+                <strong>Vehicle:</strong> {getDisplayName(formState.vehicle)}
+              </Typography>
             )}
-            {formState.preferredVendor && (
-              <Typography><strong>Preferred Vendor:</strong> {getVendorName()}</Typography>
-            )}
+            <Typography variant="body1">
+              <strong>Preferred Vendor:</strong> {getDisplayName(formState.preferredVendor)}
+            </Typography>
+            <Typography variant="body1">
+              <strong>Currency:</strong> {formState.currency}
+            </Typography>
           </Box>
         </Paper>
       </Grid>
@@ -197,7 +226,9 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             Approval Details
           </Typography>
           <Box sx={{ mt: 2 }}>
-            <Typography><strong>Approvers:</strong> {getApproverNames()}</Typography>
+            <Typography variant="body1">
+              <strong>Approvers:</strong> {getApproverNames()}
+            </Typography>
           </Box>
         </Paper>
       </Grid>

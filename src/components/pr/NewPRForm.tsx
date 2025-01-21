@@ -136,7 +136,7 @@ export interface FormState {
   vehicle?: string;
   estimatedAmount: number;
   currency: string;
-  requiredDate: string;
+  requiredDate: string | null;
   approvers: string[];
   preferredVendor?: string;
   lineItems: LineItem[];
@@ -207,32 +207,26 @@ export const NewPRForm = () => {
 
   // Initial form state
   const initialFormState = useMemo(() => ({
-    id: '',
-    title: '',
-    description: '',
-    amount: 0,
     organization: {
       id: '1pwr_lesotho',
       name: '1PWR LESOTHO'
     },
-    department: '',
-    projectCategory: '',
-    site: '',
-    expenseType: '',
-    vehicle: '',
-    vendor: '',
-    approver: '',
-    status: 'DRAFT',
-    createdBy: user?.id || '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     requestor: user ? `${user.firstName} ${user.lastName}` : '',
     email: user?.email || '',
-    requester: {
-      id: user?.id || '',
-      name: user ? `${user.firstName} ${user.lastName}` : '',
-      email: user?.email || ''
-    }
+    department: '',
+    projectCategory: '',
+    description: '',
+    site: '',
+    expenseType: '',
+    vehicle: undefined,
+    estimatedAmount: 0,
+    currency: 'LSL',
+    requiredDate: null,
+    approvers: [],
+    preferredVendor: undefined,
+    lineItems: [],
+    quotes: [],
+    isUrgent: false
   }), [user]);
 
   // Form state
@@ -813,14 +807,14 @@ export const NewPRForm = () => {
 
       // Prepare PR data with proper type conversions
       const prData = {
-        requestorId: user?.id || '',
-        requestorEmail: user?.email || '',
+        requestorId: user.id,
+        requestorEmail: user.email,
         requestor: {
-          id: user?.id || '',
-          name: user?.name || '',
-          email: user?.email || '',
-          role: user?.role || '',
-          department: user?.department || ''
+          id: user.id,
+          name: user.displayName || user.email.split('@')[0],
+          email: user.email,
+          role: user.role,
+          department: user.department || ''
         },
         organization: formState.organization?.name || '',
         department: formState.department,

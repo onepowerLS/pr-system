@@ -42,12 +42,12 @@ interface BasicInformationStepProps {
     id: string;
     name: string;
     email: string;
-    role: string;
-    department?: string;
-    approvalLimit?: number;
+    permissionLevel: string;  // "Level 1" or "Level 2"
+    organizationId?: string;
   }>;
   currencies: ReferenceDataItem[];
   loading: boolean;
+  isSubmitted: boolean;
 }
 
 export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
@@ -62,6 +62,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   approvers,
   currencies,
   loading,
+  isSubmitted,
 }) => {
   const handleChange = (field: keyof FormState) => (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>
@@ -207,7 +208,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="project-category-label"
             id="project-category-select"
-            value={formState.projectCategory}
+            value={formState.projectCategory || ''}
             onChange={handleChange('projectCategory')}
             label="Project Category"
             disabled={loading}
@@ -247,7 +248,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="site-label"
             id="site-select"
-            value={formState.site}
+            value={formState.site || ''}
             onChange={handleChange('site')}
             label="Site"
             disabled={loading}
@@ -268,7 +269,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="expense-type-label"
             id="expense-type-select"
-            value={formState.expenseType}
+            value={formState.expenseType || ''}
             onChange={handleChange('expenseType')}
             label="Expense Type"
             disabled={loading}
@@ -290,7 +291,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             <Select
               labelId="vehicle-label"
               id="vehicle-select"
-              value={formState.vehicle}
+              value={formState.vehicle || ''}
               onChange={handleChange('vehicle')}
               label="Vehicle"
               disabled={loading}
@@ -312,7 +313,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="vendor-label"
             id="vendor-select"
-            value={formState.preferredVendor}
+            value={formState.preferredVendor || ''}
             onChange={handleChange('preferredVendor')}
             label="Preferred Vendor"
             disabled={loading}
@@ -357,7 +358,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="currency-label"
             id="currency-select"
-            value={formState.currency}
+            value={formState.currency || ''}
             onChange={handleChange('currency')}
             label="Currency"
             disabled={loading}
@@ -380,7 +381,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="urgency-label"
             id="urgency-select"
-            value={formState.isUrgent}
+            value={formState.isUrgent || false}
             onChange={handleChange('isUrgent')}
             label="Urgency Level"
             disabled={loading}
@@ -392,14 +393,34 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
         </FormControl>
       </Grid>
 
+      {/* Required Date */}
+      <Grid item xs={12}>
+        <TextField
+          fullWidth
+          type="date"
+          label="Required Date *"
+          value={formState.requiredDate ? (typeof formState.requiredDate === 'string' ? formState.requiredDate : formState.requiredDate.toISOString().split('T')[0]) : ''}
+          onChange={(e) => {
+            setFormState(prev => ({
+              ...prev,
+              requiredDate: e.target.value || null,
+            }));
+          }}
+          required
+          error={!formState.requiredDate && isSubmitted}
+          helperText={!formState.requiredDate && isSubmitted ? "Required date is required" : ""}
+          InputLabelProps={{ shrink: true }}
+        />
+      </Grid>
+
       {/* Approvers */}
       <Grid item xs={12}>
         <Autocomplete
           multiple
           id="approvers-select"
           options={approvers}
-          getOptionLabel={(option) => option.name}
-          value={approvers.filter(a => formState.approvers.includes(a.id))}
+          getOptionLabel={(option) => `${option.name} (${option.permissionLevel === 1 ? 'Global' : 'Organization'} Approver)`}
+          value={approvers.filter(a => (formState.approvers || []).includes(a.id))}
           onChange={handleApproverChange}
           disabled={loading}
           renderInput={(params) => (
@@ -410,14 +431,17 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               helperText="Select at least one approver"
             />
           )}
-          renderTags={(value, getTagProps) =>
-            value.map((option, index) => (
-              <Chip
-                key={option.id}
-                label={option.name}
-                {...getTagProps({ index })}
-              />
-            ))
+          renderTags={(tagValue, getTagProps) =>
+            tagValue.map((option, index) => {
+              const { key, ...otherProps } = getTagProps({ index });
+              return (
+                <Chip
+                  key={key}
+                  label={`${option.name} (${option.permissionLevel === 1 ? 'Global' : 'Organization'})`}
+                  {...otherProps}
+                />
+              );
+            })
           }
         />
       </Grid>

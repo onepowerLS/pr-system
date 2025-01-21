@@ -118,10 +118,19 @@ export const prService = {
       console.log('Creating PR with data:', JSON.stringify(prData, null, 2));
       const prNumber = await this.generatePRNumber(prData.organization!);
       
-      // Create PR document
+      // Create PR document with properly structured requestor data
       const prRef = await addDoc(collection(db, PR_COLLECTION), {
         ...prData,
         prNumber,
+        requestor: {
+          id: prData.requestorId || '',
+          name: prData.requestor?.name || prData.requestorEmail?.split('@')[0] || '',
+          email: prData.requestorEmail || '',
+          role: prData.requestor?.role || 'USER',
+          department: prData.requestor?.department || prData.department || '',
+          organization: prData.organization || '',
+          isActive: true
+        },
         status: PRStatus.SUBMITTED,  // Always SUBMITTED
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now()

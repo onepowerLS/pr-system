@@ -19,7 +19,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { getUserDetails } from './services/auth';
 import { Box, Typography, CircularProgress } from '@mui/material';
 import { SnackbarProvider } from './contexts/SnackbarContext';
-import './App.css';
+import "./App.css";
 
 function App() {
   console.log('App: Component rendering');
