@@ -202,10 +202,13 @@ const vendorFields: ReferenceDataField[] = [
   { name: 'code', label: 'Code', type: 'text', required: true },
   { name: 'name', label: 'Name', required: true },
   { name: 'approved', label: 'Approved', type: 'boolean' },
+  { name: 'productsServices', label: 'Products/Services', type: 'text' },
   { name: 'contactName', label: 'Contact Name' },
   { name: 'contactEmail', label: 'Contact Email', type: 'email' },
   { name: 'contactPhone', label: 'Contact Phone' },
   { name: 'address', label: 'Address' },
+  { name: 'city', label: 'City' },
+  { name: 'country', label: 'Country' },
   { name: 'url', label: 'Website URL', type: 'url' },
   { name: 'notes', label: 'Notes' }
 ];
@@ -262,10 +265,40 @@ const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
 };
 
 // Get display fields based on type - used for the table display
-const getDisplayFields = (type: ReferenceDataType): ReferenceDataField[] => {
-  const fields = getFormFields(type);
-  return fields.filter(field => !field.hideInTable);
-};
+function getDisplayFields(type: ReferenceDataType): ReferenceDataField[] {
+  switch (type) {
+    case 'vendors':
+      return [
+        { name: 'code', label: 'Code' },
+        { name: 'name', label: 'Name' },
+        { name: 'approved', label: 'Approved', type: 'boolean' },
+        { name: 'productsServices', label: 'Products/Services' },
+        { name: 'contactName', label: 'Contact Name' },
+        { name: 'contactPhone', label: 'Contact Phone' },
+        { name: 'contactEmail', label: 'Contact Email' },
+        { name: 'url', label: 'Website URL' },
+        { name: 'city', label: 'City' },
+        { name: 'country', label: 'Country' },
+        { name: 'notes', label: 'Notes' }
+      ];
+    case 'organizations':
+      return organizationFields;
+    case 'permissions':
+      return permissionFields;
+    case 'vehicles':
+      return vehicleFields.filter(f => !f.hideInTable);
+    case 'departments':
+    case 'sites':
+    case 'expenseTypes':
+    case 'projectCategories':
+      return codeIncludedFields;
+    case 'currencies':
+    case 'uom':
+      return codeBasedFields;
+    default:
+      return commonFields;
+  }
+}
 
 const isOrgIndependentType = (type: string): boolean => {
   return ORG_INDEPENDENT_TYPES.includes(type as any);
@@ -803,16 +836,136 @@ export function ReferenceDataManagement() {
           <TableHead>
             <TableRow>
               {getDisplayFields(selectedType).map((field) => (
-                <TableCell key={field.name}>{field.label}</TableCell>
+                <TableCell 
+                  key={field.name}
+                  sx={{
+                    ...(field.name === 'productsServices' || 
+                       field.name === 'contactName' || 
+                       field.name === 'contactPhone' || 
+                       field.name === 'notes' ||
+                       field.name === 'url'
+                      ? {
+                          width: 125,
+                          minWidth: 125,
+                          maxWidth: 125,
+                          whiteSpace: 'normal',
+                          wordWrap: 'break-word',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          hyphens: 'auto'
+                        }
+                      : field.name === 'contactEmail'
+                      ? {
+                          width: 150,
+                          minWidth: 150,
+                          maxWidth: 150,
+                          whiteSpace: 'normal',
+                          wordWrap: 'break-word',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          hyphens: 'auto'
+                        }
+                      : field.name === 'city'
+                      ? {
+                          width: 100,
+                          minWidth: 100,
+                          maxWidth: 100,
+                          whiteSpace: 'normal',
+                          wordWrap: 'break-word',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          hyphens: 'auto'
+                        }
+                      : field.name === 'name'
+                      ? {
+                          width: 200,
+                          minWidth: 200,
+                          maxWidth: 200,
+                          whiteSpace: 'normal',
+                          wordWrap: 'break-word',
+                          wordBreak: 'break-word',
+                          overflowWrap: 'break-word',
+                          hyphens: 'auto'
+                        }
+                      : {
+                          width: 'auto',
+                          minWidth: 'auto',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        })
+                  }}
+                >
+                  {field.label}
+                </TableCell>
               ))}
-              <TableCell>Actions</TableCell>
+              <TableCell sx={{ width: 120 }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredItems.map((item) => (
               <TableRow key={item.id}>
                 {getDisplayFields(selectedType).map((field) => (
-                  <TableCell key={field.name}>
+                  <TableCell 
+                    key={field.name}
+                    sx={{
+                      ...(field.name === 'productsServices' || 
+                         field.name === 'contactName' || 
+                         field.name === 'contactPhone' || 
+                         field.name === 'notes' ||
+                         field.name === 'url'
+                        ? {
+                            width: 125,
+                            minWidth: 125,
+                            maxWidth: 125,
+                            whiteSpace: 'normal',
+                            wordWrap: 'break-word',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word',
+                            hyphens: 'auto'
+                          }
+                        : field.name === 'contactEmail'
+                        ? {
+                            width: 150,
+                            minWidth: 150,
+                            maxWidth: 150,
+                            whiteSpace: 'normal',
+                            wordWrap: 'break-word',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word',
+                            hyphens: 'auto'
+                          }
+                        : field.name === 'city'
+                        ? {
+                            width: 100,
+                            minWidth: 100,
+                            maxWidth: 100,
+                            whiteSpace: 'normal',
+                            wordWrap: 'break-word',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word',
+                            hyphens: 'auto'
+                          }
+                        : field.name === 'name'
+                        ? {
+                            width: 200,
+                            minWidth: 200,
+                            maxWidth: 200,
+                            whiteSpace: 'normal',
+                            wordWrap: 'break-word',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'break-word',
+                            hyphens: 'auto'
+                          }
+                        : {
+                            width: 'auto',
+                            minWidth: 'auto',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          })
+                    }}
+                  >
                     {field.type === 'organization' 
                       ? (typeof item.organization === 'string' 
                           ? organizations.find(o => o.id === item.organization)?.name 
@@ -839,7 +992,7 @@ export function ReferenceDataManagement() {
                         : item[field.name]}
                   </TableCell>
                 ))}
-                <TableCell>
+                <TableCell sx={{ width: 120 }}>
                   <IconButton onClick={() => handleEdit(item)}>
                     <EditIcon />
                   </IconButton>
