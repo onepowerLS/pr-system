@@ -811,7 +811,7 @@ export const NewPRForm = () => {
         requestorEmail: user.email,
         requestor: {
           id: user.id,
-          name: user.displayName || user.email.split('@')[0],
+          name: formState.requestor,
           email: user.email,
           role: user.role,
           department: user.department || ''
