@@ -1,29 +1,28 @@
 export interface ReferenceDataItem {
   id: string;
-  name?: string;
   code?: string;
+  name: string;
+  type?: string;
+  organization?: {
+    id: string;
+    name: string;
+  };
   organizationId?: string;
-  description?: string;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
-
-  // Vendor specific fields
-  approvalDate?: string;
+  approved?: boolean;
+  productsServices?: string;
   contactName?: string;
   contactEmail?: string;
   contactPhone?: string;
   address?: string;
+  city?: string;
+  country?: string;
   url?: string;
   notes?: string;
+  isActive?: boolean;
 
   // Organization specific fields
-  /** Code used as unique identifier (e.g., '1PWR_LSO') */
-  code?: string;
   /** Display name for the organization (e.g., '1PWR Lesotho') */
-  name?: string;
-  /** Country where the organization is located */
-  country?: string;
+  orgName?: string;
   /** Timezone offset from GMT in hours (e.g., +2 for SAST) */
   timezoneOffset?: number;
   /** Currency code used by the organization (e.g., 'LSL') */

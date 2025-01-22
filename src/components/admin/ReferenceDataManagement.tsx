@@ -386,7 +386,7 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
   // Memoize the shouldShowOrgSelect function to prevent unnecessary re-renders
   const shouldShowOrgSelect = useMemo(() => {
     // Show org selector for all users that can access admin portal
-    return user?.permissionLevel === 1 || user?.permissionLevel === 2;
+    return user?.permissionLevel === 1 || user?.permissionLevel === 2 || user?.permissionLevel === 4;
   }, [user?.permissionLevel]);
 
   const loadOrganizations = useCallback(async () => {

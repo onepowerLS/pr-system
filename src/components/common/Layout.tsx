@@ -76,8 +76,8 @@ export const Layout = () => {
     }
   };
 
-  // Check if user has admin access (either role ADMIN or permissionLevel <= 3)
-  const hasAdminAccess = user?.role === 'ADMIN' || (user?.permissionLevel && user?.permissionLevel <= 3);
+  // Check if user has admin access (either role ADMIN or permissionLevel <= 4)
+  const hasAdminAccess = user?.role === 'ADMIN' || (user?.permissionLevel && user?.permissionLevel <= 4);
 
   const drawer = (
     <Box>

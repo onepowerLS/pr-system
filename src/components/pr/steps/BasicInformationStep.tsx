@@ -318,6 +318,9 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             label="Preferred Vendor"
             disabled={loading}
           >
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
             {vendors
               .filter(vendor => vendor.active)
               .map(vendor => (
@@ -325,10 +328,28 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
                   {vendor.name}
                 </MenuItem>
               ))}
+            <MenuItem value="other">Other - I will write in</MenuItem>
           </Select>
           <FormHelperText>Optional - Select if you have a preferred vendor</FormHelperText>
         </FormControl>
       </Grid>
+
+      {/* Custom Vendor Name - Only shown when "Other" is selected */}
+      {formState.preferredVendor === 'other' && (
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            id="custom-vendor-input"
+            label="Custom Vendor Name"
+            value={formState.customVendorName || ''}
+            onChange={handleChange('customVendorName')}
+            required
+            error={!formState.customVendorName}
+            helperText={!formState.customVendorName ? 'Please enter the vendor name' : ''}
+            disabled={loading}
+          />
+        </Grid>
+      )}
 
       {/* Estimated Amount */}
       <Grid item xs={12} md={6}>

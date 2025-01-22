@@ -139,6 +139,7 @@ export interface FormState {
   requiredDate: string | null;
   approvers: string[];
   preferredVendor?: string;
+  customVendorName?: string;
   lineItems: LineItem[];
   quotes: Quote[];
   isUrgent: boolean;
@@ -224,6 +225,7 @@ export const NewPRForm = () => {
     requiredDate: null,
     approvers: [],
     preferredVendor: undefined,
+    customVendorName: undefined,
     lineItems: [],
     quotes: [],
     isUrgent: false
@@ -848,7 +850,13 @@ export const NewPRForm = () => {
       }
       
       if (formState.preferredVendor && formState.preferredVendor.trim() !== '') {
-        prData.preferredVendor = formState.preferredVendor;
+        if (formState.preferredVendor === 'other') {
+          if (formState.customVendorName && formState.customVendorName.trim() !== '') {
+            prData.preferredVendor = formState.customVendorName.trim();
+          }
+        } else {
+          prData.preferredVendor = formState.preferredVendor;
+        }
       }
 
       if (formState.approvers?.length > 0) {

@@ -1,12 +1,20 @@
 import { useState, useEffect } from "react"
-import { Box, Tab, Tabs, Typography } from "@mui/material"
+import { Box, Tab, Tabs, Typography, Chip } from "@mui/material"
 import { UserManagement } from "./UserManagement"
 import { ReferenceDataManagement } from "./ReferenceDataManagement"
+import { useOutletContext } from "react-router-dom"
+import { useSelector } from 'react-redux'
+import { RootState } from '../../store'
+import { PERMISSION_NAMES } from '../../config/permissions'
 
 interface TabPanelProps {
   children?: React.ReactNode
   index: number
   value: number
+}
+
+interface AdminContext {
+  isReadOnly?: boolean;
 }
 
 function TabPanel(props: TabPanelProps) {
@@ -37,6 +45,11 @@ function a11yProps(index: number) {
 }
 
 export function AdminDashboard() {
+  const context = useOutletContext<AdminContext>();
+  const { user } = useSelector((state: RootState) => state.auth);
+  const isReadOnly = context?.isReadOnly ?? (user?.permissionLevel === 2);
+  const permissionName = user?.permissionLevel ? PERMISSION_NAMES[user.permissionLevel] : '';
+  
   // Initialize from localStorage or default to 0
   const [value, setValue] = useState(() => {
     const savedTab = localStorage.getItem('adminDashboardTab')
@@ -54,9 +67,16 @@ export function AdminDashboard() {
 
   return (
     <Box sx={{ width: '100%', p: 3 }}>
-      <Typography variant="h4" component="h1" sx={{ mb: 4 }}>
-        Admin Dashboard
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>
+        <Typography variant="h4" component="h1">
+          Admin Dashboard
+        </Typography>
+        <Chip 
+          label={`${permissionName} ${isReadOnly ? '(View Only)' : ''}`}
+          color={isReadOnly ? 'default' : 'primary'}
+          sx={{ ml: 2 }}
+        />
+      </Box>
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={value} onChange={handleChange} aria-label="admin tabs">
@@ -66,11 +86,11 @@ export function AdminDashboard() {
       </Box>
 
       <TabPanel value={value} index={0}>
-        <UserManagement />
+        <UserManagement isReadOnly={isReadOnly} />
       </TabPanel>
 
       <TabPanel value={value} index={1}>
-        <ReferenceDataManagement />
+        <ReferenceDataManagement isReadOnly={isReadOnly} />
       </TabPanel>
     </Box>
   )
