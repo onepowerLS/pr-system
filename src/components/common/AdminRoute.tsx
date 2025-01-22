@@ -3,12 +3,18 @@ import { useSelector } from 'react-redux';
 import { CircularProgress, Box, Typography } from '@mui/material';
 import { RootState } from '../../store';
 
+interface AdminContext {
+  isReadOnly: boolean;
+}
+
 export const AdminRoute = () => {
   const location = useLocation();
   const { user, loading, error } = useSelector((state: RootState) => state.auth);
 
-  // Check if user has admin permissions (level 1-3)
-  const hasAdminAccess = user?.permissionLevel && user.permissionLevel <= 3;
+  // Check if user has admin permissions (level 1-4)
+  const hasAdminAccess = user?.permissionLevel && user.permissionLevel <= 4;
+  // Level 2-4 users have read-only access
+  const isReadOnly = user?.permissionLevel && user.permissionLevel >= 2;
 
   if (loading) {
     return (
@@ -58,5 +64,10 @@ export const AdminRoute = () => {
     );
   }
 
-  return <Outlet />;
+  // Always provide a context value
+  const contextValue: AdminContext = {
+    isReadOnly: isReadOnly
+  };
+
+  return <Outlet context={contextValue} />;
 };

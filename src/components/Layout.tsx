@@ -94,6 +94,11 @@ export const Layout: React.FC = () => {
           <Button color="inherit" onClick={() => navigate('/pr/new')}>
             New PR
           </Button>
+          {user && user.permissionLevel && user.permissionLevel <= 4 && (
+            <Button color="inherit" onClick={() => navigate('/admin')}>
+              Admin Portal
+            </Button>
+          )}
           {user && (
             <div>
               <IconButton
