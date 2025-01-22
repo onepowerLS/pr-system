@@ -310,7 +310,14 @@ function getDisplayFields(type: ReferenceDataType): ReferenceDataField[] {
     case 'permissions':
       return permissionFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     case 'vehicles':
-      return vehicleFields.filter(f => !f.hideInTable).map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
+      return vehicleFields.filter(f => !f.hideInTable).map(field => ({ 
+        ...field, 
+        sx: { 
+          width: '187px',  // 150px * 1.25
+          whiteSpace: 'normal', 
+          wordWrap: 'break-word' 
+        } 
+      }));
     case 'departments':
     case 'sites':
     case 'expenseTypes':
@@ -386,7 +393,7 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
   // Memoize the shouldShowOrgSelect function to prevent unnecessary re-renders
   const shouldShowOrgSelect = useMemo(() => {
     // Show org selector for all users that can access admin portal
-    return user?.permissionLevel === 1 || user?.permissionLevel === 2 || user?.permissionLevel === 4;
+    return user?.permissionLevel === 1 || user?.permissionLevel === 2 || user?.permissionLevel === 3 || user?.permissionLevel === 4;
   }, [user?.permissionLevel]);
 
   const loadOrganizations = useCallback(async () => {
