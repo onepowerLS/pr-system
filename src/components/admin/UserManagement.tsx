@@ -31,7 +31,7 @@ import {
   Switch
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon, Visibility, VisibilityOff, Key as KeyIcon } from '@mui/icons-material';
-import { doc, collection, query, where, getDocs, updateDoc, addDoc, deleteDoc, orderBy } from 'firebase/firestore';
+import { doc, collection, query, where, getDocs, updateDoc, addDoc, deleteDoc, orderBy, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../config/firebase';
 import { User } from '../../types/user';
@@ -70,6 +70,10 @@ interface PasswordDialogProps {
   onClose: () => void;
   onSubmit: (newPassword: string) => void;
   userId: string;
+}
+
+interface UserManagementProps {
+  isReadOnly: boolean;
 }
 
 function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps) {
@@ -118,7 +122,7 @@ function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps
   );
 }
 
-export function UserManagement() {
+export function UserManagement({ isReadOnly }: UserManagementProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [departments, setDepartments] = useState<ReferenceData[]>([]);
@@ -179,6 +183,76 @@ export function UserManagement() {
           level: Number(data.level) // Always convert to number when loading
         });
       });
+      
+      // If no permissions exist, initialize them
+      if (loadedPermissions.length === 0) {
+        console.log('No permissions found, initializing...');
+        const defaultPermissions = [
+          {
+            code: 'ADMIN',
+            name: 'Admin',
+            description: 'Full system access with all administrative privileges',
+            level: 1,
+            actions: ['read', 'write', 'delete', 'approve', 'admin'],
+            scope: ['global'],
+            active: true,
+            createdAt: new Date().toISOString()
+          },
+          {
+            code: 'APPROVER',
+            name: 'Approver',
+            description: 'Can approve requests within assigned organizations',
+            level: 2,
+            actions: ['read', 'write', 'approve'],
+            scope: ['organization'],
+            active: true,
+            createdAt: new Date().toISOString()
+          },
+          {
+            code: 'PROC',
+            name: 'Procurement',
+            description: 'Can manage procurement process and vendor relationships',
+            level: 3,
+            actions: ['read', 'write', 'process'],
+            scope: ['organization'],
+            active: true,
+            createdAt: new Date().toISOString()
+          },
+          {
+            code: 'FIN_AD',
+            name: 'Financial Admin',
+            description: 'Can process financial aspects of procurement requests',
+            level: 4,
+            actions: ['read', 'write', 'process'],
+            scope: ['organization'],
+            active: true,
+            createdAt: new Date().toISOString()
+          },
+          {
+            code: 'REQ',
+            name: 'Requester',
+            description: 'Can create and submit procurement requests',
+            level: 5,
+            actions: ['read', 'write'],
+            scope: ['organization'],
+            active: true,
+            createdAt: new Date().toISOString()
+          }
+        ];
+
+        for (const permission of defaultPermissions) {
+          const docRef = doc(permissionsRef, permission.code.toLowerCase());
+          await setDoc(docRef, {
+            ...permission,
+            updatedAt: new Date().toISOString()
+          });
+          loadedPermissions.push({
+            ...permission,
+            id: permission.code.toLowerCase(),
+            level: Number(permission.level)
+          });
+        }
+      }
       
       // Sort permissions by level
       loadedPermissions.sort((a, b) => Number(a.level) - Number(b.level));
@@ -496,6 +570,11 @@ export function UserManagement() {
     return dept?.name || id;
   };
 
+  const getPermissionName = (level: number): string => {
+    const permission = permissions.find(p => Number(p.level) === level);
+    return permission?.name || `Level ${level}`;
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       {isLoading ? (
@@ -508,22 +587,24 @@ export function UserManagement() {
             <Typography variant="h4" gutterBottom>
               User Management
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button
-                variant="outlined"
-                onClick={() => handleSyncEmails()}
-                disabled={isLoading}
-              >
-                Sync User Emails
-              </Button>
-              <Button
-                variant="contained"
-                onClick={handleAdd}
-                disabled={isLoading}
-              >
-                Add New User
-              </Button>
-            </Box>
+            {!isReadOnly && (
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => handleSyncEmails()}
+                  disabled={isLoading}
+                >
+                  Sync User Emails
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={handleAdd}
+                  disabled={isLoading}
+                >
+                  Add New User
+                </Button>
+              </Box>
+            )}
           </Box>
           <TableContainer component={Paper}>
             <Table>
@@ -531,12 +612,11 @@ export function UserManagement() {
                 <TableRow>
                   <TableCell>Name</TableCell>
                   <TableCell>Email</TableCell>
-                  <TableCell>Department</TableCell>
                   <TableCell>Organization</TableCell>
-                  <TableCell>Additional Organizations</TableCell>
+                  <TableCell>Department</TableCell>
                   <TableCell>Permission Level</TableCell>
-                  <TableCell>Active</TableCell>
-                  <TableCell>Actions</TableCell>
+                  <TableCell>Status</TableCell>
+                  {!isReadOnly && <TableCell>Actions</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -544,53 +624,41 @@ export function UserManagement() {
                   <TableRow key={user.id}>
                     <TableCell>{`${user.firstName} ${user.lastName}`}</TableCell>
                     <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.department}</TableCell>
-                    <TableCell>{getOrganizationName(user.organization || '')}</TableCell>
+                    <TableCell>{getOrganizationName(user.organization)}</TableCell>
+                    <TableCell>{getDepartmentName(user.department)}</TableCell>
+                    <TableCell>{getPermissionName(user.permissionLevel)}</TableCell>
                     <TableCell>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {user.additionalOrganizations?.map((orgId) => (
-                          <Chip 
-                            key={orgId} 
-                            label={getOrganizationName(orgId)}
-                            size="small"
-                          />
-                        ))}
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      {permissions.find(p => Number(p.level) === user.permissionLevel)?.name || `Level ${user.permissionLevel}`}
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={user.isActive !== false}
-                        onChange={async () => {
-                          try {
-                            await handleUserUpdate(user.id, { isActive: !user.isActive });
-                            showSnackbar('User status updated successfully', 'success');
-                          } catch (error) {
-                            console.error('Error updating user status:', error);
-                            showSnackbar('Failed to update user status', 'error');
-                          }
-                        }}
+                      <Chip 
+                        label={user.isActive ? "Active" : "Inactive"}
+                        color={user.isActive ? "success" : "default"}
                       />
                     </TableCell>
-                    <TableCell>
-                      <IconButton onClick={() => handleEdit(user)}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handleDelete(user.id)}>
-                        <DeleteIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handlePasswordDialogOpen(user)}>
-                        <KeyIcon />
-                      </IconButton>
-                    </TableCell>
+                    {!isReadOnly && (
+                      <TableCell>
+                        <IconButton onClick={() => handleEdit(user)}>
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton onClick={() => handlePasswordDialogOpen(user)}>
+                          <KeyIcon />
+                        </IconButton>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
-
+          {!isReadOnly && (
+            <Box sx={{ mt: 2 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => setIsDialogOpen(true)}
+              >
+                Add New User
+              </Button>
+            </Box>
+          )}
           <Dialog open={isDialogOpen} onClose={handleClose}>
             <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
             <DialogContent>
@@ -688,15 +756,15 @@ export function UserManagement() {
                   ))}
                 </Select>
               </FormControl>
-              <FormControl fullWidth margin="dense">
+              <FormControl fullWidth margin="normal">
                 <InputLabel>Permission Level</InputLabel>
                 <Select
-                  value={formData.permissionLevel}
-                  onChange={(e) => setFormData({ ...formData, permissionLevel: Number(e.target.value) })}
+                  value={editingUser?.permissionLevel || ''}
+                  onChange={(e) => setEditingUser(prev => prev ? { ...prev, permissionLevel: Number(e.target.value) } : null)}
                   label="Permission Level"
                 >
                   {permissions.map((permission) => (
-                    <MenuItem key={permission.level} value={permission.level}>
+                    <MenuItem key={permission.id} value={permission.level}>
                       {permission.name}
                     </MenuItem>
                   ))}
