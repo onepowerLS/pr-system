@@ -42,7 +42,8 @@ import {
   orderBy,
   Timestamp,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  arrayUnion
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
@@ -699,6 +700,49 @@ export const prService = {
     } catch (error) {
       console.error('Error getting PR:', JSON.stringify(error, null, 2));
       throw error;
+    }
+  },
+
+  /**
+   * Updates the status of a PR
+   * @param prId PR ID
+   * @param newStatus New status to set
+   * @param notes Optional notes about the status change
+   * @param user User making the change
+   * @returns Promise that resolves when the update is complete
+   */
+  async updatePRStatus(
+    prId: string, 
+    newStatus: PRStatus,
+    notes?: string,
+    user?: User
+  ): Promise<void> {
+    try {
+      const prRef = doc(db, PR_COLLECTION, prId);
+      const now = Timestamp.now();
+      
+      const updateData: any = {
+        status: newStatus,
+        updatedAt: now,
+      };
+
+      // Add to workflow history if notes are provided
+      if (notes) {
+        const historyEntry = {
+          step: newStatus,
+          timestamp: now,
+          notes,
+          user: user || null
+        };
+
+        updateData.workflowHistory = arrayUnion(historyEntry);
+      }
+
+      await updateDoc(prRef, updateData);
+      console.log(`PR ${prId} status updated to ${newStatus}`);
+    } catch (error) {
+      console.error('Error updating PR status:', error);
+      throw new Error('Failed to update PR status');
     }
   }
 };

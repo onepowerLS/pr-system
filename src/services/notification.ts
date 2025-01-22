@@ -30,7 +30,8 @@
  * - Dead letter queue for undeliverable notifications
  */
 
-import { collection, addDoc, Timestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
 import { NotificationLog, NotificationType, StatusChangeNotification } from '../types/notification';
 import { User } from '../types/user';
@@ -89,31 +90,64 @@ class NotificationService {
     user: User,
     notes?: string
   ): Promise<void> {
-    const notification: StatusChangeNotification = {
-      prId,
-      oldStatus,
-      newStatus,
-      changedBy: user,
-      timestamp: new Date()
-    };
-
-    // Only add notes if they exist
-    if (notes) {
-      notification.notes = notes;
-    }
-
-    console.log('Status change notification:', notification);
-
     try {
+      // Get PR data to get PR number and requestor email
+      const prRef = doc(db, 'purchaseRequests', prId);
+      const prDoc = await getDoc(prRef);
+      
+      if (!prDoc.exists()) {
+        throw new Error('PR not found');
+      }
+
+      const prData = prDoc.data();
+      const prNumber = prData.prNumber;
+      const requestorEmail = prData.requestorEmail || prData.requestor?.email;
+
+      if (!requestorEmail) {
+        throw new Error('Requestor email not found');
+      }
+
+      const notification: StatusChangeNotification = {
+        prId,
+        prNumber,
+        oldStatus,
+        newStatus,
+        changedBy: user,
+        timestamp: new Date()
+      };
+
+      // Only add notes if they exist
+      if (notes) {
+        notification.notes = notes;
+      }
+
+      console.log('Status change notification:', notification);
+
       // Log the notification in Firestore
-      await this.logNotification(
+      const notificationId = await this.logNotification(
         'STATUS_CHANGE',
         prId,
-        ['procurement@1pwrafrica.com', user.email], // Include both procurement and user email
+        ['procurement@1pwrafrica.com', requestorEmail], // Include both procurement and requestor email
         'pending'
       );
+
+      // Send email via Cloud Function
+      const functions = getFunctions();
+      const sendEmail = httpsCallable(functions, 'sendStatusChangeEmail');
+      await sendEmail({
+        notification,
+        recipients: ['procurement@1pwrafrica.com', requestorEmail]
+      });
+
+      // Update notification status to sent
+      const notificationRef = collection(db, this.notificationsCollection);
+      await addDoc(notificationRef, {
+        id: notificationId,
+        status: 'sent',
+        sentAt: new Date()
+      });
     } catch (error) {
-      console.error('Error logging notification:', error);
+      console.error('Error handling notification:', error);
       throw error;
     }
   }

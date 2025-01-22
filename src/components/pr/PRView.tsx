@@ -24,11 +24,12 @@ import {
   DialogActions,
 } from '@mui/material';
 import { Edit as EditIcon, ArrowBack as ArrowBackIcon, AttachFile as AttachFileIcon, Download as DownloadIcon, Visibility as VisibilityIcon } from '@mui/icons-material';
-import { RootState } from '../../store';
-import { prService } from '../../services/pr';
-import { PRRequest } from '../../types/pr';
-import { formatCurrency } from '../../utils/formatters';
+import { RootState } from '@/store';
+import { prService } from '@/services/pr';
+import { PRRequest, PRStatus } from '@/types/pr';
+import { formatCurrency } from '@/utils/formatters';
 import mammoth from 'mammoth';
+import { ProcurementActions } from './ProcurementActions';
 
 const FilePreviewDialog: React.FC<{
   open: boolean;
@@ -348,35 +349,106 @@ export function PRView() {
     );
   }
 
-  const canEdit = currentUser?.role === 'ADMIN' || currentUser?.uid === pr.requestorId;
+  const canEdit = currentUser?.permissionLevel === 3 || currentUser?.uid === pr.requestorId;
+  const canProcessPR = currentUser?.permissionLevel === 3 || currentUser?.permissionLevel === 2;
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
-          PR #{pr.prNumber}
+          PR Details: {pr.prNumber}
         </Typography>
-        <Box>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate('/dashboard')}
+            variant="outlined"
+          >
+            Back to Dashboard
+          </Button>
           {canEdit && (
             <Button
               startIcon={<EditIcon />}
+              onClick={() => navigate(`/pr/${pr.id}/edit`)}
               variant="contained"
-              color="primary"
-              onClick={() => navigate(`/pr/${id}/edit`)}
-              sx={{ mr: 2 }}
             >
-              Edit
+              Edit PR
             </Button>
           )}
-          <Button
-            startIcon={<ArrowBackIcon />}
-            variant="outlined"
-            onClick={() => navigate('/dashboard')}
-          >
-            Back
-          </Button>
         </Box>
       </Box>
+
+      {/* Procurement Actions */}
+      {canProcessPR && (
+        <ProcurementActions
+          prId={pr.id}
+          currentStatus={pr.status}
+          requestorEmail={pr.requestorEmail}
+          currentUser={currentUser}
+          onStatusChange={() => {
+            // Refetch PR data
+            setLoading(true);
+            prService.getPR(pr.id)
+              .then(updatedPr => {
+                if (updatedPr) {
+                  setPr(updatedPr);
+                }
+              })
+              .catch(err => {
+                console.error('Error refreshing PR:', err);
+                enqueueSnackbar('Failed to refresh PR data', { variant: 'error' });
+              })
+              .finally(() => setLoading(false));
+          }}
+        />
+      )}
+
+      {/* PR Status */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Status
+        </Typography>
+        <Chip
+          label={PRStatus[pr.status]}
+          color={
+            pr.status === PRStatus.REJECTED
+              ? 'error'
+              : pr.status === PRStatus.REVISION_REQUIRED
+              ? 'warning'
+              : 'primary'
+          }
+          sx={{ fontWeight: 'bold' }}
+        />
+      </Box>
+
+      {/* Workflow History */}
+      {pr.workflowHistory && pr.workflowHistory.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Workflow History
+          </Typography>
+          <Paper sx={{ p: 2 }}>
+            {pr.workflowHistory.map((history, index) => (
+              <Box key={index} sx={{ mb: index !== pr.workflowHistory.length - 1 ? 2 : 0 }}>
+                <Typography variant="subtitle2" color="primary">
+                  {history.timestamp?.toDate().toLocaleString() || 'Unknown Date'} - {PRStatus[history.step]}
+                </Typography>
+                {history.notes && (
+                  <Typography variant="body2" sx={{ mt: 0.5, ml: 2 }}>
+                    {history.notes}
+                  </Typography>
+                )}
+                {history.user && (
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                    By: {history.user.email}
+                  </Typography>
+                )}
+                {index !== pr.workflowHistory.length - 1 && <Divider sx={{ mt: 2 }} />}
+              </Box>
+            ))}
+          </Paper>
+        </Box>
+      )}
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={6}>
@@ -389,7 +461,7 @@ export function PRView() {
               <Grid item xs={6}>
                 <Typography color="textSecondary">Status</Typography>
                 <Chip
-                  label={pr.status || 'UNKNOWN'}
+                  label={PRStatus[pr.status] || 'UNKNOWN'}
                   color={pr.status === 'SUBMITTED' ? 'primary' : 'default'}
                   sx={{ mt: 1 }}
                 />
@@ -552,7 +624,7 @@ export function PRView() {
                             ))}
                           </Box>
                         ) : (
-                          <Typography variant="body2" color="textSecondary">
+                          <Typography variant="body2" color="text.secondary">
                             No attachments
                           </Typography>
                         )}

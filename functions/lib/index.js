@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateUserEmail = exports.createUser = exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.testEmailNotification = exports.sendPRNotification = void 0;
+exports.updateUserEmail = exports.createUser = exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.testEmailNotification = exports.sendStatusChangeEmail = exports.sendPRNotification = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const nodemailer = __importStar(require("nodemailer"));
@@ -199,6 +199,52 @@ exports.sendPRNotification = functions.https.onCall(async (data, context) => {
     catch (error) {
         console.error('Error sending PR notification:', error);
         throw new functions.https.HttpsError('internal', 'Failed to send PR notification');
+    }
+});
+// Function to send status change notification
+exports.sendStatusChangeEmail = functions.https.onCall(async (data, context) => {
+    try {
+        const { notification, recipients } = data;
+        const { prId, prNumber, oldStatus, newStatus, changedBy, notes } = notification;
+        // Create email content
+        const emailContent = {
+            text: `
+                PR Status Change Notification - ${prNumber}
+                
+                Status Changed: ${oldStatus} → ${newStatus}
+                Changed By: ${changedBy.email}
+                Date: ${new Date().toLocaleDateString()}
+                ${notes ? `\nNotes: ${notes}` : ''}
+                
+                Please review the purchase request in the system.
+            `,
+            html: `
+                <h2>PR Status Change Notification - ${prNumber}</h2>
+                <p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
+                <p><strong>Changed By:</strong> ${changedBy.email}</p>
+                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+                
+                <p>Please <a href="${process.env.VITE_APP_URL || 'http://localhost:5173'}/pr/${prId}">click here</a> to review the purchase request in the system.</p>
+            `
+        };
+        // Send email
+        const info = await transporter.sendMail({
+            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
+            to: recipients.join(', '),
+            subject: `PR Status Change - ${prNumber}: ${oldStatus} → ${newStatus}`,
+            text: emailContent.text,
+            html: emailContent.html
+        });
+        console.log('Status change notification sent:', info.messageId);
+        return {
+            success: true,
+            messageId: info.messageId
+        };
+    }
+    catch (error) {
+        console.error('Error sending status change notification:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to send status change notification');
     }
 });
 // Test email function

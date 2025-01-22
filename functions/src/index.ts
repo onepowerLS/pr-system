@@ -168,6 +168,55 @@ export const sendPRNotification = functions.https.onCall(async (data, context) =
     }
 });
 
+// Function to send status change notification
+export const sendStatusChangeEmail = functions.https.onCall(async (data, context) => {
+    try {
+        const { notification, recipients } = data;
+        const { prId, prNumber, oldStatus, newStatus, changedBy, notes } = notification;
+
+        // Create email content
+        const emailContent = {
+            text: `
+                PR Status Change Notification - ${prNumber}
+                
+                Status Changed: ${oldStatus} → ${newStatus}
+                Changed By: ${changedBy.email}
+                Date: ${new Date().toLocaleDateString()}
+                ${notes ? `\nNotes: ${notes}` : ''}
+                
+                Please review the purchase request in the system.
+            `,
+            html: `
+                <h2>PR Status Change Notification - ${prNumber}</h2>
+                <p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
+                <p><strong>Changed By:</strong> ${changedBy.email}</p>
+                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+                
+                <p>Please <a href="${process.env.VITE_APP_URL || 'http://localhost:5173'}/pr/${prId}">click here</a> to review the purchase request in the system.</p>
+            `
+        };
+
+        // Send email
+        const info = await transporter.sendMail({
+            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
+            to: recipients.join(', '),
+            subject: `PR Status Change - ${prNumber}: ${oldStatus} → ${newStatus}`,
+            text: emailContent.text,
+            html: emailContent.html
+        });
+
+        console.log('Status change notification sent:', info.messageId);
+        return {
+            success: true,
+            messageId: info.messageId
+        };
+    } catch (error) {
+        console.error('Error sending status change notification:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to send status change notification');
+    }
+});
+
 // Test email function
 export const testEmailNotification = functions.https.onCall(async (data, context) => {
     try {
