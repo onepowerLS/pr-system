@@ -70,10 +70,12 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <PersistGate loading={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <CircularProgress />
-      </Box>} persistor={persistor}>
-        <SnackbarProvider>
+      <SnackbarProvider maxSnack={3}>
+        <div id="dialog-portal" className="fixed z-50" />
+        <div id="portal-root" />
+        <PersistGate loading={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+          <CircularProgress />
+        </Box>} persistor={persistor}>
           <Router>
             <Routes>
               <Route path="/login" element={
@@ -90,6 +92,7 @@ function App() {
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/pr/new" element={<NewPRForm />} />
                   <Route path="/pr/:id" element={<PRView />} />
+                  <Route path="/pr/:id/edit" element={<PRView />} />
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 </Route>
               </Route>
@@ -101,8 +104,8 @@ function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Router>
-        </SnackbarProvider>
-      </PersistGate>
+        </PersistGate>
+      </SnackbarProvider>
     </ErrorBoundary>
   );
 }

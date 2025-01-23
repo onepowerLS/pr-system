@@ -168,16 +168,29 @@ export interface LineItem {
 export interface Quote {
   /** Unique identifier for the quote */
   id: string;
+  /** Vendor ID */
+  vendorId: string;
   /** Name of the vendor */
   vendorName: string;
-  /** Vendor ID (if applicable) */
-  vendor?: string;
+  /** Date the quote was received */
+  quoteDate: string;
   /** Total amount of the quote */
   amount: number;
   /** Currency of the quote */
   currency: string;
   /** Notes about the quote */
   notes: string;
+  /** Vendor contacts */
+  vendorContacts: {
+    /** Name of the vendor contact */
+    name: string;
+    /** Phone number of the vendor contact */
+    phone: string;
+    /** Email address of the vendor contact */
+    email: string;
+  };
+  /** Attachments for the quote */
+  attachments: Attachment[];
   /** User who submitted the quote */
   submittedBy?: string;
   /** Timestamp when the quote was submitted */

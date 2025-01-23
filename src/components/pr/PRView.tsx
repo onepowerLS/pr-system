@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useSnackbar } from 'notistack';
+import { useDropzone } from 'react-dropzone';
+import { referenceDataService } from '@/services/referenceData';
 import {
   Box,
   Paper,
   Typography,
   Grid,
-  Button,
   Table,
   TableBody,
   TableCell,
@@ -22,14 +23,117 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  TextField,
+  InputAdornment,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormHelperText,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Step,
+  StepLabel,
+  Stepper,
 } from '@mui/material';
-import { Edit as EditIcon, ArrowBack as ArrowBackIcon, AttachFile as AttachFileIcon, Download as DownloadIcon, Visibility as VisibilityIcon } from '@mui/icons-material';
+import { Edit as EditIcon, ArrowBack as ArrowBackIcon, AttachFile as AttachFileIcon, Download as DownloadIcon, Visibility as VisibilityIcon, Save as SaveIcon, Add as AddIcon } from '@mui/icons-material';
 import { RootState } from '@/store';
 import { prService } from '@/services/pr';
 import { PRRequest, PRStatus } from '@/types/pr';
 import { formatCurrency } from '@/utils/formatters';
 import mammoth from 'mammoth';
 import { ProcurementActions } from './ProcurementActions';
+import { QuoteForm } from './QuoteForm';
+import { QuoteList } from './QuoteList';
+import { Button as CustomButton } from '@/components/ui/button';
+import { Card as CustomCard, CardContent as CustomCardContent, CardDescription, CardFooter, CardHeader as CustomCardHeader, CardTitle } from "@/components/ui/card";
+import { PlusIcon, EyeIcon, FileIcon } from 'lucide-react';
+import { QuoteCard } from './QuoteCard';
+
+interface EditablePRFields {
+  department?: string;
+  projectCategory?: string;
+  site?: string;
+  expenseType?: string;
+  vehicle?: string;
+  preferredVendor?: string;
+  estimatedAmount?: number;
+  currency?: string;
+  requiredDate?: string;
+  description?: string;
+}
+
+interface FileUploadProps {
+  onFileSelect: (files: File[]) => void;
+  maxFiles?: number;
+}
+
+const FileUpload: React.FC<FileUploadProps> = ({ 
+  onFileSelect,
+  maxFiles = 5 
+}) => {
+  const acceptedTypes = {
+    'application/pdf': ['.pdf'],
+    'image/jpeg': ['.jpg', '.jpeg'],
+    'image/png': ['.png'],
+    'application/msword': ['.doc'],
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    'application/vnd.ms-excel': ['.xls'],
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+  };
+
+  const { getRootProps, getInputProps, fileRejections } = useDropzone({
+    onDrop: onFileSelect,
+    accept: acceptedTypes,
+    maxFiles,
+    maxSize: 10485760, // 10MB
+    validator: (file: File) => {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      const validExts = Object.values(acceptedTypes).flat();
+      if (!ext || !validExts.includes(`.${ext}`)) {
+        return {
+          code: 'invalid-file-type',
+          message: `File type .${ext} is not supported`
+        };
+      }
+      return null;
+    }
+  });
+
+  return (
+    <Box>
+      <Box {...getRootProps()} sx={{
+        border: '2px dashed #ccc',
+        borderRadius: 2,
+        p: 2,
+        textAlign: 'center',
+        cursor: 'pointer',
+        '&:hover': {
+          borderColor: 'primary.main'
+        }
+      }}>
+        <input {...getInputProps()} />
+        <Typography>
+          Drag & drop files here, or click to select files
+        </Typography>
+        <Typography variant="caption" color="textSecondary">
+          Supported formats: PDF, JPG, PNG, DOC, DOCX, XLS, XLSX (max 10MB)
+        </Typography>
+      </Box>
+      {fileRejections.length > 0 && (
+        <Box sx={{ mt: 1, color: 'error.main' }}>
+          {fileRejections.map(({ file, errors }) => (
+            <Typography key={file.name} variant="caption" component="div">
+              {errors.map(e => e.message).join(', ')}
+            </Typography>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+};
 
 const FilePreviewDialog: React.FC<{
   open: boolean;
@@ -268,22 +372,167 @@ const FilePreviewDialog: React.FC<{
 };
 
 export function PRView() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isEditMode = location.pathname.endsWith('/edit');
   const [pr, setPr] = useState<PRRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editedPR, setEditedPR] = useState<Partial<PRRequest>>({});
+  const [showQuoteForm, setShowQuoteForm] = useState(false);
+  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const currentUser = useSelector((state: RootState) => state.auth.user);
+  const canProcessPR = currentUser?.permissionLevel === 3 || currentUser?.permissionLevel === 2;
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: string } | null>(null);
+  const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
+  const [projectCategories, setProjectCategories] = useState<ReferenceDataItem[]>([]);
+  const [sites, setSites] = useState<ReferenceDataItem[]>([]);
+  const [expenseTypes, setExpenseTypes] = useState<ReferenceDataItem[]>([]);
+  const [vehicles, setVehicles] = useState<ReferenceDataItem[]>([]);
+  const [vendors, setVendors] = useState<ReferenceDataItem[]>([]);
+  const [currencies, setCurrencies] = useState<ReferenceDataItem[]>([]);
+  const [loadingReference, setLoadingReference] = useState(true);
   const { enqueueSnackbar } = useSnackbar();
 
-  // Function to check if file is previewable
-  const isPreviewableFile = (fileName: string): boolean => {
-    const lowerFileName = fileName.toLowerCase();
-    return lowerFileName.match(/\.(jpg|jpeg|png|gif|bmp|webp|pdf|docx|rtf|txt|md|log)$/i) !== null;
+  // Fetch PR data
+  useEffect(() => {
+    const fetchPR = async () => {
+      if (!id) return;
+      try {
+        console.log('Fetching PR with ID:', id);
+        const prData = await prService.getPR(id);
+        if (!prData) {
+          console.error('PR not found');
+          setError('PR not found');
+          return;
+        }
+        console.log('PR data received:', prData);
+        setPr(prData);
+
+        // Load reference data after PR is loaded
+        try {
+          setLoadingReference(true);
+          const [
+            depts,
+            categories,
+            siteList,
+            expenses,
+            vehicleList,
+            vendorList,
+            currencyList,
+          ] = await Promise.all([
+            referenceDataService.getItemsByType('departments', prData.organization),
+            referenceDataService.getItemsByType('projectCategories', prData.organization),
+            referenceDataService.getItemsByType('sites', prData.organization),
+            referenceDataService.getItemsByType('expenseTypes', prData.organization),
+            referenceDataService.getItemsByType('vehicles', prData.organization),
+            referenceDataService.getItemsByType('vendors'),
+            referenceDataService.getItemsByType('currencies'),
+          ]);
+
+          setDepartments(depts);
+          setProjectCategories(categories);
+          setSites(siteList);
+          setExpenseTypes(expenses);
+          setVehicles(vehicleList);
+          setVendors(vendorList);
+          setCurrencies(currencyList);
+        } catch (err) {
+          console.error('Error loading reference data:', err);
+          enqueueSnackbar('Failed to load reference data', { variant: 'error' });
+        } finally {
+          setLoadingReference(false);
+        }
+      } catch (err) {
+        console.error('Error fetching PR:', err);
+        setError('Failed to load PR');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPR();
+  }, [id]);
+
+  // Initialize editedPR when entering edit mode
+  useEffect(() => {
+    if (isEditMode && pr) {
+      setEditedPR({
+        description: pr.description,
+        department: pr.department,
+        projectCategory: pr.projectCategory,
+        site: pr.site,
+        expenseType: pr.expenseType,
+        vehicle: pr.vehicle,
+        estimatedAmount: pr.estimatedAmount,
+        requiredDate: pr.requiredDate,
+        preferredVendor: pr.preferredVendor,
+        comments: pr.comments,
+      });
+    } else {
+      setEditedPR({});
+    }
+  }, [isEditMode, pr]);
+
+  const canEdit = currentUser?.permissionLevel <= 3; // Admin (1), Approver (2), or Procurement (3)
+  const canEditInQueue = pr?.status === PRStatus.IN_QUEUE && (currentUser?.permissionLevel === 1 || currentUser?.permissionLevel === 3);
+  const isReadOnlyField = (fieldName: string) => {
+    if (!canEditInQueue) return true;
+    return ['urgency', 'requestor', 'requiredDate'].includes(fieldName);
   };
 
-  // Function to handle file preview
+  const handleQuoteSubmit = async (quoteData: Partial<Quote>) => {
+    try {
+      if (selectedQuote) {
+        // Update existing quote
+        const updatedQuotes = pr.quotes.map(q => 
+          q.id === selectedQuote.id ? { ...q, ...quoteData } : q
+        );
+        await prService.updatePR(pr.id, { quotes: updatedQuotes });
+        enqueueSnackbar('Quote updated successfully', { variant: 'success' });
+      } else {
+        // Add new quote
+        const newQuote = {
+          id: crypto.randomUUID(),
+          ...quoteData,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const updatedQuotes = [...(pr.quotes || []), newQuote];
+        await prService.updatePR(pr.id, { quotes: updatedQuotes });
+        enqueueSnackbar('Quote added successfully', { variant: 'success' });
+      }
+      handleCloseQuoteForm();
+      refreshPR();
+    } catch (error) {
+      console.error('Error submitting quote:', error);
+      enqueueSnackbar('Error submitting quote', { variant: 'error' });
+    }
+  };
+
+  const handleEditQuote = (quote: Quote) => {
+    setSelectedQuote(quote);
+    setShowQuoteForm(true);
+  };
+
+  const handleDeleteQuote = async (quoteId: string) => {
+    try {
+      const updatedQuotes = pr.quotes.filter(q => q.id !== quoteId);
+      await prService.updatePR(pr.id, { quotes: updatedQuotes });
+      enqueueSnackbar('Quote deleted successfully', { variant: 'success' });
+      refreshPR();
+    } catch (error) {
+      console.error('Error deleting quote:', error);
+      enqueueSnackbar('Error deleting quote', { variant: 'error' });
+    }
+  };
+
+  const handleCloseQuoteForm = () => {
+    setShowQuoteForm(false);
+    setSelectedQuote(null);
+  };
+
   const handleFilePreview = (file: { name: string; url: string; type: string }) => {
     if (!isPreviewableFile(file.name)) {
       const extension = file.name.split('.').pop()?.toUpperCase() || 'This type of';
@@ -299,33 +548,694 @@ export function PRView() {
     }
   };
 
-  useEffect(() => {
-    const fetchPR = async () => {
-      if (!id) return;
-      try {
-        console.log('Fetching PR with ID:', id);
-        const prData = await prService.getPR(id);
-        if (!prData) {
-          console.error('PR not found');
-          setError('PR not found');
-          return;
-        }
-        console.log('PR data received:', prData);
-        setPr(prData);
-      } catch (err) {
-        console.error('Error fetching PR:', err);
-        setError('Failed to load PR');
-      } finally {
-        setLoading(false);
+  const handleFieldChange = (field: keyof EditablePRFields, value: any): void => {
+    setEditedPR(prev => {
+      const newEdits = { ...prev };
+      
+      if (value === '') {
+        delete newEdits[field];
+      } else {
+        newEdits[field] = value;
       }
-    };
+      
+      return newEdits;
+    });
+  };
 
-    fetchPR();
-  }, [id]);
+  const handleCancel = (): void => {
+    setEditedPR({});
+    navigate(`/pr/${id}`);
+  };
 
-  if (loading) {
+  const handleSave = async (): Promise<void> => {
+    if (!pr?.id) {
+      enqueueSnackbar('PR ID is missing', { variant: 'error' });
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      const updatedData = {
+        ...pr,
+        ...editedPR,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Remove any undefined or null values
+      Object.keys(updatedData).forEach(key => {
+        if (updatedData[key] === undefined || updatedData[key] === null) {
+          delete updatedData[key];
+        }
+      });
+
+      await prService.updatePR(pr.id, updatedData);
+      
+      // Fetch the updated PR data
+      const updatedPR = await prService.getPR(pr.id);
+      if (!updatedPR) {
+        throw new Error('Failed to fetch updated PR data');
+      }
+
+      setPr(updatedPR);
+      setEditedPR({});
+      navigate(`/pr/${pr.id}`);
+      enqueueSnackbar('PR updated successfully', { variant: 'success' });
+    } catch (error) {
+      console.error('Error updating PR:', error);
+      enqueueSnackbar(
+        error instanceof Error ? error.message : 'Failed to update PR - please try again',
+        { variant: 'error' }
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShowQuoteForm = () => {
+    console.log('Opening quote form');
+    setShowQuoteForm(true);
+  };
+
+  const refreshPR = async () => {
+    try {
+      setLoading(true);
+      const updatedPR = await prService.getPR(pr.id);
+      if (updatedPR) {
+        setPr(updatedPR);
+      }
+    } catch (err) {
+      console.error('Error refreshing PR:', err);
+      enqueueSnackbar('Failed to refresh PR data', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const canEditRequiredDate = !(currentUser?.role === 'procurement' && pr?.status === PRStatus.IN_QUEUE);
+
+  // Step management
+  const [activeStep, setActiveStep] = useState(0);
+  const steps = ['Basic Information', 'Line Items & Quotes'];
+
+  const handleNext = () => {
+    setActiveStep((prevStep) => prevStep + 1);
+  };
+
+  const handleBack = () => {
+    setActiveStep((prevStep) => prevStep - 1);
+  };
+
+  const renderBasicInformation = () => {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+      <Grid container spacing={2}>
+        {/* Editable Information - Left Side */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Basic Information
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Description"
+                  value={isEditMode ? editedPR.description || pr?.description : pr?.description}
+                  onChange={(e) => handleFieldChange('description', e.target.value)}
+                  disabled={!isEditMode}
+                  multiline
+                  rows={3}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth disabled={!isEditMode}>
+                  <InputLabel>Department</InputLabel>
+                  <Select
+                    value={isEditMode ? (editedPR.department || pr?.department || '') : (pr?.department || '')}
+                    onChange={(e) => handleFieldChange('department', e.target.value)}
+                    label="Department"
+                  >
+                    {departments.map((dept) => (
+                      <MenuItem key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth disabled={!isEditMode}>
+                  <InputLabel>Project Category</InputLabel>
+                  <Select
+                    value={isEditMode ? (editedPR.projectCategory || pr?.projectCategory || '') : (pr?.projectCategory || '')}
+                    onChange={(e) => handleFieldChange('projectCategory', e.target.value)}
+                    label="Project Category"
+                  >
+                    {projectCategories.map((category) => (
+                      <MenuItem key={category.id} value={category.id}>
+                        {category.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth disabled={!isEditMode}>
+                  <InputLabel>Site</InputLabel>
+                  <Select
+                    value={isEditMode ? (editedPR.site || pr?.site || '') : (pr?.site || '')}
+                    onChange={(e) => handleFieldChange('site', e.target.value)}
+                    label="Site"
+                  >
+                    {sites.map((site) => (
+                      <MenuItem key={site.id} value={site.id}>
+                        {site.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth disabled={!isEditMode}>
+                  <InputLabel>Expense Type</InputLabel>
+                  <Select
+                    value={isEditMode ? (editedPR.expenseType || pr?.expenseType || '') : (pr?.expenseType || '')}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const selectedType = expenseTypes.find(type => type.id === value);
+                      const isVehicleExpense = selectedType?.code === '4';
+                      
+                      setEditedPR(prev => ({
+                        ...prev,
+                        expenseType: value,
+                        vehicle: isVehicleExpense ? prev.vehicle : undefined
+                      }));
+                    }}
+                    label="Expense Type"
+                  >
+                    {expenseTypes.map((type) => (
+                      <MenuItem key={type.id} value={type.id}>
+                        {type.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              {(isEditMode ? editedPR.expenseType || pr?.expenseType : pr?.expenseType) === '4' && (
+                <Grid item xs={6}>
+                  <FormControl fullWidth disabled={!isEditMode}>
+                    <InputLabel>Vehicle</InputLabel>
+                    <Select
+                      value={isEditMode ? (editedPR.vehicle || pr?.vehicle || '') : (pr?.vehicle || '')}
+                      onChange={(e) => handleFieldChange('vehicle', e.target.value)}
+                      label="Vehicle"
+                    >
+                      {vehicles.map((vehicle) => (
+                        <MenuItem key={vehicle.id} value={vehicle.id}>
+                          {vehicle.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+              <Grid item xs={6}>
+                <FormControl fullWidth disabled={!isEditMode}>
+                  <InputLabel>Preferred Vendor</InputLabel>
+                  <Select
+                    value={isEditMode ? (editedPR.preferredVendor || pr?.preferredVendor || '') : (pr?.preferredVendor || '')}
+                    onChange={(e) => handleFieldChange('preferredVendor', e.target.value)}
+                    label="Preferred Vendor"
+                  >
+                    {vendors.map((vendor) => (
+                      <MenuItem key={vendor.id} value={vendor.id}>
+                        {vendor.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  label="Estimated Amount"
+                  type="number"
+                  value={isEditMode ? editedPR.estimatedAmount || pr?.estimatedAmount || '' : pr?.estimatedAmount || ''}
+                  onChange={(e) => handleFieldChange('estimatedAmount', parseFloat(e.target.value))}
+                  disabled={!isEditMode}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        {pr?.currency}
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  label="Required Date"
+                  type="date"
+                  value={isEditMode ? editedPR.requiredDate || pr?.requiredDate || '' : pr?.requiredDate || ''}
+                  onChange={(e) => handleFieldChange('requiredDate', e.target.value)}
+                  disabled={!isEditMode || !canEditRequiredDate}
+                  InputLabelProps={{
+                    shrink: true,
+                  }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Comments"
+                  value={isEditMode ? editedPR.comments || pr?.comments : pr?.comments}
+                  onChange={(e) => handleFieldChange('comments', e.target.value)}
+                  disabled={!isEditMode}
+                  multiline
+                  rows={2}
+                />
+              </Grid>
+            </Grid>
+          </Paper>
+        </Grid>
+
+        {/* Additional Information - Right Side */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3, height: '100%' }}>
+            <Typography variant="h6" gutterBottom>
+              Additional Information
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Project Category</Typography>
+                <Typography>
+                  {projectCategories.find(c => c.id === pr.projectCategory)?.name || pr.projectCategory || 'N/A'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Site</Typography>
+                <Typography>
+                  {sites.find(s => s.id === pr.site)?.name || pr.site || 'N/A'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Organization</Typography>
+                <Typography>{pr.organization || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Required Date</Typography>
+                <Typography>
+                  {pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'N/A'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Urgency</Typography>
+                <Chip
+                  label={pr.isUrgent || pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
+                  color={pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'}
+                  size="small"
+                  sx={{ mt: 1 }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Expense Type</Typography>
+                <Typography>
+                  {expenseTypes.find(e => e.id === pr.expenseType)?.name || pr.expenseType || 'N/A'}
+                </Typography>
+              </Grid>
+              {pr.vehicle && (
+                <Grid item xs={6}>
+                  <Typography color="textSecondary">Vehicle</Typography>
+                  <Typography>
+                    {vehicles.find(v => v.id === pr.vehicle)?.name || pr.vehicle || 'N/A'}
+                  </Typography>
+                </Grid>
+              )}
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Created By</Typography>
+                <Typography>{pr.createdBy?.email || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Created Date</Typography>
+                <Typography>
+                  {pr.createdAt ? new Date(pr.createdAt).toLocaleDateString() : 'N/A'}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Last Updated</Typography>
+                <Typography>
+                  {pr.updatedAt ? new Date(pr.updatedAt).toLocaleDateString() : 'N/A'}
+                </Typography>
+              </Grid>
+            </Grid>
+          </Paper>
+        </Grid>
+      </Grid>
+    );
+  };
+
+  const renderLineItems = () => {
+    return (
+      <Grid item xs={12}>
+        <CustomCard className="mt-6">
+          <CustomCardHeader>
+            <CardTitle>Line Items</CardTitle>
+            <CardDescription>Items requested in this purchase request</CardDescription>
+          </CustomCardHeader>
+          <CustomCardContent className="p-6 bg-white rounded-lg shadow-sm">
+            <div className="border rounded-md">
+              <Table>
+                <TableHead className="bg-muted/50">
+                  <TableRow>
+                    <TableHead className="w-[200px] font-semibold">Description</TableHead>
+                    <TableHead className="w-[100px] font-semibold">Quantity</TableHead>
+                    <TableHead className="w-[100px] font-semibold">UOM</TableHead>
+                    <TableHead className="w-[200px] font-semibold">Notes</TableHead>
+                    <TableHead className="font-semibold">Attachments</TableHead>
+                    <TableHead className="w-[150px] text-right font-semibold">Actions</TableHead>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pr.lineItems.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell>{item.quantity}</TableCell>
+                      <TableCell>{item.uom}</TableCell>
+                      <TableCell>{item.notes || 'N/A'}</TableCell>
+                      <TableCell>
+                        {item.attachments && item.attachments.length > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            {item.attachments.map((file, fileIndex) => (
+                              <div 
+                                key={fileIndex} 
+                                className="flex items-center gap-2 bg-muted/50 p-1 rounded"
+                              >
+                                <span className="flex-1 truncate text-sm">
+                                  {file.name}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="flex items-center gap-2"
+                                  onClick={() => handleFilePreview(file)}
+                                >
+                                  <EyeIcon className="h-4 w-4" />
+                                  <span>Preview</span>
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    const link = document.createElement('a');
+                                    link.href = file.url;
+                                    link.setAttribute('download', file.name);
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    link.parentNode?.removeChild(link);
+                                  }}
+                                >
+                                  <DownloadIcon className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">
+                            No attachments
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="flex items-center gap-2"
+                            onClick={() => handleFilePreview(item)}
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                            <span>Preview</span>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = item.url;
+                              link.setAttribute('download', item.name);
+                              document.body.appendChild(link);
+                              link.click();
+                              link.parentNode?.removeChild(link);
+                            }}
+                          >
+                            <DownloadIcon className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CustomCardContent>
+        </CustomCard>
+      </Grid>
+    );
+  };
+
+  const renderQuotes = () => {
+    return (
+      <Grid item xs={12}>
+        <CustomCard className="mt-6">
+          <CustomCardHeader>
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle className="text-xl font-semibold">Quotes</CardTitle>
+                <CardDescription>
+                  {pr.quotes && pr.quotes.length > 0 
+                    ? "Vendor quotes for this purchase request"
+                    : "No quotes added yet"}
+                </CardDescription>
+              </div>
+              {isEditMode && !showQuoteForm && (
+                <Button
+                  className="flex items-center gap-2"
+                  onClick={handleShowQuoteForm}
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Add Quote
+                </Button>
+              )}
+            </div>
+          </CustomCardHeader>
+          <CustomCardContent className="p-6 bg-white rounded-lg shadow-sm">
+            {showQuoteForm && (
+              <QuoteForm
+                onSubmit={handleQuoteSubmit}
+                onCancel={handleCloseQuoteForm}
+                initialData={selectedQuote}
+                vendors={vendors}
+                currencies={currencies}
+              />
+            )}
+            {pr.quotes && pr.quotes.length > 0 && (
+              <div className="border rounded-md mt-4">
+                <Table>
+                  <TableHead className="bg-muted/50">
+                    <TableRow>
+                      <TableHead className="w-[200px] font-semibold">Vendor</TableHead>
+                      <TableHead className="w-[150px] font-semibold">Quote Date</TableHead>
+                      <TableHead className="w-[120px] font-semibold">Amount</TableHead>
+                      <TableHead className="w-[120px] font-semibold">Currency</TableHead>
+                      <TableHead className="font-semibold">Notes</TableHead>
+                      <TableHead className="w-[200px] text-right font-semibold">Actions</TableHead>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {pr.quotes.map((quote) => (
+                      <TableRow key={quote.id}>
+                        <TableCell>{quote.vendorName}</TableCell>
+                        <TableCell>{quote.quoteDate}</TableCell>
+                        <TableCell>{quote.amount}</TableCell>
+                        <TableCell>{quote.currency}</TableCell>
+                        <TableCell>{quote.notes}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            {isEditMode && (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => handleEditQuote(quote)}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => handleDeleteQuote(quote.id)}
+                                >
+                                  Delete
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CustomCardContent>
+        </CustomCard>
+      </Grid>
+    );
+  };
+
+  const renderStepContent = () => {
+    switch (activeStep) {
+      case 0:
+        return renderBasicInformation();
+      case 1:
+        return (
+          <Grid container spacing={2}>
+            {/* Line Items Section */}
+            <Grid item xs={12}>
+              <Paper sx={{ p: 3 }}>
+                <Typography variant="h6" gutterBottom>
+                  Line Items
+                </Typography>
+                <Divider sx={{ mb: 2 }} />
+                <div className="border rounded-md">
+                  <Table>
+                    <TableHead className="bg-muted/50">
+                      <TableRow>
+                        <TableHead className="w-[200px] font-semibold">Description</TableHead>
+                        <TableHead className="w-[100px] font-semibold">Quantity</TableHead>
+                        <TableHead className="w-[100px] font-semibold">UOM</TableHead>
+                        <TableHead className="w-[200px] font-semibold">Notes</TableHead>
+                        <TableHead className="w-[150px] text-right font-semibold">Actions</TableHead>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {pr.lineItems.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{item.description}</TableCell>
+                          <TableCell>{item.quantity}</TableCell>
+                          <TableCell>{item.uom}</TableCell>
+                          <TableCell>{item.notes || 'N/A'}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="flex items-center gap-2"
+                                onClick={() => handleFilePreview(item)}
+                              >
+                                <EyeIcon className="h-4 w-4" />
+                                <span>Preview</span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </Paper>
+            </Grid>
+
+            {/* Quotes Section */}
+            <Grid item xs={12}>
+              <Paper sx={{ p: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">Quotes</Typography>
+                  {isEditMode && !showQuoteForm && (
+                    <Button
+                      variant="contained"
+                      startIcon={<AddIcon />}
+                      onClick={handleShowQuoteForm}
+                    >
+                      Add Quote
+                    </Button>
+                  )}
+                </Box>
+                <Divider sx={{ mb: 2 }} />
+                {showQuoteForm ? (
+                  <QuoteForm
+                    onSubmit={handleQuoteSubmit}
+                    onCancel={handleCloseQuoteForm}
+                    initialData={selectedQuote}
+                    vendors={vendors}
+                    currencies={currencies}
+                  />
+                ) : (
+                  <div className="border rounded-md">
+                    <Table>
+                      <TableHead className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="w-[200px] font-semibold">Vendor</TableHead>
+                          <TableHead className="w-[150px] font-semibold">Quote Date</TableHead>
+                          <TableHead className="w-[120px] font-semibold">Amount</TableHead>
+                          <TableHead className="w-[120px] font-semibold">Currency</TableHead>
+                          <TableHead className="w-[200px] text-right font-semibold">Actions</TableHead>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {pr.quotes?.map((quote) => (
+                          <TableRow key={quote.id}>
+                            <TableCell>{quote.vendorName}</TableCell>
+                            <TableCell>{quote.quoteDate}</TableCell>
+                            <TableCell>{quote.amount}</TableCell>
+                            <TableCell>{quote.currency}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                {isEditMode && (
+                                  <>
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={() => handleEditQuote(quote)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      variant="outlined"
+                                      color="error"
+                                      size="small"
+                                      onClick={() => handleDeleteQuote(quote.id)}
+                                    >
+                                      Delete
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </Paper>
+            </Grid>
+          </Grid>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Show loading state while reference data is loading
+  if (loadingReference || loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <CircularProgress />
       </Box>
     );
@@ -333,27 +1243,15 @@ export function PRView() {
 
   if (error || !pr) {
     return (
-      <Paper sx={{ p: 3, m: 2 }}>
-        <Typography color="error" variant="h6" gutterBottom>
-          {error || 'PR not found'}
-        </Typography>
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate('/dashboard')}
-          variant="outlined"
-          sx={{ mt: 2 }}
-        >
-          Back to Dashboard
-        </Button>
-      </Paper>
+      <Box sx={{ p: 3 }}>
+        <Typography color="error">{error || 'PR not found'}</Typography>
+      </Box>
     );
   }
 
-  const canEdit = currentUser?.permissionLevel === 3 || currentUser?.uid === pr.requestorId;
-  const canProcessPR = currentUser?.permissionLevel === 3 || currentUser?.permissionLevel === 2;
-
   return (
     <Box sx={{ p: 3 }}>
+      {/* Header with Title and Actions */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
           PR Details: {pr.prNumber}
@@ -366,10 +1264,10 @@ export function PRView() {
           >
             Back to Dashboard
           </Button>
-          {canEdit && (
+          {canEdit && !isEditMode && (
             <Button
               startIcon={<EditIcon />}
-              onClick={() => navigate(`/pr/${pr.id}/edit`)}
+              onClick={() => navigate(`/pr/${id}/edit`)}
               variant="contained"
             >
               Edit PR
@@ -380,27 +1278,17 @@ export function PRView() {
 
       {/* Procurement Actions */}
       {canProcessPR && (
-        <ProcurementActions
-          prId={pr.id}
-          currentStatus={pr.status}
-          requestorEmail={pr.requestorEmail}
-          currentUser={currentUser}
-          onStatusChange={() => {
-            // Refetch PR data
-            setLoading(true);
-            prService.getPR(pr.id)
-              .then(updatedPr => {
-                if (updatedPr) {
-                  setPr(updatedPr);
-                }
-              })
-              .catch(err => {
-                console.error('Error refreshing PR:', err);
-                enqueueSnackbar('Failed to refresh PR data', { variant: 'error' });
-              })
-              .finally(() => setLoading(false));
-          }}
-        />
+        <Box sx={{ mb: 3 }}>
+          <ProcurementActions
+            prId={pr.id}
+            currentStatus={pr.status}
+            requestorEmail={pr.requestorEmail}
+            currentUser={currentUser}
+            onStatusChange={async () => {
+              await refreshPR();
+            }}
+          />
+        </Box>
       )}
 
       {/* PR Status */}
@@ -450,234 +1338,46 @@ export function PRView() {
         </Box>
       )}
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Basic Information
-            </Typography>
-            <Divider sx={{ mb: 2 }} />
-            <Grid container spacing={2}>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Status</Typography>
-                <Chip
-                  label={PRStatus[pr.status] || 'UNKNOWN'}
-                  color={pr.status === 'SUBMITTED' ? 'primary' : 'default'}
-                  sx={{ mt: 1 }}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Total Amount</Typography>
-                <Typography variant="h6">
-                  {formatCurrency(pr.estimatedAmount || 0, pr.currency)}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Requestor</Typography>
-                <Typography>{pr.requestor?.name || 'Unknown'}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Department</Typography>
-                <Typography>{pr.department}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Submitted Date</Typography>
-                <Typography>
-                  {new Date(pr.createdAt).toLocaleString()}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Last Updated</Typography>
-                <Typography>
-                  {new Date(pr.updatedAt).toLocaleString()}
-                </Typography>
-              </Grid>
-              <Grid item xs={12}>
-                <Typography color="textSecondary">Description</Typography>
-                <Typography>{pr.description}</Typography>
-              </Grid>
-            </Grid>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Additional Information
-            </Typography>
-            <Divider sx={{ mb: 2 }} />
-            <Grid container spacing={2}>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Project Category</Typography>
-                <Typography>{pr.projectCategory}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Site</Typography>
-                <Typography>{pr.site}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Organization</Typography>
-                <Typography>{pr.organization}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Required Date</Typography>
-                <Typography>
-                  {pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'N/A'}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Urgency</Typography>
-                <Chip
-                  label={pr.isUrgent || pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
-                  color={pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'}
-                  sx={{ mt: 1 }}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Expense Type</Typography>
-                <Typography>{pr.expenseType}</Typography>
-              </Grid>
-              {pr.vehicle && (
-                <Grid item xs={6}>
-                  <Typography color="textSecondary">Vehicle</Typography>
-                  <Typography>{pr.vehicle}</Typography>
-                </Grid>
-              )}
-            </Grid>
-          </Paper>
-        </Grid>
-
-        {pr.lineItems && pr.lineItems.length > 0 && (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Line Items
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Description</TableCell>
-                    <TableCell>Quantity</TableCell>
-                    <TableCell>UOM</TableCell>
-                    <TableCell>Notes</TableCell>
-                    <TableCell>Attachments</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {pr.lineItems.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.description}</TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{item.uom}</TableCell>
-                      <TableCell>{item.notes || 'N/A'}</TableCell>
-                      <TableCell>
-                        {item.attachments && item.attachments.length > 0 ? (
-                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                            {item.attachments.map((file, fileIndex) => (
-                              <Box 
-                                key={fileIndex} 
-                                sx={{ 
-                                  display: 'flex', 
-                                  alignItems: 'center',
-                                  gap: 1,
-                                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                                  padding: '4px 8px',
-                                  borderRadius: '4px'
-                                }}
-                              >
-                                <Typography 
-                                  variant="body2" 
-                                  sx={{ 
-                                    flex: 1,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                  {file.name}
-                                </Typography>
-                                <Tooltip title="Preview">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => handleFilePreview(file)}
-                                  >
-                                    <VisibilityIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="Download">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => {
-                                      const link = document.createElement('a');
-                                      link.href = file.url;
-                                      link.setAttribute('download', file.name);
-                                      document.body.appendChild(link);
-                                      link.click();
-                                      link.parentNode?.removeChild(link);
-                                    }}
-                                  >
-                                    <DownloadIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Box>
-                            ))}
-                          </Box>
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            No attachments
-                          </Typography>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  <TableRow>
-                    <TableCell colSpan={3} align="right">
-                      <Typography variant="subtitle1" fontWeight="bold">
-                        Total Amount
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="subtitle1" fontWeight="bold">
-                        {formatCurrency(pr.estimatedAmount || 0, pr.currency)}
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </Paper>
-          </Grid>
-        )}
-
-        {pr.quotes && pr.quotes.length > 0 && (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Quotes
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Vendor</TableCell>
-                    <TableCell>Amount</TableCell>
-                    <TableCell>Notes</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {pr.quotes.map((quote, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{quote.vendor}</TableCell>
-                      <TableCell>{formatCurrency(quote.amount, pr.currency)}</TableCell>
-                      <TableCell>{quote.notes || 'N/A'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Paper>
-          </Grid>
-        )}
-      </Grid>
+      {/* Main Content */}
+      {isEditMode ? (
+        <>
+          <Box sx={{ width: '100%', mb: 4 }}>
+            <Stepper activeStep={activeStep} alternativeLabel>
+              {steps.map((label) => (
+                <Step key={label}>
+                  <StepLabel>{label}</StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+          </Box>
+          <Box sx={{ mb: 4 }}>
+            {renderStepContent()}
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+            {activeStep > 0 && (
+              <Button onClick={handleBack} variant="outlined">
+                Back
+              </Button>
+            )}
+            {activeStep < steps.length - 1 ? (
+              <Button onClick={handleNext} variant="contained">
+                Next
+              </Button>
+            ) : (
+              <Button onClick={handleSave} variant="contained" color="primary">
+                Save Changes
+              </Button>
+            )}
+          </Box>
+        </>
+      ) : (
+        // View mode content
+        <>
+          {renderBasicInformation()}
+          {renderLineItems()}
+          {renderQuotes()}
+        </>
+      )}
       {previewFile && (
         <FilePreviewDialog
           open={Boolean(previewFile)}

@@ -47,7 +47,7 @@ import {
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
-import { PRRequest, PRStatus, User } from '../types/pr';
+import { PRRequest, PRStatus, User, Quote } from '../types/pr';
 import { notificationService } from './notification';
 import { calculateDaysOpen } from '../utils/formatters';
 import { StorageService } from './storage';
@@ -744,5 +744,107 @@ export const prService = {
       console.error('Error updating PR status:', error);
       throw new Error('Failed to update PR status');
     }
-  }
+  },
+
+  /**
+   * Adds a quote to a PR
+   * @param {string} prId - ID of the PR
+   * @param {Quote} quote - Quote data to add
+   * @returns {Promise<void>}
+   */
+  async addQuote(prId: string, quote: Quote): Promise<void> {
+    try {
+      const prRef = doc(db, PR_COLLECTION, prId);
+      const prDoc = await getDoc(prRef);
+      
+      if (!prDoc.exists()) {
+        throw new Error('PR not found');
+      }
+
+      const pr = prDoc.data() as PRRequest;
+      if (pr.status !== PRStatus.IN_QUEUE) {
+        throw new Error('Quotes can only be added when PR is in queue');
+      }
+
+      await updateDoc(prRef, {
+        quotes: arrayUnion(quote),
+        updatedAt: Timestamp.now(),
+      });
+
+      console.log('Quote added successfully:', { prId, quoteId: quote.id });
+    } catch (error) {
+      console.error('Error adding quote:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Updates a quote in a PR
+   * @param {string} prId - ID of the PR
+   * @param {Quote} quote - Updated quote data
+   * @returns {Promise<void>}
+   */
+  async updateQuote(prId: string, quote: Quote): Promise<void> {
+    try {
+      const prRef = doc(db, PR_COLLECTION, prId);
+      const prDoc = await getDoc(prRef);
+      
+      if (!prDoc.exists()) {
+        throw new Error('PR not found');
+      }
+
+      const pr = prDoc.data() as PRRequest;
+      if (pr.status !== PRStatus.IN_QUEUE) {
+        throw new Error('Quotes can only be modified when PR is in queue');
+      }
+
+      const quotes = pr.quotes || [];
+      const updatedQuotes = quotes.map(q => q.id === quote.id ? quote : q);
+
+      await updateDoc(prRef, {
+        quotes: updatedQuotes,
+        updatedAt: Timestamp.now(),
+      });
+
+      console.log('Quote updated successfully:', { prId, quoteId: quote.id });
+    } catch (error) {
+      console.error('Error updating quote:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deletes a quote from a PR
+   * @param {string} prId - ID of the PR
+   * @param {string} quoteId - ID of the quote to delete
+   * @returns {Promise<void>}
+   */
+  async deleteQuote(prId: string, quoteId: string): Promise<void> {
+    try {
+      const prRef = doc(db, PR_COLLECTION, prId);
+      const prDoc = await getDoc(prRef);
+      
+      if (!prDoc.exists()) {
+        throw new Error('PR not found');
+      }
+
+      const pr = prDoc.data() as PRRequest;
+      if (pr.status !== PRStatus.IN_QUEUE) {
+        throw new Error('Quotes can only be deleted when PR is in queue');
+      }
+
+      const quotes = pr.quotes || [];
+      const updatedQuotes = quotes.filter(q => q.id !== quoteId);
+
+      await updateDoc(prRef, {
+        quotes: updatedQuotes,
+        updatedAt: Timestamp.now(),
+      });
+
+      console.log('Quote deleted successfully:', { prId, quoteId });
+    } catch (error) {
+      console.error('Error deleting quote:', error);
+      throw error;
+    }
+  },
 };
