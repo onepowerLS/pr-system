@@ -876,7 +876,18 @@ export function PRView() {
               )}
               <Grid item xs={6}>
                 <Typography color="textSecondary">Created By</Typography>
-                <Typography>{pr.createdBy?.email || 'N/A'}</Typography>
+                <Typography>
+                  {pr.requestor?.firstName && pr.requestor?.lastName ? (
+                    `${pr.requestor.firstName} ${pr.requestor.lastName}`
+                  ) : (
+                    console.error('PR requestor not found:', {
+                      prId: pr.id,
+                      requestorId: pr.requestorId,
+                      requestorEmail: pr.requestorEmail
+                    }),
+                    <span style={{ color: 'red' }}>Error loading user details</span>
+                  )}
+                </Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Created Date</Typography>
@@ -900,32 +911,32 @@ export function PRView() {
   const renderLineItems = () => {
     return (
       <Grid item xs={12}>
-        <CustomCard className="mt-6">
+        <CustomCard>
           <CustomCardHeader>
             <CardTitle>Line Items</CardTitle>
             <CardDescription>Items requested in this purchase request</CardDescription>
           </CustomCardHeader>
-          <CustomCardContent className="p-6 bg-white rounded-lg shadow-sm">
-            <div className="border rounded-md">
+          <CustomCardContent className="p-6">
+            <div className="bg-white rounded-lg shadow-sm">
               <Table>
-                <TableHead className="bg-muted/50">
+                <TableHead>
                   <TableRow>
-                    <TableHead className="w-[200px] font-semibold">Description</TableHead>
-                    <TableHead className="w-[100px] font-semibold">Quantity</TableHead>
-                    <TableHead className="w-[100px] font-semibold">UOM</TableHead>
-                    <TableHead className="w-[200px] font-semibold">Notes</TableHead>
-                    <TableHead className="font-semibold">Attachments</TableHead>
-                    <TableHead className="w-[150px] text-right font-semibold">Actions</TableHead>
+                    <TableCell className="font-semibold">Description</TableCell>
+                    <TableCell className="font-semibold">Quantity</TableCell>
+                    <TableCell className="font-semibold">UOM</TableCell>
+                    <TableCell className="font-semibold">Notes</TableCell>
+                    <TableCell className="font-semibold">Attachments</TableCell>
+                    <TableCell className="font-semibold text-right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {pr.lineItems.map((item, index) => (
                     <TableRow key={index}>
-                      <TableCell>{item.description}</TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{item.uom}</TableCell>
-                      <TableCell>{item.notes || 'N/A'}</TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">{item.description}</TableCell>
+                      <TableCell className="align-top">{item.quantity}</TableCell>
+                      <TableCell className="align-top">{item.uom}</TableCell>
+                      <TableCell className="align-top">{item.notes || 'N/A'}</TableCell>
+                      <TableCell className="align-top">
                         {item.attachments && item.attachments.length > 0 ? (
                           <div className="flex flex-col gap-1">
                             {item.attachments.map((file, fileIndex) => (
@@ -968,7 +979,7 @@ export function PRView() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="align-top text-right">
                         <div className="flex justify-end gap-2">
                           <Button
                             variant="ghost"

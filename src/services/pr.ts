@@ -666,34 +666,60 @@ export const prService = {
       const docRef = doc(db, PR_COLLECTION, prId);
       const docSnap = await getDoc(docRef);
       
+      let prData = null;
       if (docSnap.exists()) {
         const data = docSnap.data();
-        return {
+        prData = {
           id: docSnap.id,
           ...data,
           createdAt: convertTimestamps(data.createdAt),
           updatedAt: convertTimestamps(data.updatedAt),
           resubmittedAt: convertTimestamps(data.resubmittedAt)
         } as PRRequest;
+      } else {
+        // If not found, try to get PR by PR number
+        const q = query(
+          collection(db, PR_COLLECTION),
+          where('prNumber', '==', prId)
+        );
+        
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const doc = querySnapshot.docs[0];
+          const data = doc.data();
+          prData = {
+            id: doc.id,
+            ...data,
+            createdAt: convertTimestamps(data.createdAt),
+            updatedAt: convertTimestamps(data.updatedAt),
+            resubmittedAt: convertTimestamps(data.resubmittedAt)
+          } as PRRequest;
+        }
       }
 
-      // If not found, try to get PR by PR number
-      const q = query(
-        collection(db, PR_COLLECTION),
-        where('prNumber', '==', prId)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        const doc = querySnapshot.docs[0];
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: convertTimestamps(data.createdAt),
-          updatedAt: convertTimestamps(data.updatedAt),
-          resubmittedAt: convertTimestamps(data.resubmittedAt)
-        } as PRRequest;
+      if (prData) {
+        // Fetch and populate requestor details
+        try {
+          const userDoc = await getDoc(doc(db, 'users', prData.requestorId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            prData.requestor = {
+              id: prData.requestorId,
+              email: userData.email,
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              role: userData.role,
+              organization: userData.organization,
+              isActive: userData.isActive,
+              permissionLevel: userData.permissionLevel
+            };
+          } else {
+            console.error('Requestor not found in users collection:', prData.requestorId);
+          }
+        } catch (error) {
+          console.error('Error fetching requestor details:', error);
+        }
+        return prData;
       }
 
       return null;
