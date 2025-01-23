@@ -1,195 +1,225 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { format } from 'date-fns';
+import * as z from 'zod';
 import {
-  Button,
-  FormControl,
-  FormHelperText,
-  Grid,
-  InputLabel,
-  MenuItem,
-  Select,
   Table,
   TableBody,
   TableCell,
-  TableContainer,
-  TableHead,
   TableRow,
-  Typography,
-} from '@mui/material';
+} from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Quote, ReferenceDataItem } from '@/types/pr';
+import { FileUpload } from '@/components/common/FileUpload';
+import { StorageService } from '@/services/storage';
+import { Typography } from '@/components/ui/typography';
 
-import { Quote } from '@/types/pr';
-import { ReferenceDataItem } from '@/types/referenceData';
-
-const quoteFormSchema = z.object({
-  vendorId: z.string().min(1, 'Vendor is required'),
-  quoteDate: z.string().min(1, 'Quote date is required'),
-  amount: z.number().min(0, 'Amount is required'),
-  currency: z.string().min(1, 'Currency is required'),
+const formSchema = z.object({
+  vendorId: z.string(),
+  quoteDate: z.string(),
+  amount: z.coerce.number().min(0),
+  currency: z.string(),
   notes: z.string().optional(),
 });
 
-type QuoteFormValues = z.infer<typeof quoteFormSchema>;
-
 interface QuoteFormProps {
-  onSubmit: (data: Partial<Quote>) => void;
+  onSubmit: (data: Quote) => void;
   onCancel: () => void;
-  initialData?: Partial<Quote>;
+  initialData?: Quote;
   vendors: ReferenceDataItem[];
   currencies: ReferenceDataItem[];
+  isEditing: boolean;
 }
 
 export function QuoteForm({
   onSubmit,
   onCancel,
   initialData,
-  vendors,
-  currencies,
+  vendors = [],
+  currencies = [],
+  isEditing,
 }: QuoteFormProps) {
-  const form = useForm<QuoteFormValues>({
-    resolver: zodResolver(quoteFormSchema),
-    defaultValues: initialData || {
-      vendorId: '',
-      quoteDate: new Date().toISOString().split('T')[0],
-      amount: 0,
-      currency: '',
-      notes: '',
+  const [attachments, setAttachments] = useState<Array<{
+    id: string;
+    name: string;
+    url: string;
+  }>>(initialData?.attachments || []);
+
+  const form = useForm({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      vendorId: initialData?.vendorId || '',
+      quoteDate: initialData?.quoteDate || new Date().toISOString().split('T')[0],
+      amount: initialData?.amount || 0,
+      currency: initialData?.currency || (currencies[0]?.id || 'LSL'),
+      notes: initialData?.notes || '',
     },
   });
 
-  useEffect(() => {
-    if (initialData) {
-      form.reset(initialData);
-    }
-  }, [initialData, form]);
+  const handleSubmit = async (values: z.infer<typeof formSchema>) => {
+    onSubmit({
+      id: initialData?.id || crypto.randomUUID(),
+      ...values,
+      attachments,
+    });
+  };
 
-  const handleSubmit = async (data: QuoteFormValues) => {
-    try {
-      const selectedVendor = vendors.find(v => v.id === data.vendorId);
-      const quoteData: Partial<Quote> = {
-        ...data,
-        quoteDate: format(new Date(data.quoteDate), 'yyyy-MM-dd'),
-        vendorName: selectedVendor?.name || '',
-        vendorContacts: {
-          name: selectedVendor?.contactName || '',
-          email: selectedVendor?.contactEmail || '',
-          phone: selectedVendor?.contactPhone || '',
-        },
-      };
-      await onSubmit(quoteData);
-      form.reset();
-    } catch (error) {
-      console.error('Error submitting quote:', error);
-    }
+  const handleFileSelect = async (files: File[]) => {
+    const uploadedFiles = await Promise.all(
+      files.map(async (file) => {
+        const { id, url } = await StorageService.uploadToTemp(file);
+        return {
+          id,
+          name: file.name,
+          url,
+        };
+      })
+    );
+
+    setAttachments((prev) => [...prev, ...uploadedFiles]);
+  };
+
+  const handleRemoveFile = async (fileId: string) => {
+    await StorageService.deleteFromTemp(fileId);
+    setAttachments((prev) => prev.filter((file) => file.id !== fileId));
   };
 
   return (
-    <form onSubmit={form.handleSubmit(handleSubmit)}>
-      <TableContainer>
+    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+      <div className="rounded-md border">
         <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Vendor</TableCell>
-              <TableCell>Quote Date</TableCell>
-              <TableCell>Amount</TableCell>
-              <TableCell>Currency</TableCell>
-              <TableCell>Notes</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
           <TableBody>
             <TableRow>
+              <TableCell className="font-medium">Vendor</TableCell>
               <TableCell>
-                <FormControl fullWidth>
-                  <InputLabel>Vendor</InputLabel>
+                <div className="space-y-2">
                   <Select
-                    value={form.watch('vendorId') || ''}
-                    onChange={(e) => form.setValue('vendorId', e.target.value)}
-                    label="Vendor"
+                    onValueChange={(value) => form.setValue('vendorId', value)}
+                    defaultValue={form.watch('vendorId')}
+                    disabled={!isEditing || vendors.length === 0}
                   >
-                    {vendors.map((vendor) => (
-                      <MenuItem key={vendor.id} value={vendor.id}>
-                        {vendor.name}
-                      </MenuItem>
-                    ))}
+                    <SelectTrigger className="w-full bg-white border-input data-[state=active]:bg-white">
+                      <SelectValue placeholder="Select vendor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vendors.length > 0 ? (
+                        vendors.map((vendor) => (
+                          <SelectItem key={vendor.id} value={vendor.id}>
+                            {vendor.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="" disabled>
+                          No vendors available
+                        </SelectItem>
+                      )}
+                    </SelectContent>
                   </Select>
-                  <FormHelperText>{form.formState.errors.vendorId?.message}</FormHelperText>
-                </FormControl>
-              </TableCell>
-              <TableCell>
-                <FormControl fullWidth>
-                  <input
-                    type="date"
-                    value={form.watch('quoteDate') || ''}
-                    onChange={(e) => form.setValue('quoteDate', e.target.value)}
-                  />
-                  <FormHelperText>{form.formState.errors.quoteDate?.message}</FormHelperText>
-                </FormControl>
-              </TableCell>
-              <TableCell>
-                <FormControl fullWidth>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.watch('amount') || 0}
-                    onChange={(e) => form.setValue('amount', parseFloat(e.target.value))}
-                  />
-                  <FormHelperText>{form.formState.errors.amount?.message}</FormHelperText>
-                </FormControl>
-              </TableCell>
-              <TableCell>
-                <FormControl fullWidth>
-                  <InputLabel>Currency</InputLabel>
-                  <Select
-                    value={form.watch('currency') || ''}
-                    onChange={(e) => form.setValue('currency', e.target.value)}
-                    label="Currency"
-                  >
-                    {currencies.map((currency) => (
-                      <MenuItem key={currency.id} value={currency.id}>
-                        {currency.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                  <FormHelperText>{form.formState.errors.currency?.message}</FormHelperText>
-                </FormControl>
-              </TableCell>
-              <TableCell>
-                <FormControl fullWidth>
-                  <input
-                    type="text"
-                    value={form.watch('notes') || ''}
-                    onChange={(e) => form.setValue('notes', e.target.value)}
-                  />
-                  <FormHelperText>{form.formState.errors.notes?.message}</FormHelperText>
-                </FormControl>
-              </TableCell>
-              <TableCell align="right">
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="contained"
-                    size="small"
-                    type="submit"
-                    sx={{ height: '36px' }}
-                  >
-                    Add Quote
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={onCancel}
-                    sx={{ height: '36px' }}
-                  >
-                    Cancel
-                  </Button>
+                  {vendors.length === 0 && (
+                    <p className="text-sm text-destructive">
+                      No vendors available. Please contact your administrator.
+                    </p>
+                  )}
                 </div>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Quote Date</TableCell>
+              <TableCell>
+                <Input
+                  type="date"
+                  {...form.register('quoteDate')}
+                  className="w-full bg-white border-input"
+                  disabled={!isEditing}
+                />
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Amount</TableCell>
+              <TableCell>
+                <Input
+                  type="number"
+                  step="0.01"
+                  {...form.register('amount')}
+                  className="w-full bg-white border-input"
+                  disabled={!isEditing}
+                />
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Currency</TableCell>
+              <TableCell>
+                <div className="space-y-2">
+                  <Select
+                    onValueChange={(value) => form.setValue('currency', value)}
+                    defaultValue={form.watch('currency')}
+                    disabled={!isEditing || currencies.length === 0}
+                  >
+                    <SelectTrigger className="w-full bg-white border-input data-[state=active]:bg-white">
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {currencies.length > 0 ? (
+                        currencies.map((currency) => (
+                          <SelectItem key={currency.id} value={currency.id}>
+                            {currency.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="" disabled>
+                          No currencies available
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {currencies.length === 0 && (
+                    <p className="text-sm text-destructive">
+                      No currencies available. Please contact your administrator.
+                    </p>
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Notes</TableCell>
+              <TableCell>
+                <Input
+                  {...form.register('notes')}
+                  placeholder="Add notes..."
+                  className="w-full bg-white border-input"
+                  disabled={!isEditing}
+                />
               </TableCell>
             </TableRow>
           </TableBody>
         </Table>
-      </TableContainer>
+      </div>
+
+      <div className="space-y-4">
+        <FileUpload
+          onFileSelect={handleFileSelect}
+          onRemove={handleRemoveFile}
+          files={attachments}
+          accept=".pdf,.doc,.docx,.xls,.xlsx"
+          multiple
+        />
+        {isEditing && (
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit">Save</Button>
+          </div>
+        )}
+      </div>
     </form>
   );
 }

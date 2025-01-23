@@ -9,14 +9,7 @@ import {
   Paper,
   Typography,
   Grid,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  CircularProgress,
   Divider,
-  Chip,
   IconButton,
   Tooltip,
   Dialog,
@@ -38,7 +31,24 @@ import {
   StepLabel,
   Stepper,
 } from '@mui/material';
-import { Edit as EditIcon, ArrowBack as ArrowBackIcon, AttachFile as AttachFileIcon, Download as DownloadIcon, Visibility as VisibilityIcon, Save as SaveIcon, Add as AddIcon } from '@mui/icons-material';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHead,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Edit as EditIcon, 
+  ArrowBack as ArrowBackIcon, 
+  Visibility as VisibilityIcon, 
+  Save as SaveIcon, 
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Download as DownloadIcon,
+  AttachFile as AttachFileIcon
+} from '@mui/icons-material';
 import { RootState } from '@/store';
 import { prService } from '@/services/pr';
 import { PRRequest, PRStatus } from '@/types/pr';
@@ -51,6 +61,9 @@ import { Button as CustomButton } from '@/components/ui/button';
 import { Card as CustomCard, CardContent as CustomCardContent, CardDescription, CardFooter, CardHeader as CustomCardHeader, CardTitle } from "@/components/ui/card";
 import { PlusIcon, EyeIcon, FileIcon } from 'lucide-react';
 import { QuoteCard } from './QuoteCard';
+import { StorageService } from '@/services/storage';
+import { CircularProgress, Chip } from '@mui/material';
+import { ReferenceDataItem } from '@/types/pr';
 
 interface EditablePRFields {
   department?: string;
@@ -68,6 +81,24 @@ interface EditablePRFields {
 interface FileUploadProps {
   onFileSelect: (files: File[]) => void;
   maxFiles?: number;
+}
+
+interface LineItem {
+  id: string;
+  description: string;
+  quantity: number;
+  uom: string;
+  unitPrice: number;
+  notes?: string;
+  attachments?: Array<{
+    name: string;
+    url: string;
+  }>;
+}
+
+interface UomOption {
+  code: string;
+  label: string;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({ 
@@ -124,12 +155,12 @@ const FileUpload: React.FC<FileUploadProps> = ({
       </Box>
       {fileRejections.length > 0 && (
         <Box sx={{ mt: 1, color: 'error.main' }}>
-          {fileRejections.map(({ file, errors }) => (
-            <Typography key={file.name} variant="caption" component="div">
-              {errors.map(e => e.message).join(', ')}
-            </Typography>
-          ))}
-        </Box>
+        {fileRejections.map(({ file, errors }) => (
+          <Typography key={file.name} variant="caption" component="div">
+            {errors.map(e => e.message).join(', ')}
+          </Typography>
+        ))}
+      </Box>
       )}
     </Box>
   );
@@ -371,6 +402,30 @@ const FilePreviewDialog: React.FC<{
   );
 };
 
+const UOM_MAPPING = {
+  'EA': 'Each',
+  'KG': 'Kilogram',
+  'BOX': 'Box',
+  'PK': 'Pack',
+  'SET': 'Set',
+  'M': 'Meter',
+  'L': 'Liter',
+  'HR': 'Hour',
+  'DAY': 'Day',
+  'WK': 'Week',
+  'MTH': 'Month',
+  'YR': 'Year',
+  'SVC': 'Service',
+  'JOB': 'Job',
+  'UNIT': 'Unit',
+  'OTH': 'Other'
+} as const;
+
+const UOM_OPTIONS: UomOption[] = Object.entries(UOM_MAPPING).map(([code, label]) => ({
+  code,
+  label
+}));
+
 export function PRView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -382,6 +437,7 @@ export function PRView() {
   const [editedPR, setEditedPR] = useState<Partial<PRRequest>>({});
   const [showQuoteForm, setShowQuoteForm] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
+  const [lineItems, setLineItems] = useState<Array<LineItem>>([]);
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const canProcessPR = currentUser?.permissionLevel === 3 || currentUser?.permissionLevel === 2;
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: string } | null>(null);
@@ -427,17 +483,17 @@ export function PRView() {
             referenceDataService.getItemsByType('sites', prData.organization),
             referenceDataService.getItemsByType('expenseTypes', prData.organization),
             referenceDataService.getItemsByType('vehicles', prData.organization),
-            referenceDataService.getItemsByType('vendors'),
-            referenceDataService.getItemsByType('currencies'),
+            referenceDataService.getVendors(),
+            referenceDataService.getCurrencies()
           ]);
 
-          setDepartments(depts);
-          setProjectCategories(categories);
-          setSites(siteList);
-          setExpenseTypes(expenses);
-          setVehicles(vehicleList);
-          setVendors(vendorList);
-          setCurrencies(currencyList);
+          setDepartments(depts.filter(d => d.active));
+          setProjectCategories(categories.filter(c => c.active));
+          setSites(siteList.filter(s => s.active));
+          setExpenseTypes(expenses.filter(e => e.active));
+          setVehicles(vehicleList.filter(v => v.active));
+          setVendors(vendorList.filter(v => v.active));
+          setCurrencies(currencyList.filter(c => c.active));
         } catch (err) {
           console.error('Error loading reference data:', err);
           enqueueSnackbar('Failed to load reference data', { variant: 'error' });
@@ -454,6 +510,77 @@ export function PRView() {
 
     fetchPR();
   }, [id]);
+
+  useEffect(() => {
+    if (pr?.lineItems) {
+      setLineItems(pr.lineItems);
+    }
+  }, [pr?.lineItems]);
+
+  const handleAddLineItem = (): void => {
+    const newItem: LineItem = {
+      id: crypto.randomUUID(),
+      description: '',
+      quantity: 0,
+      uom: 'EA',
+      notes: '',
+      attachments: []
+    };
+    setLineItems(prevItems => [...prevItems, newItem]);
+  };
+
+  const handleUpdateLineItem = (index: number, updatedItem: LineItem): void => {
+    setLineItems(prevItems => 
+      prevItems.map((item, i) => 
+        i === index ? { ...item, ...updatedItem } : item
+      )
+    );
+  };
+
+  const handleDeleteLineItem = (index: number): void => {
+    setLineItems(prevItems => prevItems.filter((_, i) => i !== index));
+  };
+
+  // Add file upload handler for line items
+  const handleLineItemFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    try {
+      const result = await StorageService.uploadToTempStorage(file);
+      
+      setLineItems(prev => prev.map((item, i) => {
+        if (i === index) {
+          return {
+            ...item,
+            attachments: [
+              ...(item.attachments || []),
+              {
+                name: file.name,
+                url: result.url,
+                path: result.path
+              }
+            ]
+          };
+        }
+        return item;
+      }));
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      enqueueSnackbar('Failed to upload file', { variant: 'error' });
+    }
+  };
+
+  // Remove attachment from line item
+  const handleRemoveLineItemAttachment = (lineItemIndex: number, attachmentIndex: number) => {
+    setLineItems(prev => prev.map((item, i) => 
+      i === lineItemIndex ? {
+        ...item,
+        attachments: (item.attachments || []).filter((_, j) => j !== attachmentIndex)
+      } : item
+    ));
+  };
 
   // Initialize editedPR when entering edit mode
   useEffect(() => {
@@ -482,32 +609,25 @@ export function PRView() {
     return ['urgency', 'requestor', 'requiredDate'].includes(fieldName);
   };
 
-  const handleQuoteSubmit = async (quoteData: Partial<Quote>) => {
+  const handleQuoteSubmit = async (quoteData: Quote) => {
     try {
-      if (selectedQuote) {
-        // Update existing quote
-        const updatedQuotes = pr.quotes.map(q => 
-          q.id === selectedQuote.id ? { ...q, ...quoteData } : q
-        );
-        await prService.updatePR(pr.id, { quotes: updatedQuotes });
-        enqueueSnackbar('Quote updated successfully', { variant: 'success' });
-      } else {
-        // Add new quote
-        const newQuote = {
-          id: crypto.randomUUID(),
-          ...quoteData,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        const updatedQuotes = [...(pr.quotes || []), newQuote];
-        await prService.updatePR(pr.id, { quotes: updatedQuotes });
-        enqueueSnackbar('Quote added successfully', { variant: 'success' });
-      }
-      handleCloseQuoteForm();
-      refreshPR();
+      const updatedQuotes = selectedQuote
+        ? pr?.quotes?.map(q => q.id === selectedQuote.id ? quoteData : q) || []
+        : [...(pr?.quotes || []), quoteData];
+
+      await prService.updatePR(id!, { quotes: updatedQuotes });
+      
+      setPr(prev => prev ? {
+        ...prev,
+        quotes: updatedQuotes
+      } : null);
+      
+      setShowQuoteForm(false);
+      setSelectedQuote(null);
+      enqueueSnackbar('Quote saved successfully', { variant: 'success' });
     } catch (error) {
-      console.error('Error submitting quote:', error);
-      enqueueSnackbar('Error submitting quote', { variant: 'error' });
+      console.error('Error saving quote:', error);
+      enqueueSnackbar('Failed to save quote', { variant: 'error' });
     }
   };
 
@@ -518,33 +638,18 @@ export function PRView() {
 
   const handleDeleteQuote = async (quoteId: string) => {
     try {
-      const updatedQuotes = pr.quotes.filter(q => q.id !== quoteId);
-      await prService.updatePR(pr.id, { quotes: updatedQuotes });
+      const updatedQuotes = pr?.quotes?.filter(q => q.id !== quoteId) || [];
+      await prService.updatePR(id!, { quotes: updatedQuotes });
+      
+      setPr(prev => prev ? {
+        ...prev,
+        quotes: updatedQuotes
+      } : null);
+      
       enqueueSnackbar('Quote deleted successfully', { variant: 'success' });
-      refreshPR();
     } catch (error) {
       console.error('Error deleting quote:', error);
-      enqueueSnackbar('Error deleting quote', { variant: 'error' });
-    }
-  };
-
-  const handleCloseQuoteForm = () => {
-    setShowQuoteForm(false);
-    setSelectedQuote(null);
-  };
-
-  const handleFilePreview = (file: { name: string; url: string; type: string }) => {
-    if (!isPreviewableFile(file.name)) {
-      const extension = file.name.split('.').pop()?.toUpperCase() || 'This type of';
-      enqueueSnackbar(`${extension} files cannot be previewed. Click the download button to save the file.`, {
-        variant: 'info',
-        anchorOrigin: {
-          vertical: 'top',
-          horizontal: 'right',
-        },
-      });
-    } else {
-      setPreviewFile(file);
+      enqueueSnackbar('Failed to delete quote', { variant: 'error' });
     }
   };
 
@@ -636,7 +741,7 @@ export function PRView() {
 
   // Step management
   const [activeStep, setActiveStep] = useState(0);
-  const steps = ['Basic Information', 'Line Items & Quotes'];
+  const steps = ['Basic Information', 'Line Items', 'Quotes'];
 
   const handleNext = () => {
     setActiveStep((prevStep) => prevStep + 1);
@@ -855,7 +960,9 @@ export function PRView() {
                 <Typography color="textSecondary">Urgency</Typography>
                 <Chip
                   label={pr.isUrgent || pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
-                  color={pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'}
+                  color={
+                    pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'
+                  }
                   size="small"
                   sx={{ mt: 1 }}
                 />
@@ -910,201 +1017,178 @@ export function PRView() {
 
   const renderLineItems = () => {
     return (
-      <Grid item xs={12}>
-        <CustomCard>
-          <CustomCardHeader>
-            <CardTitle>Line Items</CardTitle>
-            <CardDescription>Items requested in this purchase request</CardDescription>
-          </CustomCardHeader>
-          <CustomCardContent className="p-6">
-            <div className="bg-white rounded-lg shadow-sm">
+      <Grid container spacing={2}>
+        <Grid item xs={12}>
+          <Paper sx={{ p: 2 }}>
+            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6">Line Items</Typography>
+              {isEditMode && (
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={handleAddLineItem}
+                >
+                  Add Line Item
+                </Button>
+              )}
+            </Box>
+            <Divider sx={{ mb: 2 }} />
+            <div className="w-full overflow-auto">
               <Table>
-                <TableHead>
+                <TableHeader>
                   <TableRow>
-                    <TableCell className="font-semibold">Description</TableCell>
-                    <TableCell className="font-semibold">Quantity</TableCell>
-                    <TableCell className="font-semibold">UOM</TableCell>
-                    <TableCell className="font-semibold">Notes</TableCell>
-                    <TableCell className="font-semibold">Attachments</TableCell>
-                    <TableCell className="font-semibold text-right">Actions</TableCell>
+                    <TableHead>Description</TableHead>
+                    <TableHead align="right">Quantity</TableHead>
+                    <TableHead>UOM</TableHead>
+                    <TableHead>Notes</TableHead>
+                    <TableHead>Attachments</TableHead>
+                    <TableHead align="right">Actions</TableHead>
                   </TableRow>
-                </TableHead>
+                </TableHeader>
                 <TableBody>
-                  {pr.lineItems.map((item, index) => (
+                  {lineItems.map((item, index) => (
                     <TableRow key={index}>
-                      <TableCell className="align-top">{item.description}</TableCell>
-                      <TableCell className="align-top">{item.quantity}</TableCell>
-                      <TableCell className="align-top">{item.uom}</TableCell>
-                      <TableCell className="align-top">{item.notes || 'N/A'}</TableCell>
-                      <TableCell className="align-top">
-                        {item.attachments && item.attachments.length > 0 ? (
-                          <div className="flex flex-col gap-1">
-                            {item.attachments.map((file, fileIndex) => (
-                              <div 
-                                key={fileIndex} 
-                                className="flex items-center gap-2 bg-muted/50 p-1 rounded"
-                              >
-                                <span className="flex-1 truncate text-sm">
-                                  {file.name}
-                                </span>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="flex items-center gap-2"
-                                  onClick={() => handleFilePreview(file)}
-                                >
-                                  <EyeIcon className="h-4 w-4" />
-                                  <span>Preview</span>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    const link = document.createElement('a');
-                                    link.href = file.url;
-                                    link.setAttribute('download', file.name);
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    link.parentNode?.removeChild(link);
-                                  }}
-                                >
-                                  <DownloadIcon className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            No attachments
-                          </span>
-                        )}
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          value={item.description}
+                          onChange={(e) => handleUpdateLineItem(index, { ...item, description: e.target.value })}
+                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                        />
                       </TableCell>
-                      <TableCell className="align-top text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="flex items-center gap-2"
-                            onClick={() => handleFilePreview(item)}
-                          >
-                            <EyeIcon className="h-4 w-4" />
-                            <span>Preview</span>
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              const link = document.createElement('a');
-                              link.href = item.url;
-                              link.setAttribute('download', item.name);
-                              document.body.appendChild(link);
-                              link.click();
-                              link.parentNode?.removeChild(link);
-                            }}
-                          >
-                            <DownloadIcon className="h-4 w-4" />
-                          </Button>
+                      <TableCell align="right">
+                        <TextField
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => handleUpdateLineItem(index, { ...item, quantity: parseFloat(e.target.value) })}
+                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={item.uom}
+                          onChange={(e) => handleUpdateLineItem(index, { ...item, uom: e.target.value })}
+                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                        >
+                          {UOM_OPTIONS.map((option) => (
+                            <MenuItem key={option.code} value={option.code}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          value={item.notes}
+                          onChange={(e) => handleUpdateLineItem(index, { ...item, notes: e.target.value })}
+                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-2">
+                          {item.attachments?.map((file, fileIndex) => (
+                            <div key={fileIndex} className="flex items-center gap-2">
+                              <span className="flex-1 truncate text-sm">{file.name}</span>
+                              <IconButton 
+                                size="small"
+                                onClick={() => handleFilePreview(file)}
+                                title="Preview"
+                              >
+                                <VisibilityIcon />
+                              </IconButton>
+                              <IconButton 
+                                size="small"
+                                onClick={() => handleDownloadAttachment(file)}
+                                title="Download"
+                              >
+                                <DownloadIcon />
+                              </IconButton>
+                              {isEditMode && (
+                                <IconButton 
+                                  size="small"
+                                  onClick={() => handleRemoveLineItemAttachment(index, fileIndex)}
+                                  color="error"
+                                  title="Delete"
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              )}
+                            </div>
+                          ))}
+                          {isEditMode && (
+                            <div>
+                              <input
+                                type="file"
+                                id={`line-item-file-${index}`}
+                                onChange={(e) => handleLineItemFileUpload(e, index)}
+                                style={{ display: 'none' }}
+                                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                              />
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<AttachFileIcon />}
+                                onClick={() => document.getElementById(`line-item-file-${index}`)?.click()}
+                              >
+                                Attach File
+                              </Button>
+                            </div>
+                          )}
                         </div>
+                      </TableCell>
+                      <TableCell align="right">
+                        {(isEditMode || pr?.status === 'IN_QUEUE') && (
+                          <IconButton onClick={() => handleDeleteLineItem(index)} color="error">
+                            <DeleteIcon />
+                          </IconButton>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
-          </CustomCardContent>
-        </CustomCard>
+          </Paper>
+        </Grid>
       </Grid>
     );
   };
 
   const renderQuotes = () => {
+    if (!pr) return null;
+
     return (
-      <Grid item xs={12}>
-        <CustomCard className="mt-6">
-          <CustomCardHeader>
-            <div className="flex justify-between items-center">
-              <div>
-                <CardTitle className="text-xl font-semibold">Quotes</CardTitle>
-                <CardDescription>
-                  {pr.quotes && pr.quotes.length > 0 
-                    ? "Vendor quotes for this purchase request"
-                    : "No quotes added yet"}
-                </CardDescription>
-              </div>
-              {isEditMode && !showQuoteForm && (
+      <Grid container spacing={2}>
+        <Grid item xs={12}>
+          <Paper sx={{ p: 2 }}>
+            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6">Quotes</Typography>
+              {isEditMode && (
                 <Button
-                  className="flex items-center gap-2"
-                  onClick={handleShowQuoteForm}
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setShowQuoteForm(true)}
                 >
-                  <PlusIcon className="h-4 w-4" />
                   Add Quote
                 </Button>
               )}
-            </div>
-          </CustomCardHeader>
-          <CustomCardContent className="p-6 bg-white rounded-lg shadow-sm">
-            {showQuoteForm && (
-              <QuoteForm
-                onSubmit={handleQuoteSubmit}
-                onCancel={handleCloseQuoteForm}
-                initialData={selectedQuote}
-                vendors={vendors}
-                currencies={currencies}
+            </Box>
+            <Divider sx={{ mb: 2 }} />
+            {pr.quotes?.length > 0 ? (
+              <QuoteList 
+                quotes={pr.quotes} 
+                onEdit={handleEditQuote}
+                onDelete={handleDeleteQuote}
+                isEditable={isEditMode}
               />
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                No quotes added yet
+              </Typography>
             )}
-            {pr.quotes && pr.quotes.length > 0 && (
-              <div className="border rounded-md mt-4">
-                <Table>
-                  <TableHead className="bg-muted/50">
-                    <TableRow>
-                      <TableHead className="w-[200px] font-semibold">Vendor</TableHead>
-                      <TableHead className="w-[150px] font-semibold">Quote Date</TableHead>
-                      <TableHead className="w-[120px] font-semibold">Amount</TableHead>
-                      <TableHead className="w-[120px] font-semibold">Currency</TableHead>
-                      <TableHead className="font-semibold">Notes</TableHead>
-                      <TableHead className="w-[200px] text-right font-semibold">Actions</TableHead>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {pr.quotes.map((quote) => (
-                      <TableRow key={quote.id}>
-                        <TableCell>{quote.vendorName}</TableCell>
-                        <TableCell>{quote.quoteDate}</TableCell>
-                        <TableCell>{quote.amount}</TableCell>
-                        <TableCell>{quote.currency}</TableCell>
-                        <TableCell>{quote.notes}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            {isEditMode && (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8"
-                                  onClick={() => handleEditQuote(quote)}
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  className="h-8"
-                                  onClick={() => handleDeleteQuote(quote.id)}
-                                >
-                                  Delete
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CustomCardContent>
-        </CustomCard>
+          </Paper>
+        </Grid>
       </Grid>
     );
   };
@@ -1114,133 +1198,47 @@ export function PRView() {
       case 0:
         return renderBasicInformation();
       case 1:
-        return (
-          <Grid container spacing={2}>
-            {/* Line Items Section */}
-            <Grid item xs={12}>
-              <Paper sx={{ p: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  Line Items
-                </Typography>
-                <Divider sx={{ mb: 2 }} />
-                <div className="border rounded-md">
-                  <Table>
-                    <TableHead className="bg-muted/50">
-                      <TableRow>
-                        <TableHead className="w-[200px] font-semibold">Description</TableHead>
-                        <TableHead className="w-[100px] font-semibold">Quantity</TableHead>
-                        <TableHead className="w-[100px] font-semibold">UOM</TableHead>
-                        <TableHead className="w-[200px] font-semibold">Notes</TableHead>
-                        <TableHead className="w-[150px] text-right font-semibold">Actions</TableHead>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {pr.lineItems.map((item, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{item.description}</TableCell>
-                          <TableCell>{item.quantity}</TableCell>
-                          <TableCell>{item.uom}</TableCell>
-                          <TableCell>{item.notes || 'N/A'}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="flex items-center gap-2"
-                                onClick={() => handleFilePreview(item)}
-                              >
-                                <EyeIcon className="h-4 w-4" />
-                                <span>Preview</span>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </Paper>
-            </Grid>
-
-            {/* Quotes Section */}
-            <Grid item xs={12}>
-              <Paper sx={{ p: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Typography variant="h6">Quotes</Typography>
-                  {isEditMode && !showQuoteForm && (
-                    <Button
-                      variant="contained"
-                      startIcon={<AddIcon />}
-                      onClick={handleShowQuoteForm}
-                    >
-                      Add Quote
-                    </Button>
-                  )}
-                </Box>
-                <Divider sx={{ mb: 2 }} />
-                {showQuoteForm ? (
-                  <QuoteForm
-                    onSubmit={handleQuoteSubmit}
-                    onCancel={handleCloseQuoteForm}
-                    initialData={selectedQuote}
-                    vendors={vendors}
-                    currencies={currencies}
-                  />
-                ) : (
-                  <div className="border rounded-md">
-                    <Table>
-                      <TableHead className="bg-muted/50">
-                        <TableRow>
-                          <TableHead className="w-[200px] font-semibold">Vendor</TableHead>
-                          <TableHead className="w-[150px] font-semibold">Quote Date</TableHead>
-                          <TableHead className="w-[120px] font-semibold">Amount</TableHead>
-                          <TableHead className="w-[120px] font-semibold">Currency</TableHead>
-                          <TableHead className="w-[200px] text-right font-semibold">Actions</TableHead>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {pr.quotes?.map((quote) => (
-                          <TableRow key={quote.id}>
-                            <TableCell>{quote.vendorName}</TableCell>
-                            <TableCell>{quote.quoteDate}</TableCell>
-                            <TableCell>{quote.amount}</TableCell>
-                            <TableCell>{quote.currency}</TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                {isEditMode && (
-                                  <>
-                                    <Button
-                                      variant="outlined"
-                                      size="small"
-                                      onClick={() => handleEditQuote(quote)}
-                                    >
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      variant="outlined"
-                                      color="error"
-                                      size="small"
-                                      onClick={() => handleDeleteQuote(quote.id)}
-                                    >
-                                      Delete
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </Paper>
-            </Grid>
-          </Grid>
-        );
+        return renderLineItems();
+      case 2:
+        return renderQuotes();
       default:
         return null;
     }
+  };
+
+  const renderQuoteDialog = () => {
+    if (!showQuoteForm) return null;
+
+    return (
+      <Dialog 
+        open={true}
+        onClose={() => {
+          setShowQuoteForm(false);
+          setSelectedQuote(null);
+        }}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          {selectedQuote ? 'Edit Quote' : 'Add New Quote'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <QuoteForm
+              onSubmit={handleQuoteSubmit}
+              onCancel={() => {
+                setShowQuoteForm(false);
+                setSelectedQuote(null);
+              }}
+              initialData={selectedQuote}
+              vendors={vendors}
+              currencies={currencies}
+              isEditing={isEditMode}
+            />
+          </Box>
+        </DialogContent>
+      </Dialog>
+    );
   };
 
   // Show loading state while reference data is loading
@@ -1349,53 +1347,70 @@ export function PRView() {
         </Box>
       )}
 
+      {/* Stepper */}
+      {isEditMode && (
+        <Box sx={{ width: '100%', mb: 4 }}>
+          <Stepper activeStep={activeStep} alternativeLabel>
+            {steps.map((label) => (
+              <Step key={label}>
+                <StepLabel>{label}</StepLabel>
+              </Step>
+            ))}
+          </Stepper>
+        </Box>
+      )}
+
       {/* Main Content */}
-      {isEditMode ? (
-        <>
-          <Box sx={{ width: '100%', mb: 4 }}>
-            <Stepper activeStep={activeStep} alternativeLabel>
-              {steps.map((label) => (
-                <Step key={label}>
-                  <StepLabel>{label}</StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-          </Box>
-          <Box sx={{ mb: 4 }}>
-            {renderStepContent()}
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-            {activeStep > 0 && (
-              <Button onClick={handleBack} variant="outlined">
-                Back
-              </Button>
-            )}
-            {activeStep < steps.length - 1 ? (
-              <Button onClick={handleNext} variant="contained">
-                Next
-              </Button>
-            ) : (
-              <Button onClick={handleSave} variant="contained" color="primary">
-                Save Changes
-              </Button>
-            )}
-          </Box>
-        </>
-      ) : (
-        // View mode content
-        <>
-          {renderBasicInformation()}
-          {renderLineItems()}
-          {renderQuotes()}
-        </>
+      <Box sx={{ mb: 4 }}>
+        {isEditMode ? renderStepContent() : (
+          <>
+            {renderBasicInformation()}
+            {renderLineItems()}
+            {renderQuotes()}
+          </>
+        )}
+      </Box>
+
+      {/* Navigation Buttons */}
+      {isEditMode && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          {activeStep > 0 && (
+            <Button onClick={handleBack} variant="outlined">
+              Back
+            </Button>
+          )}
+          {activeStep < steps.length - 1 ? (
+            <Button onClick={handleNext} variant="contained">
+              Next
+            </Button>
+          ) : (
+            <Button onClick={handleSave} variant="contained" color="primary">
+              Save Changes
+            </Button>
+          )}
+        </Box>
       )}
-      {previewFile && (
-        <FilePreviewDialog
-          open={Boolean(previewFile)}
-          onClose={() => setPreviewFile(null)}
-          file={previewFile}
-        />
-      )}
+
+      {/* Dialogs */}
+      {renderQuoteDialog()}
     </Box>
   );
 }
+
+const handleDownloadQuoteAttachment = async (attachment: { name: string; url: string }) => {
+  try {
+    const response = await fetch(attachment.url);
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = attachment.name;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    enqueueSnackbar('Error downloading file', { variant: 'error' });
+  }
+};
