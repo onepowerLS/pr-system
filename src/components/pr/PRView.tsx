@@ -534,7 +534,12 @@ export function PRView() {
 
   useEffect(() => {
     if (pr?.lineItems) {
-      setLineItems(pr.lineItems);
+      // Ensure each line item has an ID
+      const itemsWithIds = pr.lineItems.map(item => ({
+        ...item,
+        id: item.id || crypto.randomUUID(),
+      }));
+      setLineItems(itemsWithIds);
     }
   }, [pr?.lineItems]);
 
@@ -544,6 +549,7 @@ export function PRView() {
       description: '',
       quantity: 0,
       uom: 'EA',
+      unitPrice: 0,
       notes: '',
       attachments: []
     };
@@ -553,7 +559,11 @@ export function PRView() {
   const handleUpdateLineItem = (index: number, updatedItem: LineItem): void => {
     setLineItems(prevItems => 
       prevItems.map((item, i) => 
-        i === index ? { ...item, ...updatedItem } : item
+        i === index ? { 
+          ...item, 
+          ...updatedItem,
+          id: item.id // Preserve the original ID
+        } : item
       )
     );
   };
@@ -575,6 +585,7 @@ export function PRView() {
         if (i === index) {
           return {
             ...item,
+            id: item.id, // Preserve the original ID
             attachments: [
               ...(item.attachments || []),
               {
@@ -702,9 +713,19 @@ export function PRView() {
     try {
       setLoading(true);
       
+      // Ensure line items have IDs and required fields
+      const updatedLineItems = lineItems.map(item => ({
+        ...item,
+        id: item.id || crypto.randomUUID(),
+        quantity: item.quantity || 0,
+        unitPrice: item.unitPrice || 0,
+        attachments: item.attachments || []
+      }));
+      
       const updatedData = {
         ...pr,
         ...editedPR,
+        lineItems: updatedLineItems,
         updatedAt: new Date().toISOString()
       };
 
@@ -1474,20 +1495,29 @@ export function PRView() {
 
       {/* Navigation Buttons */}
       {isEditMode && (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-          {activeStep > 0 && (
-            <Button onClick={handleBack} variant="outlined">
-              Back
-            </Button>
-          )}
-          {activeStep < steps.length - 1 ? (
-            <Button onClick={handleNext} variant="contained">
-              Next
+        <Box sx={{ display: 'flex', flexDirection: 'row', pt: 2 }}>
+          <Button
+            color="inherit"
+            onClick={handleCancel}
+            sx={{ mr: 1 }}
+          >
+            Cancel
+          </Button>
+          <Box sx={{ flex: '1 1 auto' }} />
+          <Button
+            color="inherit"
+            disabled={activeStep === 0}
+            onClick={handleBack}
+            sx={{ mr: 1 }}
+          >
+            Back
+          </Button>
+          {activeStep === steps.length - 1 ? (
+            <Button onClick={handleSave} disabled={loading}>
+              {loading ? <CircularProgress size={24} /> : 'Save'}
             </Button>
           ) : (
-            <Button onClick={handleSave} variant="contained" color="primary">
-              Save Changes
-            </Button>
+            <Button onClick={handleNext}>Next</Button>
           )}
         </Box>
       )}
