@@ -197,7 +197,13 @@ export const Dashboard = () => {
       }))
     });
     
-    const statusPRs = userPRs.filter(pr => {
+    // Add default createdAt if missing
+    const prs = userPRs.map(pr => ({
+      ...pr,
+      createdAt: pr.createdAt || pr.updatedAt || new Date().toISOString()
+    }));
+
+    const statusPRs = prs.filter(pr => {
       console.log('Filtering PR:', {
         id: pr.id,
         status: pr.status,
@@ -389,12 +395,18 @@ export const Dashboard = () => {
                         </TableCell>
                         <TableCell>{pr.description}</TableCell>
                         <TableCell>
-                          {typeof pr.requestor === 'string'
-                            ? pr.requestor
-                            : pr.requestor?.name || ''}
+                          {pr.requestor ? (
+                            typeof pr.requestor === 'string' 
+                              ? pr.requestor
+                              : pr.requestor.firstName && pr.requestor.lastName
+                                ? `${pr.requestor.firstName} ${pr.requestor.lastName}`
+                                : pr.requestor.email || 'Unknown'
+                          ) : 'Unknown'}
                         </TableCell>
                         <TableCell>
-                          {new Date(pr.createdAt).toLocaleDateString()}
+                          {pr.createdAt 
+                            ? new Date(pr.createdAt).toLocaleDateString()
+                            : 'Date not available'}
                         </TableCell>
                         {selectedStatus === PRStatus.SUBMITTED && (
                           <>
