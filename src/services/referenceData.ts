@@ -43,8 +43,33 @@ class ReferenceDataService {
 
   private normalizeOrganizationId(orgId: string | OrganizationData): string {
     if (!orgId) return '';
-    const id = typeof orgId === 'string' ? orgId : orgId.id;
-    return id.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    console.log('Normalizing organization ID:', {
+      input: orgId,
+      type: typeof orgId,
+      isObject: typeof orgId === 'object',
+      hasId: typeof orgId === 'object' && 'id' in orgId
+    });
+    
+    // Handle both string and object cases
+    const rawId = typeof orgId === 'string' ? orgId : orgId.id;
+    
+    // Convert to lowercase and replace any non-alphanumeric chars with underscore
+    const normalized = rawId.toLowerCase()
+      .replace(/[^a-z0-9]/g, '_')
+      .replace(/_+/g, '_')  // Replace multiple underscores with single
+      .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
+    
+    console.log('Normalized organization ID:', {
+      input: rawId,
+      normalized,
+      steps: {
+        lowercase: rawId.toLowerCase(),
+        nonAlpha: rawId.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+        final: normalized
+      }
+    });
+    
+    return normalized;
   }
 
   async getItemsByType(type: string, organization?: string | OrganizationData): Promise<ReferenceData[]> {
@@ -60,13 +85,26 @@ class ReferenceDataService {
       // Only filter by organization for org-dependent types
       if (!ORG_INDEPENDENT_TYPES.includes(type) && organization) {
         const normalizedOrgId = this.normalizeOrganizationId(organization);
-        console.log('Applying organization filter:', { type, organization, normalizedOrgId });
+        console.log('Applying organization filter:', { 
+          type, 
+          organization,
+          normalizedOrgId,
+          isOrgDependent: !ORG_INDEPENDENT_TYPES.includes(type),
+          orgIndependentTypes: ORG_INDEPENDENT_TYPES 
+        });
         
         // Query for both old and new organization field formats
         q = query(
           collectionRef, 
           where('organizationId', '==', normalizedOrgId)
         );
+      } else {
+        console.log('Not applying organization filter:', {
+          type,
+          organization,
+          isOrgDependent: !ORG_INDEPENDENT_TYPES.includes(type),
+          orgIndependentTypes: ORG_INDEPENDENT_TYPES
+        });
       }
 
       const querySnapshot = await getDocs(q);
@@ -120,7 +158,18 @@ class ReferenceDataService {
       const normalizedOrgId = this.normalizeOrganizationId(organization);
       console.log('Using normalized org ID:', normalizedOrgId);
       
-      const q = query(collectionRef, where('organization.id', '==', normalizedOrgId));
+      // Query for departments where organization.id matches
+      const q = query(
+        collectionRef,
+        where('organization.id', '==', normalizedOrgId)
+      );
+      
+      console.log('Executing departments query:', {
+        collection: this.getCollectionName('departments'),
+        normalizedOrgId,
+        query: 'organization.id == ' + normalizedOrgId
+      });
+      
       const querySnapshot = await getDocs(q);
 
       const items = querySnapshot.docs.map(doc => ({
@@ -134,6 +183,7 @@ class ReferenceDataService {
         items: items.map(item => ({
           id: item.id,
           name: item.name,
+          organizationId: item.organizationId,
           organization: item.organization
         }))
       });

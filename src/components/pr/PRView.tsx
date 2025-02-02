@@ -464,11 +464,27 @@ export function PRView() {
           return;
         }
         console.log('PR data received:', prData);
+        console.log('PR department:', prData.department);
+        console.log('PR preferred vendor:', prData.preferredVendor);
+        console.log('PR organization:', prData.organization);
+        console.log('PR requestor:', prData.requestor);
         setPr(prData);
 
         // Load reference data after PR is loaded
         try {
           setLoadingReference(true);
+          const organization = prData.requestor?.organization || prData.organization;
+          console.log('Using organization for reference data:', {
+            organization,
+            fromRequestor: Boolean(prData.requestor?.organization),
+            fromPR: Boolean(prData.organization)
+          });
+
+          if (!organization) {
+            console.error('No organization found in PR data or requestor data');
+            throw new Error('No organization found');
+          }
+
           const [
             depts,
             categories,
@@ -478,14 +494,19 @@ export function PRView() {
             vendorList,
             currencyList,
           ] = await Promise.all([
-            referenceDataService.getItemsByType('departments', prData.organization),
-            referenceDataService.getItemsByType('projectCategories', prData.organization),
-            referenceDataService.getItemsByType('sites', prData.organization),
-            referenceDataService.getItemsByType('expenseTypes', prData.organization),
-            referenceDataService.getItemsByType('vehicles', prData.organization),
+            referenceDataService.getDepartments(organization),
+            referenceDataService.getItemsByType('projectCategories', organization),
+            referenceDataService.getItemsByType('sites', organization),
+            referenceDataService.getItemsByType('expenseTypes', organization),
+            referenceDataService.getItemsByType('vehicles', organization),
             referenceDataService.getVendors(),
             referenceDataService.getCurrencies()
           ]);
+
+          console.log('Loaded reference data:', {
+            departments: depts.map(d => ({ id: d.id, name: d.name })),
+            vendors: vendorList.map(v => ({ id: v.id, name: v.name }))
+          });
 
           setDepartments(depts.filter(d => d.active));
           setProjectCategories(categories.filter(c => c.active));
@@ -780,6 +801,18 @@ export function PRView() {
                     value={isEditMode ? (editedPR.department || pr?.department || '') : (pr?.department || '')}
                     onChange={(e) => handleFieldChange('department', e.target.value)}
                     label="Department"
+                    renderValue={(value) => {
+                      console.log('Rendering department value:', {
+                        value,
+                        departments: departments,
+                        departmentsLength: departments.length,
+                        allDepartmentIds: departments.map(d => d.id),
+                        matchingDept: departments.find(d => d.id === value),
+                        exactMatch: departments.find(d => d.id === value)?.id === value
+                      });
+                      const dept = departments.find(d => d.id === value);
+                      return dept ? dept.name : value;
+                    }}
                   >
                     {departments.map((dept) => (
                       <MenuItem key={dept.id} value={dept.id}>
@@ -796,6 +829,10 @@ export function PRView() {
                     value={isEditMode ? (editedPR.projectCategory || pr?.projectCategory || '') : (pr?.projectCategory || '')}
                     onChange={(e) => handleFieldChange('projectCategory', e.target.value)}
                     label="Project Category"
+                    renderValue={(value) => {
+                      const category = projectCategories.find(c => c.id === value);
+                      return category ? category.name : value;
+                    }}
                   >
                     {projectCategories.map((category) => (
                       <MenuItem key={category.id} value={category.id}>
@@ -812,6 +849,10 @@ export function PRView() {
                     value={isEditMode ? (editedPR.site || pr?.site || '') : (pr?.site || '')}
                     onChange={(e) => handleFieldChange('site', e.target.value)}
                     label="Site"
+                    renderValue={(value) => {
+                      const site = sites.find(s => s.id === value);
+                      return site ? site.name : value;
+                    }}
                   >
                     {sites.map((site) => (
                       <MenuItem key={site.id} value={site.id}>
@@ -838,6 +879,10 @@ export function PRView() {
                       }));
                     }}
                     label="Expense Type"
+                    renderValue={(value) => {
+                      const expenseType = expenseTypes.find(t => t.id === value);
+                      return expenseType ? expenseType.name : value;
+                    }}
                   >
                     {expenseTypes.map((type) => (
                       <MenuItem key={type.id} value={type.id}>
@@ -855,6 +900,10 @@ export function PRView() {
                       value={isEditMode ? (editedPR.vehicle || pr?.vehicle || '') : (pr?.vehicle || '')}
                       onChange={(e) => handleFieldChange('vehicle', e.target.value)}
                       label="Vehicle"
+                      renderValue={(value) => {
+                        const vehicle = vehicles.find(v => v.id === value);
+                        return vehicle ? vehicle.name : value;
+                      }}
                     >
                       {vehicles.map((vehicle) => (
                         <MenuItem key={vehicle.id} value={vehicle.id}>
@@ -872,12 +921,28 @@ export function PRView() {
                     value={isEditMode ? (editedPR.preferredVendor || pr?.preferredVendor || '') : (pr?.preferredVendor || '')}
                     onChange={(e) => handleFieldChange('preferredVendor', e.target.value)}
                     label="Preferred Vendor"
+                    renderValue={(value) => {
+                      console.log('Rendering vendor value:', {
+                        value,
+                        vendors,
+                        matchingVendor: vendors.find(v => v.id === value)
+                      });
+                      const vendor = vendors.find(v => v.id === value);
+                      // If the value is not a valid vendor ID and not empty, show a warning
+                      if (value && !vendor) {
+                        console.warn(`Vendor with ID "${value}" not found in reference data`);
+                        return `${value} (Vendor not found)`;
+                      }
+                      return vendor ? vendor.name : '';
+                    }}
                   >
-                    {vendors.map((vendor) => (
-                      <MenuItem key={vendor.id} value={vendor.id}>
-                        {vendor.name}
-                      </MenuItem>
-                    ))}
+                    {vendors
+                      .filter(vendor => vendor.active && vendor.approved)
+                      .map((vendor) => (
+                        <MenuItem key={vendor.id} value={vendor.id}>
+                          {vendor.name}
+                        </MenuItem>
+                      ))}
                   </Select>
                 </FormControl>
               </Grid>
@@ -1240,6 +1305,42 @@ export function PRView() {
       </Dialog>
     );
   };
+
+  // Load reference data
+  useEffect(() => {
+    if (!pr?.organization) return;
+
+    console.log('Loading reference data with organization:', {
+      organization: pr.organization,
+      normalizedOrg: referenceDataService.normalizeOrganizationId(pr.organization)
+    });
+
+    Promise.all([
+      referenceDataService.getDepartments(pr.organization),
+      referenceDataService.getVendors(pr.organization),
+      referenceDataService.getExpenseTypes(pr.organization),
+      referenceDataService.getProjectCategories(pr.organization),
+      referenceDataService.getVehicles(pr.organization),
+      referenceDataService.getSites(pr.organization),
+    ]).then(([depts, vends, expTypes, projCats, vehs, sites]) => {
+      console.log('Reference data loaded:', {
+        departments: depts,
+        departmentsCount: depts.length,
+        vendors: vends.length,
+        expenseTypes: expTypes.length,
+        projectCategories: projCats.length,
+        vehicles: vehs.length,
+        sites: sites.length
+      });
+
+      setDepartments(depts);
+      setVendors(vends);
+      setExpenseTypes(expTypes);
+      setProjectCategories(projCats);
+      setVehicles(vehs);
+      setSites(sites);
+    });
+  }, [pr?.organization]);
 
   // Show loading state while reference data is loading
   if (loadingReference || loading) {
