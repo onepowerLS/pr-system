@@ -90,8 +90,8 @@ export interface PRRequest {
   requestorEmail: string;
   /** Full user object of requestor */ 
   requestor: User;
-  /** List of user IDs who need to approve */
-  approvers: string[];
+  /** User IDs of approvers for this PR */
+  approvers?: string[];
   /** Individual items being requested */
   lineItems: LineItem[];
   /** Vendor quotes received */

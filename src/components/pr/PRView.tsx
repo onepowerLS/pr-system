@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { useSnackbar } from 'notistack';
+import { useSnackbar } from "notistack";
 import { useDropzone } from 'react-dropzone';
 import { referenceDataService } from '@/services/referenceData';
 import {
@@ -61,9 +61,11 @@ import { Button as CustomButton } from '@/components/ui/button';
 import { Card as CustomCard, CardContent as CustomCardContent, CardDescription, CardFooter, CardHeader as CustomCardHeader, CardTitle } from "@/components/ui/card";
 import { PlusIcon, EyeIcon, FileIcon } from 'lucide-react';
 import { QuoteCard } from './QuoteCard';
-import { StorageService } from '@/services/storage';
-import { CircularProgress, Chip } from '@mui/material';
+import { StorageService } from "@/services/storage";
+import { CircularProgress, Chip } from "@mui/material";
 import { ReferenceDataItem } from '@/types/pr';
+import { db } from "@/config/firebase";
+import { collection, doc, getDoc } from "firebase/firestore";
 
 interface EditablePRFields {
   department?: string;
@@ -449,6 +451,8 @@ export function PRView() {
   const [vendors, setVendors] = useState<ReferenceDataItem[]>([]);
   const [currencies, setCurrencies] = useState<ReferenceDataItem[]>([]);
   const [loadingReference, setLoadingReference] = useState(true);
+  const [approvers, setApprovers] = useState<Array<{id: string; name: string; department: string}>>([]);
+  const [loadingApprovers, setLoadingApprovers] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
 
   // Fetch PR data
@@ -542,6 +546,54 @@ export function PRView() {
       setLineItems(itemsWithIds);
     }
   }, [pr?.lineItems]);
+
+  useEffect(() => {
+    console.log('PR Approvers:', pr?.approvers);
+    
+    if (pr?.approvers?.length) {
+      setLoadingApprovers(true);
+      const loadApprovers = async () => {
+        try {
+          console.log('Loading approvers for:', pr.approvers);
+          
+          const approverDocs = await Promise.all(
+            pr.approvers.map(async id => {
+              console.log('Fetching approver:', id);
+              const userRef = doc(collection(db, 'users'), id);
+              return getDoc(userRef);
+            })
+          );
+          
+          const loadedApprovers = approverDocs
+            .filter(doc => doc.exists())
+            .map(doc => {
+              const data = doc.data();
+              console.log('Approver data:', doc.id, data);
+              return {
+                id: doc.id,
+                name: `${data?.firstName || ''} ${data?.lastName || ''}`.trim(),
+                department: data?.department || 'N/A'
+              };
+            });
+            
+          console.log('Setting approvers:', loadedApprovers);
+          setApprovers(loadedApprovers);
+        } catch (error) {
+          console.error('Error loading approvers:', error);
+          enqueueSnackbar('Error loading approvers', { variant: 'error' });
+          setApprovers([]); // Reset on error
+        } finally {
+          setLoadingApprovers(false);
+        }
+      };
+      
+      loadApprovers();
+    } else {
+      console.log('No approvers to load');
+      setApprovers([]); // Reset approvers when PR has no approvers
+      setLoadingApprovers(false);
+    }
+  }, [pr?.approvers, enqueueSnackbar]);
 
   const handleAddLineItem = (): void => {
     const newItem: LineItem = {
@@ -1021,53 +1073,6 @@ export function PRView() {
             <Divider sx={{ mb: 2 }} />
             <Grid container spacing={2}>
               <Grid item xs={6}>
-                <Typography color="textSecondary">Project Category</Typography>
-                <Typography>
-                  {projectCategories.find(c => c.id === pr.projectCategory)?.name || pr.projectCategory || 'N/A'}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Site</Typography>
-                <Typography>
-                  {sites.find(s => s.id === pr.site)?.name || pr.site || 'N/A'}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Organization</Typography>
-                <Typography>{pr.organization || 'N/A'}</Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Required Date</Typography>
-                <Typography>
-                  {pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'N/A'}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Urgency</Typography>
-                <Chip
-                  label={pr.isUrgent || pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
-                  color={
-                    pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'
-                  }
-                  size="small"
-                  sx={{ mt: 1 }}
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <Typography color="textSecondary">Expense Type</Typography>
-                <Typography>
-                  {expenseTypes.find(e => e.id === pr.expenseType)?.name || pr.expenseType || 'N/A'}
-                </Typography>
-              </Grid>
-              {pr.vehicle && (
-                <Grid item xs={6}>
-                  <Typography color="textSecondary">Vehicle</Typography>
-                  <Typography>
-                    {vehicles.find(v => v.id === pr.vehicle)?.name || pr.vehicle || 'N/A'}
-                  </Typography>
-                </Grid>
-              )}
-              <Grid item xs={6}>
                 <Typography color="textSecondary">Created By</Typography>
                 <Typography>
                   {pr.requestor?.firstName && pr.requestor?.lastName ? (
@@ -1093,6 +1098,41 @@ export function PRView() {
                 <Typography>
                   {pr.updatedAt ? new Date(pr.updatedAt).toLocaleDateString() : 'N/A'}
                 </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Organization</Typography>
+                <Typography>{pr.organization || 'N/A'}</Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography color="textSecondary">Urgency</Typography>
+                <Chip
+                  label={pr.isUrgent || pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
+                  color={
+                    pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'
+                  }
+                  size="small"
+                  sx={{ mt: 1 }}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Typography color="textSecondary">Approvers</Typography>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {loadingApprovers ? (
+                    <CircularProgress size={20} />
+                  ) : approvers.length > 0 ? (
+                    approvers.map((approver) => (
+                      <Chip
+                        key={approver.id}
+                        label={`${approver.name} (${approver.department})`}
+                        size="small"
+                      />
+                    ))
+                  ) : (
+                    <Typography variant="body2" color="textSecondary">
+                      No approvers assigned
+                    </Typography>
+                  )}
+                </div>
               </Grid>
             </Grid>
           </Paper>
