@@ -66,6 +66,7 @@ import { CircularProgress, Chip } from "@mui/material";
 import { ReferenceDataItem } from '@/types/pr';
 import { db } from "@/config/firebase";
 import { collection, doc, getDoc } from "firebase/firestore";
+import { QuotesStep } from './steps/QuotesStep';
 
 interface EditablePRFields {
   department?: string;
@@ -437,7 +438,6 @@ export function PRView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editedPR, setEditedPR] = useState<Partial<PRRequest>>({});
-  const [showQuoteForm, setShowQuoteForm] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [lineItems, setLineItems] = useState<Array<LineItem>>([]);
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -677,6 +677,7 @@ export function PRView() {
         expenseType: pr.expenseType,
         vehicle: pr.vehicle,
         estimatedAmount: pr.estimatedAmount,
+        currency: pr.currency,
         requiredDate: pr.requiredDate,
         preferredVendor: pr.preferredVendor,
         comments: pr.comments,
@@ -706,7 +707,6 @@ export function PRView() {
         quotes: updatedQuotes
       } : null);
       
-      setShowQuoteForm(false);
       setSelectedQuote(null);
       enqueueSnackbar('Quote saved successfully', { variant: 'success' });
     } catch (error) {
@@ -717,7 +717,6 @@ export function PRView() {
 
   const handleEditQuote = (quote: Quote) => {
     setSelectedQuote(quote);
-    setShowQuoteForm(true);
   };
 
   const handleDeleteQuote = async (quoteId: string) => {
@@ -806,26 +805,6 @@ export function PRView() {
         error instanceof Error ? error.message : 'Failed to update PR - please try again',
         { variant: 'error' }
       );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleShowQuoteForm = () => {
-    console.log('Opening quote form');
-    setShowQuoteForm(true);
-  };
-
-  const refreshPR = async () => {
-    try {
-      setLoading(true);
-      const updatedPR = await prService.getPR(pr.id);
-      if (updatedPR) {
-        setPr(updatedPR);
-      }
-    } catch (err) {
-      console.error('Error refreshing PR:', err);
-      enqueueSnackbar('Failed to refresh PR data', { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1287,33 +1266,50 @@ export function PRView() {
     return (
       <Grid container spacing={2}>
         <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">Quotes</Typography>
-              {isEditMode && (
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={() => setShowQuoteForm(true)}
-                >
-                  Add Quote
-                </Button>
-              )}
-            </Box>
-            <Divider sx={{ mb: 2 }} />
-            {pr.quotes?.length > 0 ? (
-              <QuoteList 
-                quotes={pr.quotes} 
-                onEdit={handleEditQuote}
-                onDelete={handleDeleteQuote}
-                isEditable={isEditMode}
-              />
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
-                No quotes added yet
-              </Typography>
-            )}
-          </Paper>
+          <Typography variant="h6">Quotes</Typography>
+          <QuotesStep
+            formState={{ quotes: pr.quotes || [] }}
+            setFormState={async (newState) => {
+              console.log('QuotesStep state update:', newState);
+              
+              // If newState is a function, execute it to get the actual state
+              const resolvedState = typeof newState === 'function' 
+                ? newState({ quotes: pr.quotes || [] })
+                : newState;
+              
+              console.log('Resolved state:', resolvedState);
+              
+              // Update local state first
+              setPr(prev => {
+                if (!prev) return null;
+                return {
+                  ...prev,
+                  quotes: resolvedState.quotes || []
+                };
+              });
+
+              // Then save to server
+              try {
+                if (id) {
+                  await prService.updatePR(id, { quotes: resolvedState.quotes || [] });
+                  console.log('Quotes updated successfully');
+                }
+              } catch (error) {
+                console.error('Error updating quotes:', error);
+                // Revert local state on error
+                setPr(prev => {
+                  if (!prev) return null;
+                  return {
+                    ...prev,
+                    quotes: pr.quotes || []
+                  };
+                });
+              }
+            }}
+            vendors={vendors}
+            currencies={currencies}
+            loading={loading}
+          />
         </Grid>
       </Grid>
     );
@@ -1330,41 +1326,6 @@ export function PRView() {
       default:
         return null;
     }
-  };
-
-  const renderQuoteDialog = () => {
-    if (!showQuoteForm) return null;
-
-    return (
-      <Dialog 
-        open={true}
-        onClose={() => {
-          setShowQuoteForm(false);
-          setSelectedQuote(null);
-        }}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          {selectedQuote ? 'Edit Quote' : 'Add New Quote'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2 }}>
-            <QuoteForm
-              onSubmit={handleQuoteSubmit}
-              onCancel={() => {
-                setShowQuoteForm(false);
-                setSelectedQuote(null);
-              }}
-              initialData={selectedQuote}
-              vendors={vendors}
-              currencies={currencies}
-              isEditing={isEditMode}
-            />
-          </Box>
-        </DialogContent>
-      </Dialog>
-    );
   };
 
   // Load reference data
@@ -1561,9 +1522,6 @@ export function PRView() {
           )}
         </Box>
       )}
-
-      {/* Dialogs */}
-      {renderQuoteDialog()}
     </Box>
   );
 }
