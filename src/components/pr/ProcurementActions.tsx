@@ -90,8 +90,8 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
     }
   };
 
-  // Only show actions if PR is in SUBMITTED status
-  if (currentStatus !== PRStatus.SUBMITTED) {
+  // Only show actions if PR is in SUBMITTED or RESUBMITTED status
+  if (currentStatus !== PRStatus.SUBMITTED && currentStatus !== PRStatus.RESUBMITTED) {
     return null;
   }
 

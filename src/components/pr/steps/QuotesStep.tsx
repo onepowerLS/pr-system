@@ -40,6 +40,7 @@ interface QuotesStepProps {
   vendors: ReferenceDataItem[];
   currencies: ReferenceDataItem[];
   loading: boolean;
+  readOnly?: boolean;
 }
 
 const emptyQuote: Quote = {
@@ -62,30 +63,35 @@ export function QuotesStep({
   vendors,
   currencies,
   loading,
+  readOnly = false,
 }: QuotesStepProps) {
   const [deleteIndex, setDeleteIndex] = React.useState<number | null>(null);
   const quotes = formState.quotes || [];
 
   const handleAddQuote = () => {
-    console.log('Add Quote clicked');
-    const existingQuotes = formState.quotes || [];
-    console.log('Existing quotes:', existingQuotes);
-    const newQuote = { ...emptyQuote, id: crypto.randomUUID() };
-    console.log('New quote:', newQuote);
-    const updatedQuotes = [...existingQuotes, newQuote];
-    console.log('Updated quotes:', updatedQuotes);
-    setFormState({
-      ...formState,
-      quotes: updatedQuotes
-    });
+    if (!readOnly) {
+      console.log('Add Quote clicked');
+      const existingQuotes = formState.quotes || [];
+      console.log('Existing quotes:', existingQuotes);
+      const newQuote = { ...emptyQuote, id: crypto.randomUUID() };
+      console.log('New quote:', newQuote);
+      const updatedQuotes = [...existingQuotes, newQuote];
+      console.log('Updated quotes:', updatedQuotes);
+      setFormState({
+        ...formState,
+        quotes: updatedQuotes
+      });
+    }
   };
 
   const handleRemoveQuote = (index: number) => {
-    setDeleteIndex(index);
+    if (!readOnly) {
+      setDeleteIndex(index);
+    }
   };
 
   const handleConfirmDelete = () => {
-    if (deleteIndex !== null) {
+    if (!readOnly && deleteIndex !== null) {
       setFormState(prev => ({
         ...prev,
         quotes: quotes.filter((_, i) => i !== deleteIndex)
@@ -101,67 +107,29 @@ export function QuotesStep({
   const handleQuoteChange = (index: number, field: keyof Quote) => (
     event: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>
   ) => {
-    console.log('Quote change:', { index, field, value: event.target.value });
-    
-    setFormState(prev => {
-      const prevQuotes = prev.quotes || [];
-      console.log('Previous quotes:', prevQuotes);
-      
-      const value = field === 'amount' ? Number(event.target.value) : event.target.value;
-      const updatedQuotes = prevQuotes.map((quote, i) => {
-        if (i === index) {
-          if (field === 'vendorId' && typeof value === 'string') {
-            const vendor = vendors.find(v => v.id === value);
-            console.log('Selected vendor:', vendor);
-            return {
-              ...quote,
-              [field]: value,
-              vendorName: vendor?.name || ''
-            };
-          }
-          return {
-            ...quote,
-            [field]: value
-          };
-        }
-        return quote;
-      });
-      
-      console.log('Updated quotes:', updatedQuotes);
-      return {
-        ...prev,
-        quotes: updatedQuotes
-      };
-    });
-  };
-
-  const handleFileUpload = async (index: number, files: FileList) => {
-    try {
-      console.log('Uploading files:', files);
-      const uploadedFiles = await Promise.all(
-        Array.from(files).map(async (file) => {
-          const result = await StorageService.uploadToTempStorage(file);
-          console.log('File uploaded:', result);
-          return {
-            name: result.name,
-            url: result.url,
-            id: crypto.randomUUID()
-          };
-        })
-      );
-
-      console.log('All files uploaded:', uploadedFiles);
+    if (!readOnly) {
+      console.log('Quote change:', { index, field, value: event.target.value });
       
       setFormState(prev => {
         const prevQuotes = prev.quotes || [];
+        console.log('Previous quotes:', prevQuotes);
+        
+        const value = field === 'amount' ? Number(event.target.value) : event.target.value;
         const updatedQuotes = prevQuotes.map((quote, i) => {
           if (i === index) {
-            const updatedQuote = {
+            if (field === 'vendorId' && typeof value === 'string') {
+              const vendor = vendors.find(v => v.id === value);
+              console.log('Selected vendor:', vendor);
+              return {
+                ...quote,
+                [field]: value,
+                vendorName: vendor?.name || ''
+              };
+            }
+            return {
               ...quote,
-              attachments: [...(quote.attachments || []), ...uploadedFiles]
+              [field]: value
             };
-            console.log('Updated quote:', updatedQuote);
-            return updatedQuote;
           }
           return quote;
         });
@@ -172,8 +140,50 @@ export function QuotesStep({
           quotes: updatedQuotes
         };
       });
-    } catch (error) {
-      console.error('Error uploading file:', error);
+    }
+  };
+
+  const handleFileUpload = async (index: number, files: FileList) => {
+    if (!readOnly) {
+      try {
+        console.log('Uploading files:', files);
+        const uploadedFiles = await Promise.all(
+          Array.from(files).map(async (file) => {
+            const result = await StorageService.uploadToTempStorage(file);
+            console.log('File uploaded:', result);
+            return {
+              name: result.name,
+              url: result.url,
+              id: crypto.randomUUID()
+            };
+          })
+        );
+
+        console.log('All files uploaded:', uploadedFiles);
+        
+        setFormState(prev => {
+          const prevQuotes = prev.quotes || [];
+          const updatedQuotes = prevQuotes.map((quote, i) => {
+            if (i === index) {
+              const updatedQuote = {
+                ...quote,
+                attachments: [...(quote.attachments || []), ...uploadedFiles]
+              };
+              console.log('Updated quote:', updatedQuote);
+              return updatedQuote;
+            }
+            return quote;
+          });
+          
+          console.log('Updated quotes:', updatedQuotes);
+          return {
+            ...prev,
+            quotes: updatedQuotes
+          };
+        });
+      } catch (error) {
+        console.error('Error uploading file:', error);
+      }
     }
   };
 
@@ -187,7 +197,7 @@ export function QuotesStep({
               <TableCell width="10%">Date</TableCell>
               <TableCell width="15%">Amount</TableCell>
               <TableCell width="10%">Currency</TableCell>
-              <TableCell width="25%">Notes</TableCell>
+              <TableCell width="30%">Notes</TableCell>
               <TableCell width="15%">Attachments</TableCell>
               <TableCell width="5%">Actions</TableCell>
             </TableRow>
@@ -200,7 +210,12 @@ export function QuotesStep({
                     <Select
                       value={quote.vendorId}
                       onChange={handleQuoteChange(index, 'vendorId')}
-                      disabled={loading}
+                      disabled={readOnly}
+                      sx={{ 
+                        '& .MuiSelect-select.Mui-disabled': {
+                          WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                        }
+                      }}
                     >
                       <MenuItem value="">Select Vendor</MenuItem>
                       {vendors.map((vendor) => (
@@ -216,8 +231,12 @@ export function QuotesStep({
                     type="date"
                     value={quote.quoteDate}
                     onChange={handleQuoteChange(index, 'quoteDate')}
-                    disabled={loading}
-                    fullWidth
+                    disabled={readOnly}
+                    sx={{ 
+                      '& .MuiInputBase-input.Mui-disabled': {
+                        WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                      }
+                    }}
                   />
                 </TableCell>
                 <TableCell>
@@ -225,9 +244,14 @@ export function QuotesStep({
                     type="number"
                     value={quote.amount}
                     onChange={handleQuoteChange(index, 'amount')}
-                    disabled={loading}
+                    disabled={readOnly}
                     fullWidth
-                    sx={{ minWidth: '150px' }}
+                    sx={{ 
+                      minWidth: '200px',
+                      '& .MuiInputBase-input.Mui-disabled': {
+                        WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                      }
+                    }}
                     inputProps={{
                       step: '0.01'
                     }}
@@ -238,7 +262,12 @@ export function QuotesStep({
                     <Select
                       value={quote.currency}
                       onChange={handleQuoteChange(index, 'currency')}
-                      disabled={loading}
+                      disabled={readOnly}
+                      sx={{ 
+                        '& .MuiSelect-select.Mui-disabled': {
+                          WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                        }
+                      }}
                     >
                       <MenuItem value="">Select Currency</MenuItem>
                       {currencies.map((currency) => (
@@ -251,21 +280,24 @@ export function QuotesStep({
                 </TableCell>
                 <TableCell>
                   <TextField
-                    value={quote.notes}
-                    onChange={handleQuoteChange(index, 'notes')}
-                    disabled={loading}
                     multiline
                     rows={3}
+                    value={quote.notes}
+                    onChange={handleQuoteChange(index, 'notes')}
+                    disabled={readOnly}
                     fullWidth
-                    sx={{
-                      minWidth: '250px',
+                    sx={{ 
+                      minWidth: '300px',
+                      '& .MuiInputBase-input.Mui-disabled': {
+                        WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                      },
                       '& .MuiInputBase-root': {
                         height: 'auto',
-                        '& textarea': {
-                          overflow: 'auto',
-                          whiteSpace: 'normal',
-                          wordWrap: 'break-word'
-                        }
+                      },
+                      '& .MuiInputBase-input': {
+                        overflow: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        wordWrap: 'break-word'
                       }
                     }}
                   />
@@ -277,14 +309,14 @@ export function QuotesStep({
                     multiple
                     style={{ display: 'none' }}
                     id={`file-upload-${index}`}
-                    disabled={loading}
+                    disabled={readOnly}
                   />
                   <label htmlFor={`file-upload-${index}`}>
                     <Button
                       component="span"
                       variant="outlined"
                       startIcon={<AttachFileIcon />}
-                      disabled={loading}
+                      disabled={readOnly}
                     >
                       Upload
                     </Button>
@@ -306,12 +338,13 @@ export function QuotesStep({
                   )}
                 </TableCell>
                 <TableCell>
-                  <IconButton
-                    onClick={() => setDeleteIndex(index)}
-                    disabled={loading}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    {!readOnly && (
+                      <IconButton onClick={() => handleRemoveQuote(index)} color="error">
+                        <DeleteIcon />
+                      </IconButton>
+                    )}
+                  </Box>
                 </TableCell>
               </TableRow>
             ))}
@@ -320,15 +353,16 @@ export function QuotesStep({
       </TableContainer>
 
       <Box mt={2}>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleAddQuote}
-          startIcon={<AddIcon />}
-          disabled={loading}
-        >
-          Add Quote
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            onClick={handleAddQuote}
+            sx={{ mt: 2 }}
+          >
+            Add Quote
+          </Button>
+        )}
       </Box>
 
       <Dialog open={deleteIndex !== null} onClose={handleCancelDelete}>

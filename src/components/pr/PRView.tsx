@@ -32,23 +32,22 @@ import {
   Stepper,
 } from '@mui/material';
 import {
+  TableContainer,
   Table,
+  TableHead,
   TableBody,
   TableCell,
-  TableHeader,
-  TableHead,
   TableRow,
-} from '@/components/ui/table';
-import {
-  Edit as EditIcon, 
-  ArrowBack as ArrowBackIcon, 
-  Visibility as VisibilityIcon, 
-  Save as SaveIcon, 
-  Add as AddIcon,
-  Delete as DeleteIcon,
-  Download as DownloadIcon,
-  AttachFile as AttachFileIcon
-} from '@mui/icons-material';
+} from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import EditIcon from '@mui/icons-material/Edit';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import SaveIcon from '@mui/icons-material/Save';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import SendIcon from '@mui/icons-material/Send';
 import { RootState } from '@/store';
 import { prService } from '@/services/pr';
 import { PRRequest, PRStatus } from '@/types/pr';
@@ -442,6 +441,7 @@ export function PRView() {
   const [lineItems, setLineItems] = useState<Array<LineItem>>([]);
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const canProcessPR = currentUser?.permissionLevel === 3 || currentUser?.permissionLevel === 2;
+  const canEditInCurrentStatus = pr?.status === PRStatus.SUBMITTED || pr?.status === PRStatus.RESUBMITTED;
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: string } | null>(null);
   const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
   const [projectCategories, setProjectCategories] = useState<ReferenceDataItem[]>([]);
@@ -513,11 +513,11 @@ export function PRView() {
           });
 
           setDepartments(depts.filter(d => d.active));
-          setProjectCategories(categories.filter(c => c.active));
-          setSites(siteList.filter(s => s.active));
-          setExpenseTypes(expenses.filter(e => e.active));
-          setVehicles(vehicleList.filter(v => v.active));
           setVendors(vendorList.filter(v => v.active));
+          setExpenseTypes(expenses.filter(e => e.active));
+          setProjectCategories(categories.filter(c => c.active));
+          setVehicles(vehicleList.filter(v => v.active));
+          setSites(siteList.filter(s => s.active));
           setCurrencies(currencyList.filter(c => c.active));
         } catch (err) {
           console.error('Error loading reference data:', err);
@@ -687,7 +687,9 @@ export function PRView() {
     }
   }, [isEditMode, pr]);
 
-  const canEdit = currentUser?.permissionLevel <= 3; // Admin (1), Approver (2), or Procurement (3)
+  const canEdit = currentUser?.permissionLevel === 1 || // Admin
+    (pr?.status === PRStatus.REVISION_REQUIRED && pr?.requestor?.id === currentUser?.id) || // Requestor in REVISION_REQUIRED
+    (pr?.status !== PRStatus.REVISION_REQUIRED && currentUser?.permissionLevel <= 3); // Others for non-REVISION_REQUIRED
   const canEditInQueue = pr?.status === PRStatus.IN_QUEUE && (currentUser?.permissionLevel === 1 || currentUser?.permissionLevel === 3);
   const isReadOnlyField = (fieldName: string) => {
     if (!canEditInQueue) return true;
@@ -1138,18 +1140,18 @@ export function PRView() {
               )}
             </Box>
             <Divider sx={{ mb: 2 }} />
-            <div className="w-full overflow-auto">
+            <TableContainer>
               <Table>
-                <TableHeader>
+                <TableHead>
                   <TableRow>
-                    <TableHead>Description</TableHead>
-                    <TableHead align="right">Quantity</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead>Attachments</TableHead>
-                    <TableHead align="right">Actions</TableHead>
+                    <TableCell>Description</TableCell>
+                    <TableCell align="right">Quantity</TableCell>
+                    <TableCell>UOM</TableCell>
+                    <TableCell>Notes</TableCell>
+                    <TableCell>Attachments</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                   </TableRow>
-                </TableHeader>
+                </TableHead>
                 <TableBody>
                   {lineItems.map((item, index) => (
                     <TableRow key={index}>
@@ -1158,7 +1160,12 @@ export function PRView() {
                           fullWidth
                           value={item.description}
                           onChange={(e) => handleUpdateLineItem(index, { ...item, description: e.target.value })}
-                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                          disabled={!isEditMode}
+                          sx={{ 
+                            '& .MuiInputBase-input.Mui-disabled': {
+                              WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                            }
+                          }}
                         />
                       </TableCell>
                       <TableCell align="right">
@@ -1166,14 +1173,24 @@ export function PRView() {
                           type="number"
                           value={item.quantity}
                           onChange={(e) => handleUpdateLineItem(index, { ...item, quantity: parseFloat(e.target.value) })}
-                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                          disabled={!isEditMode}
+                          sx={{ 
+                            '& .MuiInputBase-input.Mui-disabled': {
+                              WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                            }
+                          }}
                         />
                       </TableCell>
                       <TableCell>
                         <Select
                           value={item.uom}
                           onChange={(e) => handleUpdateLineItem(index, { ...item, uom: e.target.value })}
-                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                          disabled={!isEditMode}
+                          sx={{ 
+                            '& .MuiSelect-select.Mui-disabled': {
+                              WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                            }
+                          }}
                         >
                           {UOM_OPTIONS.map((option) => (
                             <MenuItem key={option.code} value={option.code}>
@@ -1187,7 +1204,12 @@ export function PRView() {
                           fullWidth
                           value={item.notes}
                           onChange={(e) => handleUpdateLineItem(index, { ...item, notes: e.target.value })}
-                          disabled={!isEditMode && pr?.status !== 'IN_QUEUE'}
+                          disabled={!isEditMode}
+                          sx={{ 
+                            '& .MuiInputBase-input.Mui-disabled': {
+                              WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
+                            }
+                          }}
                         />
                       </TableCell>
                       <TableCell>
@@ -1243,7 +1265,7 @@ export function PRView() {
                         </div>
                       </TableCell>
                       <TableCell align="right">
-                        {(isEditMode || pr?.status === 'IN_QUEUE') && (
+                        {(isEditMode || pr?.status === 'SUBMITTED' || pr?.status === 'RESUBMITTED') && (
                           <IconButton onClick={() => handleDeleteLineItem(index)} color="error">
                             <DeleteIcon />
                           </IconButton>
@@ -1253,7 +1275,7 @@ export function PRView() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </TableContainer>
           </Paper>
         </Grid>
       </Grid>
@@ -1263,6 +1285,9 @@ export function PRView() {
   const renderQuotes = () => {
     if (!pr) return null;
 
+    const canEditQuotes = currentUser?.permissionLevel === 1 || // Admin
+      ((pr.status === PRStatus.SUBMITTED || pr.status === PRStatus.RESUBMITTED) && currentUser?.permissionLevel <= 3); // Procurement for SUBMITTED/RESUBMITTED
+
     return (
       <Grid container spacing={2}>
         <Grid item xs={12}>
@@ -1270,6 +1295,11 @@ export function PRView() {
           <QuotesStep
             formState={{ quotes: pr.quotes || [] }}
             setFormState={async (newState) => {
+              if (!canEditQuotes || !isEditMode) {
+                enqueueSnackbar('You cannot edit quotes when not in edit mode', { variant: 'error' });
+                return;
+              }
+              
               console.log('QuotesStep state update:', newState);
               
               // If newState is a function, execute it to get the actual state
@@ -1309,6 +1339,7 @@ export function PRView() {
             vendors={vendors}
             currencies={currencies}
             loading={loading}
+            readOnly={!isEditMode}
           />
         </Grid>
       </Grid>
@@ -1355,12 +1386,12 @@ export function PRView() {
         sites: sites.length
       });
 
-      setDepartments(depts);
-      setVendors(vends);
-      setExpenseTypes(expTypes);
-      setProjectCategories(projCats);
-      setVehicles(vehs);
-      setSites(sites);
+      setDepartments(depts.filter(d => d.active));
+      setVendors(vends.filter(v => v.active));
+      setExpenseTypes(expTypes.filter(e => e.active));
+      setProjectCategories(projCats.filter(c => c.active));
+      setVehicles(vehs.filter(v => v.active));
+      setSites(sites.filter(s => s.active));
     });
   }, [pr?.organization]);
 
@@ -1380,6 +1411,22 @@ export function PRView() {
       </Box>
     );
   }
+
+  const handleResubmit = async () => {
+    if (!pr || !currentUser) return;
+
+    try {
+      setLoading(true);
+      await prService.updatePRStatus(pr.id, PRStatus.RESUBMITTED, 'PR resubmitted after revisions', currentUser);
+      enqueueSnackbar('PR resubmitted successfully', { variant: 'success' });
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Error resubmitting PR:', error);
+      enqueueSnackbar('Failed to resubmit PR', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -1403,6 +1450,17 @@ export function PRView() {
               variant="contained"
             >
               Edit PR
+            </Button>
+          )}
+          {pr.status === PRStatus.REVISION_REQUIRED && pr.requestor?.id === currentUser?.id && (
+            <Button
+              startIcon={<SendIcon />}
+              onClick={handleResubmit}
+              variant="contained"
+              color="primary"
+              disabled={loading}
+            >
+              Resubmit PR
             </Button>
           )}
         </Box>
