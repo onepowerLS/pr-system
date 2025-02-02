@@ -210,7 +210,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               </Typography>
             )}
             <Typography variant="body1">
-              <strong>Preferred Vendor:</strong> {getDisplayName(formState.preferredVendor)}
+              <strong>Preferred Vendor:</strong> {getVendorName() || 'Not specified'}
             </Typography>
             <Typography variant="body1">
               <strong>Currency:</strong> {formState.currency}
