@@ -33,6 +33,8 @@ import { UploadedFile } from '../services/storage';
 export enum PRStatus {
   /** Initial state when PR is first created */
   SUBMITTED = 'SUBMITTED',
+  /** PR has been resubmitted after revision */
+  RESUBMITTED = 'RESUBMITTED',
   /** PR is in procurement queue for processing */
   IN_QUEUE = 'IN_QUEUE',
   /** Awaiting approval from designated approvers */
@@ -180,15 +182,12 @@ export interface Quote {
   currency: string;
   /** Notes about the quote */
   notes: string;
-  /** Vendor contacts */
-  vendorContacts: {
-    /** Name of the vendor contact */
-    name: string;
-    /** Phone number of the vendor contact */
-    phone: string;
-    /** Email address of the vendor contact */
-    email: string;
-  };
+  /** Contact name of the vendor */
+  contactName: string;
+  /** Contact phone number of the vendor */
+  contactPhone: string;
+  /** Contact email of the vendor */
+  contactEmail: string;
   /** Attachments for the quote */
   attachments: Attachment[];
   /** User who submitted the quote */

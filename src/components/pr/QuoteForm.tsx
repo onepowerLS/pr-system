@@ -3,30 +3,25 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import {
+  Box,
+  Button,
+  FormControl,
+  FormHelperText,
+  Grid,
+  InputLabel,
+  MenuItem,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
+  TextField,
+  Typography,
+} from '@mui/material';
 import { Quote, ReferenceDataItem } from '@/types/pr';
-import { FileUpload } from '@/components/common/FileUpload';
 import { StorageService } from '@/services/storage';
-import { Typography } from '@/components/ui/typography';
 
 const formSchema = z.object({
-  vendorId: z.string(),
-  quoteDate: z.string(),
-  amount: z.coerce.number().min(0),
-  currency: z.string(),
+  vendorId: z.string().min(1, { message: 'Vendor is required' }),
+  quoteDate: z.string().min(1, { message: 'Quote date is required' }),
+  amount: z.number().min(0.01, { message: 'Amount must be greater than 0' }),
+  currency: z.string().min(1, { message: 'Currency is required' }),
   notes: z.string().optional(),
 });
 
@@ -53,7 +48,13 @@ export function QuoteForm({
     url: string;
   }>>(initialData?.attachments || []);
 
-  const form = useForm({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    setValue,
+    watch,
+  } = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       vendorId: initialData?.vendorId || '',
@@ -64,162 +65,163 @@ export function QuoteForm({
     },
   });
 
-  const handleSubmit = async (values: z.infer<typeof formSchema>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    try {
+      const result = await StorageService.uploadToTempStorage(file);
+      setAttachments(prev => [...prev, {
+        id: crypto.randomUUID(),
+        name: file.name,
+        url: result.url,
+      }]);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+    }
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(attachment => attachment.id !== id));
+  };
+
+  const onSubmitForm = (values: z.infer<typeof formSchema>) => {
+    const vendor = vendors.find(v => v.id === values.vendorId);
     onSubmit({
-      id: initialData?.id || crypto.randomUUID(),
       ...values,
+      id: initialData?.id || crypto.randomUUID(),
+      vendorName: vendor?.name || '',
       attachments,
     });
   };
 
-  const handleFileSelect = async (files: File[]) => {
-    const uploadedFiles = await Promise.all(
-      files.map(async (file) => {
-        const { id, url } = await StorageService.uploadToTemp(file);
-        return {
-          id,
-          name: file.name,
-          url,
-        };
-      })
-    );
-
-    setAttachments((prev) => [...prev, ...uploadedFiles]);
-  };
-
-  const handleRemoveFile = async (fileId: string) => {
-    await StorageService.deleteFromTemp(fileId);
-    setAttachments((prev) => prev.filter((file) => file.id !== fileId));
-  };
-
   return (
-    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-      <div className="rounded-md border">
-        <Table>
-          <TableBody>
-            <TableRow>
-              <TableCell className="font-medium">Vendor</TableCell>
-              <TableCell>
-                <div className="space-y-2">
-                  <Select
-                    onValueChange={(value) => form.setValue('vendorId', value)}
-                    defaultValue={form.watch('vendorId')}
-                    disabled={!isEditing || vendors.length === 0}
-                  >
-                    <SelectTrigger className="w-full bg-white border-input data-[state=active]:bg-white">
-                      <SelectValue placeholder="Select vendor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vendors.length > 0 ? (
-                        vendors.map((vendor) => (
-                          <SelectItem key={vendor.id} value={vendor.id}>
-                            {vendor.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="" disabled>
-                          No vendors available
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {vendors.length === 0 && (
-                    <p className="text-sm text-destructive">
-                      No vendors available. Please contact your administrator.
-                    </p>
-                  )}
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="font-medium">Quote Date</TableCell>
-              <TableCell>
-                <Input
-                  type="date"
-                  {...form.register('quoteDate')}
-                  className="w-full bg-white border-input"
-                  disabled={!isEditing}
-                />
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="font-medium">Amount</TableCell>
-              <TableCell>
-                <Input
-                  type="number"
-                  step="0.01"
-                  {...form.register('amount')}
-                  className="w-full bg-white border-input"
-                  disabled={!isEditing}
-                />
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="font-medium">Currency</TableCell>
-              <TableCell>
-                <div className="space-y-2">
-                  <Select
-                    onValueChange={(value) => form.setValue('currency', value)}
-                    defaultValue={form.watch('currency')}
-                    disabled={!isEditing || currencies.length === 0}
-                  >
-                    <SelectTrigger className="w-full bg-white border-input data-[state=active]:bg-white">
-                      <SelectValue placeholder="Select currency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencies.length > 0 ? (
-                        currencies.map((currency) => (
-                          <SelectItem key={currency.id} value={currency.id}>
-                            {currency.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="" disabled>
-                          No currencies available
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {currencies.length === 0 && (
-                    <p className="text-sm text-destructive">
-                      No currencies available. Please contact your administrator.
-                    </p>
-                  )}
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow>
-              <TableCell className="font-medium">Notes</TableCell>
-              <TableCell>
-                <Input
-                  {...form.register('notes')}
-                  placeholder="Add notes..."
-                  className="w-full bg-white border-input"
-                  disabled={!isEditing}
-                />
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </div>
+    <Box component="form" onSubmit={handleSubmit(onSubmitForm)} sx={{ mt: 2 }}>
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <FormControl fullWidth error={!!errors.vendorId}>
+            <InputLabel>Vendor</InputLabel>
+            <Select
+              {...register('vendorId')}
+              label="Vendor"
+              defaultValue={initialData?.vendorId || ''}
+            >
+              {vendors.map((vendor) => (
+                <MenuItem key={vendor.id} value={vendor.id}>
+                  {vendor.name}
+                </MenuItem>
+              ))}
+            </Select>
+            {errors.vendorId && (
+              <FormHelperText>{errors.vendorId.message}</FormHelperText>
+            )}
+          </FormControl>
+        </Grid>
 
-      <div className="space-y-4">
-        <FileUpload
-          onFileSelect={handleFileSelect}
-          onRemove={handleRemoveFile}
-          files={attachments}
-          accept=".pdf,.doc,.docx,.xls,.xlsx"
-          multiple
-        />
-        {isEditing && (
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onCancel}>
+        <Grid item xs={12} md={6}>
+          <TextField
+            {...register('quoteDate')}
+            fullWidth
+            type="date"
+            label="Quote Date"
+            error={!!errors.quoteDate}
+            helperText={errors.quoteDate?.message}
+            InputLabelProps={{ shrink: true }}
+          />
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <TextField
+            {...register('amount', { valueAsNumber: true })}
+            fullWidth
+            type="number"
+            label="Amount"
+            error={!!errors.amount}
+            helperText={errors.amount?.message}
+            InputProps={{ inputProps: { min: 0, step: 0.01 } }}
+          />
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <FormControl fullWidth error={!!errors.currency}>
+            <InputLabel>Currency</InputLabel>
+            <Select
+              {...register('currency')}
+              label="Currency"
+              defaultValue={initialData?.currency || currencies[0]?.id || 'LSL'}
+            >
+              {currencies.map((currency) => (
+                <MenuItem key={currency.id} value={currency.id}>
+                  {currency.name}
+                </MenuItem>
+              ))}
+            </Select>
+            {errors.currency && (
+              <FormHelperText>{errors.currency.message}</FormHelperText>
+            )}
+          </FormControl>
+        </Grid>
+
+        <Grid item xs={12}>
+          <TextField
+            {...register('notes')}
+            fullWidth
+            label="Notes"
+            multiline
+            rows={4}
+            error={!!errors.notes}
+            helperText={errors.notes?.message}
+          />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <input
+              type="file"
+              id="file-upload"
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
+            />
+            <label htmlFor="file-upload">
+              <Button variant="outlined" component="span">
+                Upload Files
+              </Button>
+            </label>
+          </Box>
+          {attachments.map((attachment) => (
+            <Box
+              key={attachment.id}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                mt: 1,
+              }}
+            >
+              <Typography variant="body2">{attachment.name}</Typography>
+              <Button
+                size="small"
+                color="error"
+                onClick={() => handleRemoveAttachment(attachment.id)}
+              >
+                Remove
+              </Button>
+            </Box>
+          ))}
+        </Grid>
+
+        <Grid item xs={12}>
+          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+            <Button variant="outlined" onClick={onCancel}>
               Cancel
             </Button>
-            <Button type="submit">Save</Button>
-          </div>
-        )}
-      </div>
-    </form>
+            <Button variant="contained" type="submit">
+              {isEditing ? 'Update' : 'Add'} Quote
+            </Button>
+          </Box>
+        </Grid>
+      </Grid>
+    </Box>
   );
 }

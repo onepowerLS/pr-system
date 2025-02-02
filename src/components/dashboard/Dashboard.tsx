@@ -185,7 +185,7 @@ export const Dashboard = () => {
   }, [user, selectedOrg, dispatch]);
 
   // Get PRs for the selected status
-  const getStatusPRs = () => {
+  const getStatusPRs = (status: PRStatus) => {
     console.log('Getting status PRs:', {
       selectedStatus,
       userPRs: userPRs.map(pr => ({
@@ -258,7 +258,71 @@ export const Dashboard = () => {
     return sortedPRs;
   };
 
-  const statusPRs = getStatusPRs();
+  // Get status counts for the sidebar
+  const getStatusCounts = () => {
+    const counts: { [key in PRStatus]: number } = {
+      [PRStatus.SUBMITTED]: 0,
+      [PRStatus.RESUBMITTED]: 0,
+      [PRStatus.IN_QUEUE]: 0,
+      [PRStatus.PENDING_APPROVAL]: 0,
+      [PRStatus.APPROVED]: 0,
+      [PRStatus.ORDERED]: 0,
+      [PRStatus.PARTIALLY_RECEIVED]: 0,
+      [PRStatus.COMPLETED]: 0,
+      [PRStatus.REVISION_REQUIRED]: 0,
+      [PRStatus.CANCELED]: 0,
+      [PRStatus.REJECTED]: 0
+    };
+
+    userPRs.forEach(pr => {
+      if (pr.status in counts) {
+        counts[pr.status]++;
+      }
+    });
+
+    return counts;
+  };
+
+  // Status groups for the dashboard
+  const statusGroups = [
+    {
+      title: 'Active PRs',
+      statuses: [
+        PRStatus.SUBMITTED,
+        PRStatus.RESUBMITTED,
+        PRStatus.IN_QUEUE,
+        PRStatus.PENDING_APPROVAL,
+        PRStatus.APPROVED,
+        PRStatus.ORDERED,
+        PRStatus.PARTIALLY_RECEIVED
+      ]
+    },
+    {
+      title: 'Completed PRs',
+      statuses: [PRStatus.COMPLETED]
+    },
+    {
+      title: 'Other',
+      statuses: [PRStatus.REVISION_REQUIRED, PRStatus.CANCELED, PRStatus.REJECTED]
+    }
+  ];
+
+  // Status display names and colors
+  const statusConfig: { [key in PRStatus]: { label: string; color: string } } = {
+    [PRStatus.SUBMITTED]: { label: 'Submitted', color: '#4CAF50' },
+    [PRStatus.RESUBMITTED]: { label: 'Resubmitted', color: '#8BC34A' },
+    [PRStatus.IN_QUEUE]: { label: 'In Queue', color: '#2196F3' },
+    [PRStatus.PENDING_APPROVAL]: { label: 'Pending Approval', color: '#FF9800' },
+    [PRStatus.APPROVED]: { label: 'Approved', color: '#4CAF50' },
+    [PRStatus.ORDERED]: { label: 'Ordered', color: '#9C27B0' },
+    [PRStatus.PARTIALLY_RECEIVED]: { label: 'Partially Received', color: '#673AB7' },
+    [PRStatus.COMPLETED]: { label: 'Completed', color: '#009688' },
+    [PRStatus.REVISION_REQUIRED]: { label: 'Revision Required', color: '#F44336' },
+    [PRStatus.CANCELED]: { label: 'Canceled', color: '#9E9E9E' },
+    [PRStatus.REJECTED]: { label: 'Rejected', color: '#E91E63' }
+  };
+
+  const statusPRs = getStatusPRs(selectedStatus);
 
   const handleDeleteClick = (event: React.MouseEvent, prId: string) => {
     event.preventDefault();
@@ -326,7 +390,7 @@ export const Dashboard = () => {
                 {Object.values(PRStatus).map((status) => (
                   <Chip
                     key={status}
-                    label={status}
+                    label={statusConfig[status].label}
                     color={selectedStatus === status ? 'primary' : 'default'}
                     onClick={() => setSelectedStatus(status)}
                     sx={{ cursor: 'pointer' }}

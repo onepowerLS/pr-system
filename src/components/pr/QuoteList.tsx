@@ -1,16 +1,25 @@
 import React from 'react';
 import { format } from 'date-fns';
 import {
+  Box,
+  IconButton,
+  Paper,
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
-  TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
+  Typography,
+} from '@mui/material';
+import {
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Visibility as VisibilityIcon,
+  Download as DownloadIcon,
+  AttachFile as AttachFileIcon,
+} from '@mui/icons-material';
 import { Quote } from '@/types/pr';
-import { FileIcon, PencilIcon, TrashIcon, DownloadIcon } from 'lucide-react';
 
 interface QuoteListProps {
   quotes: Quote[];
@@ -30,90 +39,91 @@ export function QuoteList({
   isEditing = false,
 }: QuoteListProps) {
   return (
-    <div className="rounded-md border">
+    <TableContainer component={Paper}>
       <Table>
-        <TableHeader>
+        <TableHead>
           <TableRow>
-            <TableHead className="font-medium">Vendor</TableHead>
-            <TableHead className="font-medium">Quote Date</TableHead>
-            <TableHead className="font-medium">Amount</TableHead>
-            <TableHead className="font-medium">Contact Name</TableHead>
-            <TableHead className="font-medium">Contact Info</TableHead>
-            <TableHead className="font-medium">Attachments</TableHead>
-            {isEditing && <TableHead className="font-medium">Actions</TableHead>}
+            <TableCell>Vendor</TableCell>
+            <TableCell>Quote Date</TableCell>
+            <TableCell>Amount</TableCell>
+            <TableCell>Contact Name</TableCell>
+            <TableCell>Contact Info</TableCell>
+            <TableCell>Attachments</TableCell>
+            {isEditing && <TableCell>Actions</TableCell>}
           </TableRow>
-        </TableHeader>
+        </TableHead>
         <TableBody>
           {quotes.map((quote) => (
             <TableRow key={quote.id}>
-              <TableCell className="bg-white">{quote.vendorName}</TableCell>
-              <TableCell className="bg-white">{format(new Date(quote.quoteDate), 'PP')}</TableCell>
-              <TableCell className="bg-white">
+              <TableCell>{quote.vendorName}</TableCell>
+              <TableCell>{format(new Date(quote.quoteDate), 'PP')}</TableCell>
+              <TableCell>
                 {new Intl.NumberFormat(undefined, {
                   style: 'currency',
                   currency: quote.currency,
                 }).format(quote.amount)}
               </TableCell>
-              <TableCell className="bg-white">{quote.vendorContacts?.name}</TableCell>
-              <TableCell className="bg-white">
-                <div className="text-sm">
-                  <div>{quote.vendorContacts?.phone}</div>
-                  <div>{quote.vendorContacts?.email}</div>
-                </div>
+              <TableCell>{quote.vendorContacts?.name}</TableCell>
+              <TableCell>
+                <Box>
+                  <Typography variant="body2">{quote.vendorContacts?.phone}</Typography>
+                  <Typography variant="body2">{quote.vendorContacts?.email}</Typography>
+                </Box>
               </TableCell>
-              <TableCell className="bg-white">
-                <div className="flex flex-col gap-2">
-                  {quote.attachments?.map((attachment) => (
-                    <div key={attachment.id} className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleFilePreview(attachment)}
-                        className="h-8 px-2"
-                      >
-                        <FileIcon className="h-4 w-4 mr-1" />
-                        <span className="text-xs truncate max-w-[100px]">
-                          {attachment.name}
-                        </span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDownloadQuoteAttachment(attachment)}
-                        className="h-8 w-8 p-0"
-                      >
-                        <DownloadIcon className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+              <TableCell>
+                {quote.attachments?.map((attachment, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      mb: 1,
+                    }}
+                  >
+                    <AttachFileIcon fontSize="small" />
+                    <Typography variant="body2" sx={{ mr: 1 }}>
+                      {attachment.name}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleFilePreview(attachment)}
+                    >
+                      <VisibilityIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDownloadQuoteAttachment(attachment)}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                ))}
               </TableCell>
               {isEditing && (
-                <TableCell className="bg-white">
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                <TableCell>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <IconButton
+                      size="small"
                       onClick={() => onEdit(quote)}
-                      className="h-8 w-8 p-0"
+                      color="primary"
                     >
-                      <PencilIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
                       onClick={() => onDelete(quote.id)}
-                      className="h-8 w-8 p-0"
+                      color="error"
                     >
-                      <TrashIcon className="h-4 w-4" />
-                    </Button>
-                  </div>
+                      <DeleteIcon />
+                    </IconButton>
+                  </Box>
                 </TableCell>
               )}
             </TableRow>
           ))}
         </TableBody>
       </Table>
-    </div>
+    </TableContainer>
   );
 }

@@ -94,10 +94,11 @@ import { approverService } from '../../services/approver';
 import { ReferenceDataItem } from '../../types/referenceData';
 import { BasicInformationStep } from './steps/BasicInformationStep';
 import { LineItemsStep } from './steps/LineItemsStep';
+import { QuotesStep } from './steps/QuotesStep';
 import { ReviewStep } from './steps/ReviewStep';
 
 // Form steps definition
-const steps = ['Basic Information', 'Line Items', 'Review'];
+const steps = ['Basic Information', 'Line Items', 'Quotes', 'Review'];
 
 // Type definitions for form data structures
 interface ReferenceDataItem {
@@ -117,10 +118,16 @@ interface LineItem {
 
 interface Quote {
   id: string;
+  vendorId: string;
   vendorName: string;
   amount: number;
   currency: string;
-  notes: string;
+  quoteDate: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  notes?: string;
+  attachments?: UploadedFile[];
 }
 
 // Main form state interface
@@ -392,9 +399,10 @@ export const NewPRForm = () => {
           item.quantity > 0 && 
           item.uom
         );
-      case 2: // Review
-        const needsQuotes = formState.estimatedAmount >= PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED;
-        return !needsQuotes || (needsQuotes && formState.quotes.length >= 2);
+      case 2: // Quotes
+        return validateQuotes();
+      case 3: // Review
+        return true;
       default:
         return true;
     }
@@ -428,6 +436,16 @@ export const NewPRForm = () => {
           />
         );
       case 2:
+        return (
+          <QuotesStep
+            formState={formState}
+            setFormState={setFormState}
+            vendors={vendors}
+            currencies={currencies}
+            loading={isLoading}
+          />
+        );
+      case 3:
         return (
           <ReviewStep
             formState={formState}
@@ -468,6 +486,15 @@ export const NewPRForm = () => {
         return;
       }
       console.log('Line items validation passed, moving to next step');
+    } else if (activeStep === 2) {
+      console.log('Validating quotes...');
+      const isValid = isStepValid(2);
+      console.log('Quotes validation result:', isValid);
+      if (!isValid) {
+        console.log('Quotes validation failed');
+        return;
+      }
+      console.log('Quotes validation passed, moving to next step');
     }
 
     handleNext();
@@ -680,6 +707,41 @@ export const NewPRForm = () => {
     }
   };
 
+  const validateQuotes = () => {
+    try {
+      console.log('Starting quotes validation...');
+      console.log('Form state:', formState);
+
+      // Check if quotes are required based on estimated amount
+      const requiresQuotes = formState.estimatedAmount > PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED;
+      
+      if (requiresQuotes && (!formState.quotes || formState.quotes.length === 0)) {
+        console.log('Quotes are required but none provided');
+        enqueueSnackbar('At least one quote is required for this purchase request', { variant: 'error' });
+        return false;
+      }
+
+      // Validate each quote if there are any
+      if (formState.quotes && formState.quotes.length > 0) {
+        const invalidQuotes = formState.quotes.filter(quote => {
+          return !quote.vendorId || !quote.amount || !quote.currency || !quote.quoteDate;
+        });
+
+        if (invalidQuotes.length > 0) {
+          console.log('Found invalid quotes:', invalidQuotes);
+          enqueueSnackbar('Please complete all required fields in quotes', { variant: 'error' });
+          return false;
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error validating quotes:', error);
+      enqueueSnackbar('Error validating quotes', { variant: 'error' });
+      return false;
+    }
+  };
+
   const handleLineItemChange = (index: number, field: string, value: any) => {
     console.log('Updating line item:', index, field, value);
     
@@ -730,10 +792,16 @@ export const NewPRForm = () => {
         ...prev.quotes,
         {
           id: crypto.randomUUID(),
+          vendorId: '',
           vendorName: '',
           amount: 0,
           currency: '',
-          notes: ''
+          quoteDate: '',
+          contactName: '',
+          contactPhone: '',
+          contactEmail: '',
+          notes: '',
+          attachments: []
         }
       ]
     }));
@@ -837,10 +905,16 @@ export const NewPRForm = () => {
           attachments: item.attachments
         })),
         quotes: formState.quotes.map(quote => ({
+          vendorId: quote.vendorId,
           vendorName: quote.vendorName,
           amount: Number(quote.amount),
           currency: quote.currency,
-          notes: quote.notes || ''
+          quoteDate: quote.quoteDate,
+          contactName: quote.contactName || '',
+          contactPhone: quote.contactPhone || '',
+          contactEmail: quote.contactEmail || '',
+          notes: quote.notes || '',
+          attachments: quote.attachments
         }))
       };
 
@@ -897,72 +971,6 @@ export const NewPRForm = () => {
       });
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const validateQuotes = async () => {
-    try {
-      console.log('Validating quotes...');
-      
-      // Convert estimated amount to number for comparison
-      let amount: number;
-      try {
-        amount = typeof formState.estimatedAmount === 'string' 
-          ? parseFloat(formState.estimatedAmount) 
-          : formState.estimatedAmount;
-          
-        if (isNaN(amount)) {
-          throw new Error('Invalid amount');
-        }
-      } catch (err) {
-        console.error('Amount conversion error:', err);
-        enqueueSnackbar('Invalid estimated amount', { variant: 'error' });
-        return false;
-      }
-      
-      // Check if quotes are required based on amount threshold
-      const quotesRequired = amount >= PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED;
-      console.log('Quotes required:', quotesRequired, 'Amount:', amount, 'Threshold:', PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED);
-      
-      if (quotesRequired) {
-        if (!formState.quotes || formState.quotes.length < 3) {
-          console.log('Three quotes required but not provided');
-          enqueueSnackbar('Three quotes are required for this amount', { 
-            variant: 'error',
-            autoHideDuration: 5000 
-          });
-          return false;
-        }
-
-        // Validate each quote
-        const invalidQuotes = formState.quotes.filter(quote => {
-          const quoteAmount = typeof quote.amount === 'string' ? parseFloat(quote.amount) : quote.amount;
-          return !quote.vendorName?.trim() || 
-                 !quote.amount || 
-                 isNaN(quoteAmount) ||
-                 quoteAmount <= 0 || 
-                 !quote.currency?.trim();
-        });
-
-        if (invalidQuotes.length > 0) {
-          console.log('Invalid quotes found:', invalidQuotes);
-          enqueueSnackbar(
-            'All quotes must have a vendor name, valid amount, and currency', 
-            { variant: 'error', autoHideDuration: 5000 }
-          );
-          return false;
-        }
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error in validateQuotes:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      enqueueSnackbar(`Quote validation error: ${errorMessage}`, { 
-        variant: 'error',
-        autoHideDuration: 5000
-      });
-      return false;
     }
   };
 
@@ -1203,6 +1211,15 @@ export const NewPRForm = () => {
                 <Grid item xs={12} md={6}>
                   <TextField
                     fullWidth
+                    label="Vendor ID"
+                    value={quote.vendorId}
+                    onChange={(e) => handleQuoteChange(index, 'vendorId', e.target.value)}
+                    required
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
                     label="Vendor Name"
                     value={quote.vendorName}
                     onChange={(e) => handleQuoteChange(index, 'vendorName', e.target.value)}
@@ -1226,6 +1243,40 @@ export const NewPRForm = () => {
                     value={quote.currency}
                     onChange={(e) => handleQuoteChange(index, 'currency', e.target.value)}
                     required
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <TextField
+                    fullWidth
+                    label="Quote Date"
+                    type="date"
+                    value={quote.quoteDate}
+                    onChange={(e) => handleQuoteChange(index, 'quoteDate', e.target.value)}
+                    required
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <TextField
+                    fullWidth
+                    label="Contact Name"
+                    value={quote.contactName}
+                    onChange={(e) => handleQuoteChange(index, 'contactName', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <TextField
+                    fullWidth
+                    label="Contact Phone"
+                    value={quote.contactPhone}
+                    onChange={(e) => handleQuoteChange(index, 'contactPhone', e.target.value)}
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <TextField
+                    fullWidth
+                    label="Contact Email"
+                    value={quote.contactEmail}
+                    onChange={(e) => handleQuoteChange(index, 'contactEmail', e.target.value)}
                   />
                 </Grid>
                 <Grid item xs={12}>
@@ -1503,7 +1554,7 @@ export const NewPRForm = () => {
             </Button>
 
             {activeStep === steps.length - 1 ? null : (
-              <Button onClick={handleNext}>
+              <Button onClick={handleNextStep}>
                 Next
               </Button>
             )}
