@@ -182,12 +182,6 @@ export interface Quote {
   currency: string;
   /** Notes about the quote */
   notes: string;
-  /** Contact name of the vendor */
-  contactName: string;
-  /** Contact phone number of the vendor */
-  contactPhone: string;
-  /** Contact email of the vendor */
-  contactEmail: string;
   /** Attachments for the quote */
   attachments: Attachment[];
   /** User who submitted the quote */
@@ -316,7 +310,7 @@ export interface WorkflowHistory {
   /** Step in the workflow */
   step: WorkflowStep;
   /** Timestamp when the step was taken */
-  timestamp: string;
+  timestamp: any; // Firestore Timestamp
   /** User who took the step */
   user: User;
   /** Notes about the step */

@@ -456,83 +456,81 @@ export function PRView() {
   const { enqueueSnackbar } = useSnackbar();
 
   // Fetch PR data
-  useEffect(() => {
-    const fetchPR = async () => {
-      if (!id) return;
-      try {
-        console.log('Fetching PR with ID:', id);
-        const prData = await prService.getPR(id);
-        if (!prData) {
-          console.error('PR not found');
-          setError('PR not found');
-          return;
-        }
-        console.log('PR data received:', prData);
-        console.log('PR department:', prData.department);
-        console.log('PR preferred vendor:', prData.preferredVendor);
-        console.log('PR organization:', prData.organization);
-        console.log('PR requestor:', prData.requestor);
-        setPr(prData);
-
-        // Load reference data after PR is loaded
-        try {
-          setLoadingReference(true);
-          const organization = prData.requestor?.organization || prData.organization;
-          console.log('Using organization for reference data:', {
-            organization,
-            fromRequestor: Boolean(prData.requestor?.organization),
-            fromPR: Boolean(prData.organization)
-          });
-
-          if (!organization) {
-            console.error('No organization found in PR data or requestor data');
-            throw new Error('No organization found');
-          }
-
-          const [
-            depts,
-            categories,
-            siteList,
-            expenses,
-            vehicleList,
-            vendorList,
-            currencyList,
-          ] = await Promise.all([
-            referenceDataService.getDepartments(organization),
-            referenceDataService.getItemsByType('projectCategories', organization),
-            referenceDataService.getItemsByType('sites', organization),
-            referenceDataService.getItemsByType('expenseTypes', organization),
-            referenceDataService.getItemsByType('vehicles', organization),
-            referenceDataService.getVendors(),
-            referenceDataService.getCurrencies()
-          ]);
-
-          console.log('Loaded reference data:', {
-            departments: depts.map(d => ({ id: d.id, name: d.name })),
-            vendors: vendorList.map(v => ({ id: v.id, name: v.name }))
-          });
-
-          setDepartments(depts.filter(d => d.active));
-          setVendors(vendorList.filter(v => v.active));
-          setExpenseTypes(expenses.filter(e => e.active));
-          setProjectCategories(categories.filter(c => c.active));
-          setVehicles(vehicleList.filter(v => v.active));
-          setSites(siteList.filter(s => s.active));
-          setCurrencies(currencyList.filter(c => c.active));
-        } catch (err) {
-          console.error('Error loading reference data:', err);
-          enqueueSnackbar('Failed to load reference data', { variant: 'error' });
-        } finally {
-          setLoadingReference(false);
-        }
-      } catch (err) {
-        console.error('Error fetching PR:', err);
-        setError('Failed to load PR');
-      } finally {
-        setLoading(false);
+  const fetchPR = async () => {
+    if (!id) return;
+    try {
+      console.log('Fetching PR with ID:', id);
+      const prData = await prService.getPR(id);
+      if (!prData) {
+        console.error('PR not found');
+        setError('PR not found');
+        return;
       }
-    };
+      console.log('PR data received:', prData);
+      console.log('PR department:', prData.department);
+      console.log('PR preferred vendor:', prData.preferredVendor);
+      console.log('PR organization:', prData.organization);
+      console.log('PR requestor:', prData.requestor);
+      setPr(prData);
 
+      // Load reference data after PR is loaded
+      try {
+        setLoadingReference(true);
+        const organization = prData.requestor?.organization || prData.organization;
+        console.log('Using organization for reference data:', {
+          organization,
+          fromRequestor: Boolean(prData.requestor?.organization),
+          fromPR: Boolean(prData.organization)
+        });
+
+        if (!organization) {
+          console.error('No organization found in PR data or requestor data');
+          throw new Error('No organization found');
+        }
+
+        const [
+          depts,
+          categories,
+          siteList,
+          expenses,
+          vehicleList,
+          vendorList,
+          currencyList,
+        ] = await Promise.all([
+          referenceDataService.getDepartments(organization),
+          referenceDataService.getItemsByType('projectCategories', organization),
+          referenceDataService.getItemsByType('sites', organization),
+          referenceDataService.getItemsByType('expenseTypes', organization),
+          referenceDataService.getItemsByType('vehicles', organization),
+          referenceDataService.getItemsByType('vendors'),
+          referenceDataService.getItemsByType('currencies'),
+        ]);
+
+        setDepartments(depts);
+        setProjectCategories(categories);
+        setSites(siteList);
+        setExpenseTypes(expenses);
+        setVehicles(vehicleList);
+        setVendors(vendorList);
+        setCurrencies(currencyList);
+
+        console.log('Loaded reference data:', { departments: depts, vendors: vendorList });
+      } catch (error) {
+        console.error('Error loading reference data:', error);
+        enqueueSnackbar('Error loading reference data', { variant: 'error' });
+      } finally {
+        setLoadingReference(false);
+      }
+    } catch (error) {
+      console.error('Error fetching PR:', error);
+      setError('Error fetching PR');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial fetch
+  useEffect(() => {
     fetchPR();
   }, [id]);
 
@@ -757,56 +755,64 @@ export function PRView() {
     navigate(`/pr/${id}`);
   };
 
-  const handleSave = async (): Promise<void> => {
-    if (!pr?.id) {
-      enqueueSnackbar('PR ID is missing', { variant: 'error' });
-      return;
-    }
-    
+  const handleSave = async () => {
+    if (!pr) return;
+
     try {
       setLoading(true);
-      
-      // Ensure line items have IDs and required fields
-      const updatedLineItems = lineItems.map(item => ({
-        ...item,
-        id: item.id || crypto.randomUUID(),
-        quantity: item.quantity || 0,
-        unitPrice: item.unitPrice || 0,
-        attachments: item.attachments || []
-      }));
-      
-      const updatedData = {
-        ...pr,
-        ...editedPR,
-        lineItems: updatedLineItems,
-        updatedAt: new Date().toISOString()
+
+      // Remove undefined values and empty strings from the updates
+      const cleanObject = (obj: any): any => {
+        return Object.entries(obj).reduce((acc: any, [key, value]) => {
+          // Skip undefined or empty string values
+          if (value === undefined || value === '') {
+            return acc;
+          }
+
+          // Handle nested objects and arrays
+          if (Array.isArray(value)) {
+            const cleanArray = value.map(item => 
+              typeof item === 'object' ? cleanObject(item) : item
+            ).filter(item => item !== undefined && item !== '');
+            if (cleanArray.length > 0) {
+              acc[key] = cleanArray;
+            }
+          } else if (value && typeof value === 'object') {
+            const cleanValue = cleanObject(value);
+            if (Object.keys(cleanValue).length > 0) {
+              acc[key] = cleanValue;
+            }
+          } else {
+            acc[key] = value;
+          }
+          return acc;
+        }, {});
       };
 
-      // Remove any undefined or null values
-      Object.keys(updatedData).forEach(key => {
-        if (updatedData[key] === undefined || updatedData[key] === null) {
-          delete updatedData[key];
-        }
+      // Create a clean copy of the PR without undefined values
+      const updates = cleanObject({
+        ...pr,
+        updatedAt: new Date().toISOString(),
+        ...editedPR,
+        lineItems: lineItems.map(item => ({
+          ...item,
+          id: item.id || crypto.randomUUID(),
+          quantity: item.quantity || 0,
+          unitPrice: item.unitPrice || 0,
+          attachments: item.attachments || []
+        }))
       });
 
-      await prService.updatePR(pr.id, updatedData);
+      console.log('Saving PR updates:', updates);
+      await prService.updatePR(pr.id, updates);
       
-      // Fetch the updated PR data
-      const updatedPR = await prService.getPR(pr.id);
-      if (!updatedPR) {
-        throw new Error('Failed to fetch updated PR data');
-      }
-
-      setPr(updatedPR);
+      // Exit edit mode and refresh the PR
       setEditedPR({});
-      navigate(`/pr/${pr.id}`);
-      enqueueSnackbar('PR updated successfully', { variant: 'success' });
+      await fetchPR();
+      enqueueSnackbar('Changes saved successfully', { variant: 'success' });
     } catch (error) {
       console.error('Error updating PR:', error);
-      enqueueSnackbar(
-        error instanceof Error ? error.message : 'Failed to update PR - please try again',
-        { variant: 'error' }
-      );
+      enqueueSnackbar('Failed to save changes', { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1285,61 +1291,61 @@ export function PRView() {
   const renderQuotes = () => {
     if (!pr) return null;
 
-    const canEditQuotes = currentUser?.permissionLevel === 1 || // Admin
-      ((pr.status === PRStatus.SUBMITTED || pr.status === PRStatus.RESUBMITTED) && currentUser?.permissionLevel <= 3); // Procurement for SUBMITTED/RESUBMITTED
+    const canEditQuotes = currentUser?.permissionLevel === 3 && 
+      (pr.status === PRStatus.IN_QUEUE || pr.status === PRStatus.REVISIONS_REQUIRED) && 
+      isEditMode;
 
     return (
       <Grid container spacing={2}>
         <Grid item xs={12}>
           <Typography variant="h6">Quotes</Typography>
           <QuotesStep
-            formState={{ quotes: pr.quotes || [] }}
-            setFormState={async (newState) => {
-              if (!canEditQuotes || !isEditMode) {
-                enqueueSnackbar('You cannot edit quotes when not in edit mode', { variant: 'error' });
+            formState={pr || { quotes: [] }}
+            setFormState={(newState) => {
+              if (!canEditQuotes) {
+                enqueueSnackbar('You cannot edit quotes in the current state', { variant: 'error' });
                 return;
               }
               
-              console.log('QuotesStep state update:', newState);
-              
-              // If newState is a function, execute it to get the actual state
-              const resolvedState = typeof newState === 'function' 
-                ? newState({ quotes: pr.quotes || [] })
-                : newState;
-              
-              console.log('Resolved state:', resolvedState);
-              
-              // Update local state first
-              setPr(prev => {
-                if (!prev) return null;
-                return {
-                  ...prev,
-                  quotes: resolvedState.quotes || []
-                };
-              });
-
-              // Then save to server
-              try {
-                if (id) {
-                  await prService.updatePR(id, { quotes: resolvedState.quotes || [] });
-                  console.log('Quotes updated successfully');
-                }
-              } catch (error) {
-                console.error('Error updating quotes:', error);
-                // Revert local state on error
-                setPr(prev => {
-                  if (!prev) return null;
-                  return {
-                    ...prev,
-                    quotes: pr.quotes || []
-                  };
-                });
-              }
+              // Just update the local state without saving to Firebase
+              setPr(prev => prev ? { ...prev, quotes: newState.quotes } : null);
             }}
             vendors={vendors}
             currencies={currencies}
             loading={loading}
-            readOnly={!isEditMode}
+            isEditing={canEditQuotes}
+            onSave={async () => {
+              if (!pr || !canEditQuotes) return;
+              
+              try {
+                setLoading(true);
+                const quotes = (pr.quotes || []).map(quote => ({
+                  id: quote.id || crypto.randomUUID(),
+                  vendorId: quote.vendorId || '',
+                  vendorName: quote.vendorName || '',
+                  quoteDate: quote.quoteDate || new Date().toISOString().split('T')[0],
+                  amount: quote.amount || 0,
+                  currency: quote.currency || '',
+                  notes: quote.notes || '',
+                  attachments: quote.attachments || [],
+                  submittedBy: quote.submittedBy || currentUser?.id,
+                  submittedAt: quote.submittedAt || new Date().toISOString(),
+                  deliveryDate: quote.deliveryDate || '',
+                  deliveryAddress: quote.deliveryAddress || '',
+                  paymentTerms: quote.paymentTerms || ''
+                }));
+                
+                const updates = { quotes };
+                await prService.updatePR(pr.id, updates);
+                enqueueSnackbar('Quotes saved successfully', { variant: 'success' });
+                navigate(`/pr/${pr.id}`);
+              } catch (error) {
+                console.error('Error saving quotes:', error);
+                enqueueSnackbar('Failed to save quotes', { variant: 'error' });
+              } finally {
+                setLoading(false);
+              }
+            }}
           />
         </Grid>
       </Grid>
@@ -1370,15 +1376,15 @@ export function PRView() {
 
     Promise.all([
       referenceDataService.getDepartments(pr.organization),
-      referenceDataService.getVendors(pr.organization),
-      referenceDataService.getExpenseTypes(pr.organization),
-      referenceDataService.getProjectCategories(pr.organization),
-      referenceDataService.getVehicles(pr.organization),
-      referenceDataService.getSites(pr.organization),
-    ]).then(([depts, vends, expTypes, projCats, vehs, sites]) => {
+      referenceDataService.getItemsByType('projectCategories', pr.organization),
+      referenceDataService.getItemsByType('sites', pr.organization),
+      referenceDataService.getItemsByType('expenseTypes', pr.organization),
+      referenceDataService.getItemsByType('vehicles', pr.organization),
+      referenceDataService.getItemsByType('vendors'),
+      referenceDataService.getItemsByType('currencies'),
+    ]).then(([depts, projCats, sites, expTypes, vehs, vends, currList]) => {
       console.log('Reference data loaded:', {
-        departments: depts,
-        departmentsCount: depts.length,
+        departments: depts.map(d => ({ id: d.id, name: d.name })),
         vendors: vends.length,
         expenseTypes: expTypes.length,
         projectCategories: projCats.length,
@@ -1387,11 +1393,12 @@ export function PRView() {
       });
 
       setDepartments(depts.filter(d => d.active));
-      setVendors(vends.filter(v => v.active));
-      setExpenseTypes(expTypes.filter(e => e.active));
       setProjectCategories(projCats.filter(c => c.active));
-      setVehicles(vehs.filter(v => v.active));
       setSites(sites.filter(s => s.active));
+      setExpenseTypes(expTypes.filter(e => e.active));
+      setVehicles(vehs.filter(v => v.active));
+      setVendors(vends.filter(v => v.active));
+      setCurrencies(currList.filter(c => c.active));
     });
   }, [pr?.organization]);
 
@@ -1509,7 +1516,13 @@ export function PRView() {
             {pr.workflowHistory.map((history, index) => (
               <Box key={index} sx={{ mb: index !== pr.workflowHistory.length - 1 ? 2 : 0 }}>
                 <Typography variant="subtitle2" color="primary">
-                  {history.timestamp?.toDate().toLocaleString() || 'Unknown Date'} - {PRStatus[history.step]}
+                  {(() => {
+                    const timestamp = history.timestamp;
+                    if (!timestamp) return 'Unknown Date';
+                    if (typeof timestamp === 'string') return new Date(timestamp).toLocaleString();
+                    if (typeof timestamp.toDate === 'function') return timestamp.toDate().toLocaleString();
+                    return 'Invalid Date';
+                  })()} - {PRStatus[history.step]}
                 </Typography>
                 {history.notes && (
                   <Typography variant="body2" sx={{ mt: 0.5, ml: 2 }}>

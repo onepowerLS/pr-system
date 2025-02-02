@@ -1,10 +1,23 @@
 import React from 'react';
 import {
-  Grid,
-  TextField,
-  IconButton,
+  Box,
   Button,
-  Typography,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  FormControl,
+  FormHelperText,
+  Grid,
+  IconButton,
+  InputLabel,
+  List,
+  ListItem,
+  ListItemText,
+  Link,
+  TextField,
   Table,
   TableBody,
   TableCell,
@@ -12,35 +25,28 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Box,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
   Select,
   MenuItem,
-  FormControl,
-  InputLabel,
-  List,
-  ListItem,
-  ListItemText,
-  Link,
+  Typography
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SaveIcon from '@mui/icons-material/Save';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { StorageService } from '../../../services/storage';
 import { Quote, ReferenceDataItem } from '../../../types/pr';
 
 interface QuotesStepProps {
-  formState: any;
-  setFormState: React.Dispatch<React.SetStateAction<any>>;
+  formState: {
+    quotes?: Quote[];
+    [key: string]: any;
+  };
+  setFormState: (state: any) => void;
   vendors: ReferenceDataItem[];
   currencies: ReferenceDataItem[];
-  loading: boolean;
-  readOnly?: boolean;
+  loading?: boolean;
+  isEditing?: boolean;
+  onSave?: () => Promise<void>;
 }
 
 const emptyQuote: Quote = {
@@ -52,9 +58,8 @@ const emptyQuote: Quote = {
   currency: '',
   notes: '',
   attachments: [],
-  deliveryDate: '',
-  deliveryAddress: '',
-  paymentTerms: '',
+  submittedBy: undefined,
+  submittedAt: undefined
 };
 
 export function QuotesStep({
@@ -63,19 +68,29 @@ export function QuotesStep({
   vendors,
   currencies,
   loading,
-  readOnly = false,
+  isEditing = false,
+  onSave
 }: QuotesStepProps) {
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [deleteIndex, setDeleteIndex] = React.useState<number | null>(null);
   const quotes = formState.quotes || [];
+  const readOnly = !isEditing;
+
+  console.log('QuotesStep: isEditing=', isEditing, 'readOnly=', readOnly);
+  console.log('Current quotes:', quotes);
 
   const handleAddQuote = () => {
     if (!readOnly) {
-      console.log('Add Quote clicked');
-      const existingQuotes = formState.quotes || [];
-      console.log('Existing quotes:', existingQuotes);
-      const newQuote = { ...emptyQuote, id: crypto.randomUUID() };
-      console.log('New quote:', newQuote);
-      const updatedQuotes = [...existingQuotes, newQuote];
+      const currentQuotes = formState.quotes || [];
+      const newQuote = {
+        ...emptyQuote,
+        id: crypto.randomUUID(),
+        currency: currencies[0]?.id || '',
+        quoteDate: new Date().toISOString().split('T')[0]
+      };
+      console.log('Adding new quote:', newQuote);
+      console.log('Current quotes:', currentQuotes);
+      const updatedQuotes = [...currentQuotes, newQuote];
       console.log('Updated quotes:', updatedQuotes);
       setFormState({
         ...formState,
@@ -87,20 +102,28 @@ export function QuotesStep({
   const handleRemoveQuote = (index: number) => {
     if (!readOnly) {
       setDeleteIndex(index);
+      setDeleteDialogOpen(true);
     }
   };
 
   const handleConfirmDelete = () => {
     if (!readOnly && deleteIndex !== null) {
-      setFormState(prev => ({
-        ...prev,
-        quotes: quotes.filter((_, i) => i !== deleteIndex)
-      }));
+      const currentQuotes = formState.quotes || [];
+      const updatedQuotes = [
+        ...currentQuotes.slice(0, deleteIndex),
+        ...currentQuotes.slice(deleteIndex + 1)
+      ];
+      setFormState({
+        ...formState,
+        quotes: updatedQuotes
+      });
+      setDeleteDialogOpen(false);
       setDeleteIndex(null);
     }
   };
 
   const handleCancelDelete = () => {
+    setDeleteDialogOpen(false);
     setDeleteIndex(null);
   };
 
@@ -110,80 +133,78 @@ export function QuotesStep({
     if (!readOnly) {
       console.log('Quote change:', { index, field, value: event.target.value });
       
-      setFormState(prev => {
-        const prevQuotes = prev.quotes || [];
-        console.log('Previous quotes:', prevQuotes);
-        
-        const value = field === 'amount' ? Number(event.target.value) : event.target.value;
-        const updatedQuotes = prevQuotes.map((quote, i) => {
-          if (i === index) {
-            if (field === 'vendorId' && typeof value === 'string') {
-              const vendor = vendors.find(v => v.id === value);
-              console.log('Selected vendor:', vendor);
-              return {
-                ...quote,
-                [field]: value,
-                vendorName: vendor?.name || ''
-              };
-            }
+      const currentQuotes = formState.quotes || [];
+      const value = field === 'amount' ? Number(event.target.value) : event.target.value;
+      
+      const updatedQuotes = currentQuotes.map((quote, i) => {
+        if (i === index) {
+          if (field === 'vendorId' && typeof value === 'string') {
+            const vendor = vendors.find(v => v.id === value);
+            console.log('Selected vendor:', vendor);
             return {
               ...quote,
-              [field]: value
+              vendorId: value,
+              vendorName: vendor?.name || '',
+              currency: quote.currency || currencies[0]?.id || '',
+              quoteDate: quote.quoteDate || new Date().toISOString().split('T')[0],
+              amount: quote.amount || 0,
+              notes: quote.notes || '',
+              attachments: quote.attachments || []
             };
           }
-          return quote;
-        });
-        
-        console.log('Updated quotes:', updatedQuotes);
-        return {
-          ...prev,
-          quotes: updatedQuotes
-        };
+          return {
+            ...quote,
+            [field]: value
+          };
+        }
+        return quote;
+      });
+      
+      console.log('Updated quotes:', updatedQuotes);
+      setFormState({
+        ...formState,
+        quotes: updatedQuotes
       });
     }
   };
 
-  const handleFileUpload = async (index: number, files: FileList) => {
-    if (!readOnly) {
-      try {
-        console.log('Uploading files:', files);
-        const uploadedFiles = await Promise.all(
-          Array.from(files).map(async (file) => {
-            const result = await StorageService.uploadToTempStorage(file);
-            console.log('File uploaded:', result);
-            return {
-              name: result.name,
-              url: result.url,
-              id: crypto.randomUUID()
-            };
-          })
-        );
-
-        console.log('All files uploaded:', uploadedFiles);
-        
-        setFormState(prev => {
-          const prevQuotes = prev.quotes || [];
-          const updatedQuotes = prevQuotes.map((quote, i) => {
-            if (i === index) {
-              const updatedQuote = {
-                ...quote,
-                attachments: [...(quote.attachments || []), ...uploadedFiles]
-              };
-              console.log('Updated quote:', updatedQuote);
-              return updatedQuote;
-            }
-            return quote;
-          });
-          
-          console.log('Updated quotes:', updatedQuotes);
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, quoteIndex: number) => {
+    if (!event.target.files?.length) return;
+    
+    try {
+      console.log('Uploading files:', event.target.files);
+      const uploadedFiles = await Promise.all(
+        Array.from(event.target.files).map(async (file) => {
+          const result = await StorageService.uploadToTempStorage(file);
+          console.log('File uploaded:', result);
           return {
-            ...prev,
-            quotes: updatedQuotes
+            name: result.name,
+            url: result.url,
+            id: crypto.randomUUID()
           };
-        });
-      } catch (error) {
-        console.error('Error uploading file:', error);
-      }
+        })
+      );
+      console.log('All files uploaded:', uploadedFiles);
+
+      // Update the quote's attachments
+      const currentQuotes = formState.quotes || [];
+      const updatedQuotes = currentQuotes.map((quote, index) => {
+        if (index === quoteIndex) {
+          return {
+            ...quote,
+            attachments: [...(quote.attachments || []), ...uploadedFiles]
+          };
+        }
+        return quote;
+      });
+
+      // Update form state with new quotes
+      setFormState({
+        ...formState,
+        quotes: updatedQuotes
+      });
+    } catch (error) {
+      console.error('Error uploading files:', error);
     }
   };
 
@@ -194,10 +215,10 @@ export function QuotesStep({
           <TableHead>
             <TableRow>
               <TableCell width="20%">Vendor</TableCell>
-              <TableCell width="10%">Date</TableCell>
+              <TableCell width="15%">Date</TableCell>
               <TableCell width="15%">Amount</TableCell>
               <TableCell width="10%">Currency</TableCell>
-              <TableCell width="30%">Notes</TableCell>
+              <TableCell width="20%">Notes</TableCell>
               <TableCell width="15%">Attachments</TableCell>
               <TableCell width="5%">Actions</TableCell>
             </TableRow>
@@ -206,10 +227,19 @@ export function QuotesStep({
             {quotes.map((quote, index) => (
               <TableRow key={quote.id}>
                 <TableCell>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth error={!quote.vendorId && !readOnly}>
+                    <InputLabel>Vendor</InputLabel>
                     <Select
                       value={quote.vendorId}
-                      onChange={handleQuoteChange(index, 'vendorId')}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (typeof value === 'string') {
+                          handleQuoteChange(index, 'vendorId')({
+                            target: { value }
+                          });
+                        }
+                      }}
+                      label="Vendor"
                       disabled={readOnly}
                       sx={{ 
                         '& .MuiSelect-select.Mui-disabled': {
@@ -224,6 +254,9 @@ export function QuotesStep({
                         </MenuItem>
                       ))}
                     </Select>
+                    {!quote.vendorId && !readOnly && (
+                      <FormHelperText error>Vendor is required</FormHelperText>
+                    )}
                   </FormControl>
                 </TableCell>
                 <TableCell>
@@ -232,6 +265,8 @@ export function QuotesStep({
                     value={quote.quoteDate}
                     onChange={handleQuoteChange(index, 'quoteDate')}
                     disabled={readOnly}
+                    error={!quote.quoteDate && !readOnly}
+                    helperText={!quote.quoteDate && !readOnly ? 'Date is required' : ''}
                     sx={{ 
                       '& .MuiInputBase-input.Mui-disabled': {
                         WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
@@ -245,24 +280,29 @@ export function QuotesStep({
                     value={quote.amount}
                     onChange={handleQuoteChange(index, 'amount')}
                     disabled={readOnly}
+                    error={(!quote.amount || quote.amount <= 0) && !readOnly}
+                    helperText={(!quote.amount || quote.amount <= 0) && !readOnly ? 'Amount must be greater than 0' : ''}
                     fullWidth
                     sx={{ 
-                      minWidth: '200px',
+                      minWidth: '120px',
                       '& .MuiInputBase-input.Mui-disabled': {
                         WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
                       }
                     }}
                     inputProps={{
-                      step: '0.01'
+                      step: '0.01',
+                      min: '0'
                     }}
                   />
                 </TableCell>
                 <TableCell>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth error={!quote.currency && !readOnly}>
+                    <InputLabel>Currency</InputLabel>
                     <Select
                       value={quote.currency}
                       onChange={handleQuoteChange(index, 'currency')}
                       disabled={readOnly}
+                      error={!quote.currency && !readOnly}
                       sx={{ 
                         '& .MuiSelect-select.Mui-disabled': {
                           WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
@@ -276,6 +316,9 @@ export function QuotesStep({
                         </MenuItem>
                       ))}
                     </Select>
+                    {!quote.currency && !readOnly && (
+                      <FormHelperText error>Currency is required</FormHelperText>
+                    )}
                   </FormControl>
                 </TableCell>
                 <TableCell>
@@ -286,8 +329,9 @@ export function QuotesStep({
                     onChange={handleQuoteChange(index, 'notes')}
                     disabled={readOnly}
                     fullWidth
+                    placeholder="Enter any additional notes about the quote"
                     sx={{ 
-                      minWidth: '300px',
+                      minWidth: '200px',
                       '& .MuiInputBase-input.Mui-disabled': {
                         WebkitTextFillColor: 'rgba(0, 0, 0, 0.6)',
                       },
@@ -303,44 +347,52 @@ export function QuotesStep({
                   />
                 </TableCell>
                 <TableCell>
-                  <input
-                    type="file"
-                    onChange={(e) => e.target.files && handleFileUpload(index, e.target.files)}
-                    multiple
-                    style={{ display: 'none' }}
-                    id={`file-upload-${index}`}
-                    disabled={readOnly}
-                  />
-                  <label htmlFor={`file-upload-${index}`}>
-                    <Button
-                      component="span"
-                      variant="outlined"
-                      startIcon={<AttachFileIcon />}
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <input
+                      type="file"
+                      onChange={(e) => handleFileUpload(e, index)}
+                      multiple
+                      style={{ display: 'none' }}
+                      id={`file-upload-${index}`}
                       disabled={readOnly}
-                    >
-                      Upload
-                    </Button>
-                  </label>
-                  {quote.attachments && quote.attachments.length > 0 && (
-                    <List dense>
-                      {quote.attachments.map((file) => (
-                        <ListItem key={file.id}>
-                          <ListItemText
-                            primary={
-                              <Link href={file.url} target="_blank" rel="noopener noreferrer">
-                                {file.name}
-                              </Link>
-                            }
-                          />
-                        </ListItem>
-                      ))}
-                    </List>
-                  )}
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                    />
+                    <label htmlFor={`file-upload-${index}`}>
+                      <Button
+                        component="span"
+                        variant="outlined"
+                        startIcon={<AttachFileIcon />}
+                        disabled={readOnly}
+                        title="Upload quote attachments (PDF, DOC, XLS, Images)"
+                      >
+                        Upload Files
+                      </Button>
+                    </label>
+                    {quote.attachments && quote.attachments.length > 0 && (
+                      <List dense sx={{ maxHeight: '100px', overflow: 'auto' }}>
+                        {quote.attachments.map((file) => (
+                          <ListItem key={file.id}>
+                            <ListItemText
+                              primary={
+                                <Link href={file.url} target="_blank" rel="noopener noreferrer">
+                                  {file.name}
+                                </Link>
+                              }
+                            />
+                          </ListItem>
+                        ))}
+                      </List>
+                    )}
+                  </Box>
                 </TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     {!readOnly && (
-                      <IconButton onClick={() => handleRemoveQuote(index)} color="error">
+                      <IconButton 
+                        onClick={() => handleRemoveQuote(index)} 
+                        color="error"
+                        title="Delete quote"
+                      >
                         <DeleteIcon />
                       </IconButton>
                     )}
@@ -354,18 +406,33 @@ export function QuotesStep({
 
       <Box mt={2}>
         {!readOnly && (
-          <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
-            onClick={handleAddQuote}
-            sx={{ mt: 2 }}
-          >
-            Add Quote
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleAddQuote}
+              startIcon={<AddIcon />}
+              title="Add a new vendor quote"
+            >
+              Add Quote
+            </Button>
+            {onSave && (
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={onSave}
+                disabled={loading || quotes.some(q => !q.vendorId || !q.quoteDate || !q.amount || !q.currency)}
+                startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
+                title="Save all quotes"
+              >
+                Save Quotes
+              </Button>
+            )}
+          </Box>
         )}
       </Box>
 
-      <Dialog open={deleteIndex !== null} onClose={handleCancelDelete}>
+      <Dialog open={deleteDialogOpen} onClose={handleCancelDelete}>
         <DialogTitle>Delete Quote</DialogTitle>
         <DialogContent>
           <DialogContentText>
