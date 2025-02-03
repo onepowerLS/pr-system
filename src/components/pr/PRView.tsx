@@ -740,11 +740,19 @@ export function PRView() {
   };
 
   const handleFieldChange = (field: keyof EditablePRFields, value: any): void => {
-    setEditedPR(prev => {
-      const newEdits = { ...prev };
+    setEditedPR(prevEdits => {
+      const newEdits = { ...prevEdits };
       
-      if (value === '') {
-        delete newEdits[field];
+      // Special handling for expense type changes
+      if (field === 'expenseType') {
+        const selectedType = expenseTypes.find(type => type.id === value);
+        const isVehicleExpense = selectedType?.code === '4';
+        
+        // If changing to non-vehicle expense type, remove vehicle field
+        if (!isVehicleExpense) {
+          delete newEdits.vehicle;
+        }
+        newEdits[field] = value;
       } else {
         newEdits[field] = value;
       }
@@ -764,9 +772,43 @@ export function PRView() {
     try {
       setLoading(true);
 
-      // Prepare updates object
-      const updates: Partial<PRRequest> = {
-        ...editedPR,
+      // Validate vendor ID
+      if (editedPR.preferredVendor) {
+        const vendorExists = vendors.some(v => 
+          v.id === editedPR.preferredVendor && 
+          v.active
+        );
+        if (!vendorExists) {
+          enqueueSnackbar('Selected vendor is not valid or inactive', { variant: 'error' });
+          return;
+        }
+      }
+
+      // Clean up updates object
+      const cleanUpdates = Object.entries(editedPR).reduce((acc, [key, value]) => {
+        // Skip undefined values
+        if (value === undefined) return acc;
+        
+        // Handle vehicle field
+        if (key === 'vehicle') {
+          const selectedExpenseType = editedPR.expenseType || pr.expenseType;
+          const expenseTypeObj = expenseTypes.find(type => type.id === selectedExpenseType);
+          const isVehicleExpense = expenseTypeObj?.code === '4';
+          
+          // Only include vehicle if it's a vehicle expense type
+          if (isVehicleExpense) {
+            acc[key] = value;
+          }
+        } else {
+          acc[key] = value;
+        }
+        
+        return acc;
+      }, {} as Partial<PRRequest>);
+
+      // Add line items to updates
+      const updates = {
+        ...cleanUpdates,
         lineItems: lineItems.map(item => ({
           id: item.id,
           description: item.description,
@@ -974,7 +1016,7 @@ export function PRView() {
                     }}
                   >
                     {vendors
-                      .filter(vendor => vendor.active && vendor.approved)
+                      .filter(vendor => vendor.active)
                       .map((vendor) => (
                         <MenuItem key={vendor.id} value={vendor.id}>
                           {vendor.name}
