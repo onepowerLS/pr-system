@@ -1,5 +1,5 @@
 import { db } from "@/config/firebase";
-import { collection, getDocs, query, where, addDoc, writeBatch, doc, setDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, addDoc, writeBatch, doc, setDoc, getDoc } from "firebase/firestore";
 
 export interface OrganizationData {
   id: string;
@@ -228,6 +228,25 @@ class ReferenceDataService {
     try {
       const collectionName = this.getCollectionName(type);
       const collectionRef = collection(this.db, collectionName);
+
+      // Ensure required fields for organization-specific types
+      if (!ORG_INDEPENDENT_TYPES.includes(type)) {
+        if (!data.organizationId) {
+          throw new Error('Organization ID is required');
+        }
+
+        // Get organization details
+        const orgDoc = await getDoc(doc(this.db, 'referenceData_organizations', data.organizationId));
+        if (!orgDoc.exists()) {
+          throw new Error('Organization not found');
+        }
+
+        const org = orgDoc.data() as ReferenceData;
+        data.organization = {
+          id: org.id,
+          name: org.name
+        };
+      }
 
       // Handle organization field
       if (data.organization) {

@@ -46,6 +46,24 @@ export interface ReferenceDataItem {
   vinNumber?: string;
   /** Engine number for identification (optional) */
   engineNumber?: string;
+
+  // Rule specific fields
+  number?: string;
+  description?: string;
+  threshold?: number;
+  active?: boolean;
+}
+
+export interface Rule extends ReferenceDataItem {
+  number: string;
+  description: string;
+  threshold: number;
+  active: boolean;
+  organization: {
+    id: string;
+    name: string;
+  };
+  organizationId: string;
 }
 
 export type ReferenceDataType = 
@@ -58,7 +76,8 @@ export type ReferenceDataType =
   | 'uom'
   | 'organizations'
   | 'permissions'
-  | 'vehicles';
+  | 'vehicles'
+  | 'rules';
 
 // Types that don't depend on organization
 export const ORG_INDEPENDENT_TYPES = [

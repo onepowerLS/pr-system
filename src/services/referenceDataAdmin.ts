@@ -440,9 +440,38 @@ export class ReferenceDataAdminService {
       case 'vehicles':
         // All fields are optional
         break;
+
+      case 'rules':
+        if (!item.number?.trim()) errors.push('Number is required');
+        if (!item.description?.trim()) errors.push('Description is required');
+        if (item.threshold === undefined || item.threshold === null) errors.push('Threshold is required');
+        if (typeof item.threshold !== 'number') errors.push('Threshold must be a number');
+        if (!item.organizationId) errors.push('Organization is required');
+        break;
     }
 
     return errors;
+  }
+
+  async createItem(type: string, item: Partial<ReferenceDataItem>): Promise<ReferenceDataItem> {
+    const errors = this.validateItem(type, item);
+    if (errors.length > 0) {
+      throw new Error(`Validation failed: ${errors.join(', ')}`);
+    }
+
+    const collectionName = this.getCollectionName(type);
+    const itemRef = doc(collection(db, collectionName));
+
+    const itemData: ReferenceDataItem = {
+      id: itemRef.id,
+      ...item,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      active: item.active ?? true
+    };
+
+    await setDoc(itemRef, itemData);
+    return itemData;
   }
 
   private getFieldsForType(type: string) {
@@ -475,6 +504,12 @@ export class ReferenceDataAdminService {
           { name: 'name', label: 'Name' },
           { name: 'code', label: 'Code' },
           { name: 'registrationNumber', label: 'Registration Number' },
+        ];
+      case 'rules':
+        return [
+          { name: 'number', label: 'Number', required: true },
+          { name: 'description', label: 'Description', required: true },
+          { name: 'threshold', label: 'Threshold', required: true },
         ];
       default:
         return [];

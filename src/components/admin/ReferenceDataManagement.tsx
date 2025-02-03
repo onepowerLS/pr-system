@@ -21,12 +21,13 @@ import {
   DialogActions,
   TextField,
   IconButton,
+  Switch,
   Snackbar,
   Alert,
   FormHelperText,
   Chip,
   Tooltip,
-  Switch
+  Switch as SwitchComponent
 } from "@mui/material"
 import { Edit as EditIcon, Delete as DeleteIcon, Info as InfoIcon } from "@mui/icons-material"
 import { ReferenceDataItem } from "@/types/referenceData"
@@ -51,7 +52,8 @@ const REFERENCE_DATA_TYPE_LABELS = {
   currencies: "Currencies",
   uom: "Units of Measure",
   organizations: "Organizations",
-  permissions: "Permissions"
+  permissions: "Permissions",
+  rules: "Rules"
 } as const
 
 type ReferenceDataType = keyof typeof REFERENCE_DATA_TYPE_LABELS
@@ -186,6 +188,7 @@ interface ReferenceDataField {
   type?: string;
   readOnly?: boolean;
   hideInTable?: boolean;
+  defaultValue?: any;
 }
 
 const isCodeBasedIdType = (type: string): boolean => {
@@ -255,6 +258,14 @@ const vehicleFields: ReferenceDataField[] = [
   { name: 'organizationId', label: 'Organization ID', type: 'text', readOnly: true, hideInTable: true }
 ];
 
+const ruleFields: ReferenceDataField[] = [
+  { name: 'number', label: 'Number', required: true },
+  { name: 'description', label: 'Description', required: true, sx: { width: '40%' } },
+  { name: 'threshold', label: 'Threshold', required: true, type: 'number' },
+  { name: 'active', label: 'Active', type: 'boolean', defaultValue: true },
+  { name: 'organizationId', label: 'Organization', required: true, type: 'organization' }
+];
+
 // Get form fields based on type
 const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
   if (isCodeBasedIdType(type) && type !== 'organizations') {
@@ -270,6 +281,8 @@ const getFormFields = (type: ReferenceDataType): ReferenceDataField[] => {
       return permissionFields;
     case 'vehicles':
       return vehicleFields;
+    case 'rules':
+      return ruleFields;
     case 'departments':
     case 'sites':
     case 'expenseTypes':
@@ -318,6 +331,14 @@ function getDisplayFields(type: ReferenceDataType): ReferenceDataField[] {
           wordWrap: 'break-word' 
         } 
       }));
+    case 'rules':
+      return [
+        { name: 'number', label: 'Number' },
+        { name: 'description', label: 'Description', sx: { width: '40%' } },
+        { name: 'threshold', label: 'Threshold' },
+        { name: 'active', label: 'Active', type: 'boolean' },
+        { name: 'organization', label: 'Organization', type: 'organization' }
+      ];
     case 'departments':
     case 'sites':
     case 'expenseTypes':
@@ -657,7 +678,7 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
         >
           <FormControlLabel
             control={
-              <Switch
+              <SwitchComponent
                 name={field.name}
                 id={`${selectedType}-${field.name}`}
                 checked={!!value}
@@ -750,6 +771,101 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
     );
   };
 
+  const renderCellContent = (item: ReferenceDataItem, field: ReferenceDataField) => {
+    const value = (item as any)[field.name];
+    
+    if (field.type === 'boolean') {
+      return (
+        <SwitchComponent
+          checked={value}
+          onChange={(e) => handleToggle(item.id, field.name, e.target.checked)}
+          disabled={!canEdit || isReadOnly}
+        />
+      );
+    }
+
+    if (field.type === 'organization') {
+      return item.organization?.name || '';
+    }
+
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    return value.toString();
+  };
+
+  const handleToggle = async (id: string, field: string, value: boolean) => {
+    try {
+      setIsLoading(true);
+      const itemRef = doc(db, `referenceData_${selectedType}`, id);
+      await updateDoc(itemRef, {
+        [field]: value,
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Update local state
+      setItems(prevItems => 
+        prevItems.map(item => 
+          item.id === id ? { ...item, [field]: value } : item
+        )
+      );
+      
+      enqueueSnackbar('Item updated successfully', { variant: 'success' });
+    } catch (error) {
+      console.error('Error updating item:', error);
+      enqueueSnackbar('Failed to update item', { variant: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderTableBody = () => {
+    return (
+      <TableBody>
+        {filteredItems.map((item) => (
+          <TableRow key={item.id}>
+            {getDisplayFields(selectedType).map((field) => (
+              <TableCell key={field.name} sx={field.sx}>
+                {renderCellContent(item, field)}
+              </TableCell>
+            ))}
+            {!isReadOnly && canEdit && (
+              <TableCell sx={{ width: 120 }}>
+                <IconButton onClick={() => handleEdit(item)}>
+                  <EditIcon />
+                </IconButton>
+                <IconButton onClick={() => handleDelete(item.id)}>
+                  <DeleteIcon />
+                </IconButton>
+              </TableCell>
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    );
+  };
+
+  const getDefaultValues = (type: ReferenceDataType, item?: ReferenceDataItem) => {
+    if (item) {
+      return {
+        ...item,
+        organizationId: item.organization?.id || item.organizationId
+      };
+    }
+
+    const defaults: Record<string, any> = {};
+    const fields = getFormFields(type);
+  
+    fields.forEach(field => {
+      if (field.defaultValue !== undefined) {
+        defaults[field.name] = field.defaultValue;
+      }
+    });
+
+    return defaults;
+  };
+
   const renderDialog = () => (
     <Dialog 
       open={isDialogOpen} 
@@ -776,18 +892,13 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
 
   const handleAddNew = () => {
     console.log('Opening add dialog for type:', selectedType);
-    setEditItem({
-      active: true,
-      approved: false,
-      name: '',
-      code: '',
-    });
+    setEditItem(getDefaultValues(selectedType));
     setIsDialogOpen(true);
   };
 
   const handleEdit = (item: ReferenceDataItem) => {
     console.log('Opening edit dialog for item:', item);
-    setEditItem(item);
+    setEditItem(getDefaultValues(selectedType, item));
     setIsDialogOpen(true);
   };
 
@@ -884,29 +995,7 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
               {!isReadOnly && canEdit && <TableCell sx={{ width: 120 }}>Actions</TableCell>}
             </TableRow>
           </TableHead>
-          <TableBody>
-            {filteredItems.map((item) => (
-              <TableRow key={item.id}>
-                {getDisplayFields(selectedType).map((field) => (
-                  <TableCell key={field.name} sx={field.sx}>
-                    {field.type === 'boolean' 
-                      ? item[field.name] ? 'Yes' : 'No'
-                      : item[field.name]}
-                  </TableCell>
-                ))}
-                {!isReadOnly && canEdit && (
-                  <TableCell sx={{ width: 120 }}>
-                    <IconButton onClick={() => handleEdit(item)}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => handleDelete(item.id)}>
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
+          {renderTableBody()}
         </Table>
       </TableContainer>
 
