@@ -441,7 +441,14 @@ export function PRView() {
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [lineItems, setLineItems] = useState<Array<LineItem>>([]);
   const currentUser = useSelector((state: RootState) => state.auth.user);
-  const canProcessPR = currentUser?.permissionLevel === 3 || currentUser?.permissionLevel === 2;
+  const isProcurement = currentUser?.permissionLevel === 2 || currentUser?.permissionLevel === 3;
+  const isRequestor = pr?.requestorEmail?.toLowerCase() === currentUser?.email?.toLowerCase();
+  const canProcessPR = isProcurement || (isRequestor && (
+    pr?.status === PRStatus.IN_QUEUE ||
+    pr?.status === PRStatus.SUBMITTED ||
+    pr?.status === PRStatus.RESUBMITTED ||
+    pr?.status === PRStatus.REVISION_REQUIRED
+  ));
   const canEditInCurrentStatus = pr?.status === PRStatus.SUBMITTED || pr?.status === PRStatus.RESUBMITTED;
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: string } | null>(null);
   const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
@@ -527,6 +534,19 @@ export function PRView() {
     } catch (error) {
       console.error('Error fetching PR:', error);
       setError('Error fetching PR');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to refresh PR data
+  const refreshPR = async () => {
+    try {
+      setLoading(true);
+      await fetchPR();
+    } catch (error) {
+      console.error('Error refreshing PR:', error);
+      enqueueSnackbar('Error refreshing PR data', { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1519,9 +1539,7 @@ export function PRView() {
             currentStatus={pr.status}
             requestorEmail={pr.requestorEmail}
             currentUser={currentUser}
-            onStatusChange={async () => {
-              await refreshPR();
-            }}
+            onStatusChange={refreshPR}
           />
         </Box>
       )}

@@ -28,13 +28,13 @@ interface ProcurementActionsProps {
 
 export function ProcurementActions({ prId, currentStatus, requestorEmail, currentUser, onStatusChange }: ProcurementActionsProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedAction, setSelectedAction] = useState<'queue' | 'reject' | 'revise' | null>(null);
+  const [selectedAction, setSelectedAction] = useState<'approve' | 'reject' | 'revise' | 'cancel' | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
 
-  const handleActionClick = (action: 'queue' | 'reject' | 'revise') => {
+  const handleActionClick = (action: 'approve' | 'reject' | 'revise' | 'cancel') => {
     setSelectedAction(action);
     setIsDialogOpen(true);
     setNotes('');
@@ -58,8 +58,8 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
 
       let newStatus: PRStatus;
       switch (selectedAction) {
-        case 'queue':
-          newStatus = PRStatus.IN_QUEUE;
+        case 'approve':
+          newStatus = PRStatus.PENDING_APPROVAL;
           break;
         case 'reject':
           newStatus = PRStatus.REJECTED;
@@ -67,21 +67,81 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         case 'revise':
           newStatus = PRStatus.REVISION_REQUIRED;
           break;
+        case 'cancel':
+          newStatus = PRStatus.CANCELED;
+          break;
         default:
           return;
       }
 
-      // Update PR status with notes
-      await prService.updatePRStatus(prId, newStatus, notes, currentUser);
+      // Get PR details first to prepare notifications
+      const pr = await prService.getPR(prId);
+      if (!pr) throw new Error('PR not found');
 
-      // Send notification
-      await notificationService.handleStatusChange(
+      // For push to approver, ensure we have approvers
+      if (selectedAction === 'approve' && (!pr.approvers || pr.approvers.length === 0)) {
+        setError('Cannot push to approval - no approvers assigned');
+        return;
+      }
+
+      // Update PR status with notes
+      await prService.updatePRStatus(
         prId,
-        currentStatus,
         newStatus,
-        currentUser,
-        notes
+        notes || (selectedAction === 'approve' ? 'PR pushed to approver' : undefined),
+        currentUser
       );
+
+      // Send notifications
+      try {
+        if (selectedAction === 'approve' && pr.approvers) {
+          // Prepare detailed messages for approvers
+          const approverMessage = `Please review PR ${pr.prNumber}:\n\n` +
+            `Requestor: ${pr.requestor.name}\n` +
+            `Category: ${pr.projectCategory}\n` +
+            `Expense Type: ${pr.expenseType}\n` +
+            `Site: ${pr.site}\n` +
+            `Amount: ${pr.estimatedAmount} ${pr.currency}\n` +
+            `Vendor: ${pr.preferredVendor || 'Not specified'}\n` +
+            `Required by: ${new Date(pr.requiredDate).toLocaleDateString()}`;
+
+          // Send to all approvers
+          await Promise.all(pr.approvers.map(approverId =>
+            notificationService.handleStatusChange(
+              prId,
+              currentStatus,
+              newStatus,
+              currentUser,
+              approverMessage,
+              approverId
+            )
+          ));
+
+          // Notify requestor
+          const requestorMessage = `Your PR ${pr.prNumber} has been pushed for approval`;
+          await notificationService.handleStatusChange(
+            prId,
+            currentStatus,
+            newStatus,
+            currentUser,
+            requestorMessage,
+            pr.requestor.id
+          );
+        } else {
+          // For other actions, send standard notification
+          await notificationService.handleStatusChange(
+            prId,
+            currentStatus,
+            newStatus,
+            currentUser,
+            notes || `PR status changed to ${newStatus}`
+          );
+        }
+      } catch (notificationError) {
+        console.error('Error sending notifications:', notificationError);
+        // Don't fail the whole operation if notifications fail
+        enqueueSnackbar('PR updated but there was an error sending notifications', { variant: 'warning' });
+      }
 
       enqueueSnackbar('PR status updated successfully', { variant: 'success' });
       handleClose();
@@ -95,80 +155,276 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
     }
   };
 
-  // Only show actions if PR is in SUBMITTED or RESUBMITTED status
-  if (currentStatus !== PRStatus.SUBMITTED && currentStatus !== PRStatus.RESUBMITTED) {
+  // Show different actions based on user role and PR status
+  const isProcurement = currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
+  const isRequestor = currentUser.email.toLowerCase() === requestorEmail.toLowerCase();
+
+  if (!isProcurement && !isRequestor) {
     return null;
   }
 
-  return (
-    <>
+  // Show cancel button for requestor in appropriate statuses
+  if (isRequestor && (
+    currentStatus === PRStatus.SUBMITTED ||
+    currentStatus === PRStatus.RESUBMITTED ||
+    currentStatus === PRStatus.IN_QUEUE ||
+    currentStatus === PRStatus.REVISION_REQUIRED
+  )) {
+    return (
       <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
         <Button
           variant="contained"
-          color="primary"
-          onClick={() => handleActionClick('queue')}
-        >
-          Move to Queue
-        </Button>
-        <Button
-          variant="contained"
           color="error"
-          onClick={() => handleActionClick('reject')}
+          onClick={() => handleActionClick('cancel')}
         >
-          Reject
+          Cancel PR
         </Button>
-        <Button
-          variant="contained"
-          color="warning"
-          onClick={() => handleActionClick('revise')}
+        <Dialog 
+          open={isDialogOpen} 
+          onClose={handleClose} 
+          maxWidth="sm" 
+          fullWidth
         >
-          Revise & Resubmit
-        </Button>
+          <DialogTitle>Cancel PR</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Are you sure you want to cancel this PR? This action cannot be undone.
+              </Typography>
+              <TextField
+                autoFocus
+                multiline
+                rows={4}
+                label="Notes (Optional)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                fullWidth
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleClose}>No, Keep PR</Button>
+            <Button onClick={handleSubmit} variant="contained" color="error">
+              Yes, Cancel PR
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
+    );
+  }
 
-      <Dialog 
-        open={isDialogOpen} 
-        onClose={handleClose} 
-        maxWidth="sm" 
-        fullWidth
-      >
-        <DialogTitle>
-          {selectedAction === 'queue' && 'Move to Queue'}
-          {selectedAction === 'reject' && 'Reject PR'}
-          {selectedAction === 'revise' && 'Request Revision'}
-        </DialogTitle>
-        <DialogContent>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-          <Stack spacing={2}>
-            <Typography variant="body2" color="text.secondary">
-              {selectedAction === 'queue' && 'Add optional notes about moving this PR to the procurement queue.'}
-              {selectedAction === 'reject' && 'Please provide a reason for rejecting this PR.'}
-              {selectedAction === 'revise' && 'Please specify what changes are needed for this PR.'}
-            </Typography>
-            <TextField
-              autoFocus
-              multiline
-              rows={4}
-              label="Notes"
-              fullWidth
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              error={!!error}
-              required={selectedAction === 'reject' || selectedAction === 'revise'}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSubmit} variant="contained" color="primary">
-            Confirm
+  // For IN_QUEUE status - Procurement actions
+  if (currentStatus === PRStatus.IN_QUEUE && isProcurement) {
+    return (
+      <>
+        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => handleActionClick('approve')}
+          >
+            Push to Approver
           </Button>
-        </DialogActions>
-      </Dialog>
-    </>
-  );
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => handleActionClick('reject')}
+          >
+            Reject
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => handleActionClick('revise')}
+          >
+            Revise & Resubmit
+          </Button>
+        </Box>
+        <Dialog 
+          open={isDialogOpen} 
+          onClose={handleClose} 
+          maxWidth="sm" 
+          fullWidth
+        >
+          <DialogTitle>
+            {selectedAction === 'approve' && 'Push to Approver'}
+            {selectedAction === 'reject' && 'Reject PR'}
+            {selectedAction === 'revise' && 'Request Revision'}
+          </DialogTitle>
+          <DialogContent>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {selectedAction === 'approve' && 'Add optional notes before pushing this PR to the approver.'}
+                {selectedAction === 'reject' && 'Please provide a reason for rejecting this PR.'}
+                {selectedAction === 'revise' && 'Please specify what changes are needed for this PR.'}
+              </Typography>
+              <TextField
+                autoFocus
+                multiline
+                rows={4}
+                label="Notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                required={selectedAction === 'reject' || selectedAction === 'revise'}
+                error={!!error}
+                fullWidth
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleClose}>Cancel</Button>
+            <Button onClick={handleSubmit} variant="contained" color="primary">
+              Confirm
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </>
+    );
+  }
+
+  // For REVISION_REQUIRED status - Procurement actions
+  if (currentStatus === PRStatus.REVISION_REQUIRED && isProcurement) {
+    return (
+      <>
+        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => handleActionClick('approve')}
+          >
+            Push to Approver
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => handleActionClick('revise')}
+          >
+            Revise & Resubmit
+          </Button>
+        </Box>
+        <Dialog 
+          open={isDialogOpen} 
+          onClose={handleClose} 
+          maxWidth="sm" 
+          fullWidth
+        >
+          <DialogTitle>
+            {selectedAction === 'approve' && 'Push to Approver'}
+            {selectedAction === 'revise' && 'Request Revision'}
+          </DialogTitle>
+          <DialogContent>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {selectedAction === 'approve' && 'Add optional notes before pushing this PR to the approver.'}
+                {selectedAction === 'revise' && 'Please specify what changes are needed for this PR.'}
+              </Typography>
+              <TextField
+                autoFocus
+                multiline
+                rows={4}
+                label="Notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                required={selectedAction === 'revise'}
+                error={!!error}
+                fullWidth
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleClose}>Cancel</Button>
+            <Button onClick={handleSubmit} variant="contained" color="primary">
+              Confirm
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </>
+    );
+  }
+
+  // For SUBMITTED or RESUBMITTED status - Procurement actions
+  if (isProcurement && (currentStatus === PRStatus.SUBMITTED || currentStatus === PRStatus.RESUBMITTED)) {
+    return (
+      <>
+        <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => handleActionClick('queue')}
+          >
+            Move to Queue
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => handleActionClick('reject')}
+          >
+            Reject
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            onClick={() => handleActionClick('revise')}
+          >
+            Revise & Resubmit
+          </Button>
+        </Box>
+        <Dialog 
+          open={isDialogOpen} 
+          onClose={handleClose} 
+          maxWidth="sm" 
+          fullWidth
+        >
+          <DialogTitle>
+            {selectedAction === 'queue' && 'Move to Queue'}
+            {selectedAction === 'reject' && 'Reject PR'}
+            {selectedAction === 'revise' && 'Request Revision'}
+          </DialogTitle>
+          <DialogContent>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
+            <Stack spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                {selectedAction === 'queue' && 'Add optional notes about moving this PR to the procurement queue.'}
+                {selectedAction === 'reject' && 'Please provide a reason for rejecting this PR.'}
+                {selectedAction === 'revise' && 'Please specify what changes are needed for this PR.'}
+              </Typography>
+              <TextField
+                autoFocus
+                multiline
+                rows={4}
+                label="Notes"
+                fullWidth
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                error={!!error}
+                required={selectedAction === 'reject' || selectedAction === 'revise'}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleClose}>Cancel</Button>
+            <Button onClick={handleSubmit} variant="contained" color="primary">
+              Confirm
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </>
+    );
+  }
+
+  return null;
 }
