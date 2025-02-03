@@ -444,16 +444,39 @@ export const prService = {
     try {
       console.log('PR Service: Fetching PRs for:', { userId, organization });
       
-      // Query PRs by organization only
-      const q = query(
+      // Get user permissions from auth
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Base query for organization
+      let q = query(
         collection(db, PR_COLLECTION),
         where('organization', '==', organization)
       );
+
+      // If user is not procurement/admin, only show their PRs
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const userData = userDoc.data();
+      const userRoles = userData?.roles || [];
+      const isProcurementOrAdmin = userRoles.some(role => 
+        role === 'procurement' || role === 'admin'
+      );
+
+      if (!isProcurementOrAdmin) {
+        q = query(
+          collection(db, PR_COLLECTION),
+          where('organization', '==', organization),
+          where('createdBy.id', '==', userId)
+        );
+      }
       
       const querySnapshot = await getDocs(q);
       console.log('PR Service: Found PRs:', {
         count: querySnapshot.size,
         organization,
+        userRoles,
         prs: querySnapshot.docs.map(doc => ({
           id: doc.id,
           prNumber: doc.data().prNumber,
