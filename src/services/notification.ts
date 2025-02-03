@@ -91,7 +91,7 @@ export class NotificationService {
     notes?: string
   ): Promise<void> {
     try {
-      // Get PR data to get PR number and requestor email
+      // Get PR data
       const prRef = doc(db, 'purchaseRequests', prId);
       const prDoc = await getDoc(prRef);
       
@@ -99,34 +99,43 @@ export class NotificationService {
         throw new Error('PR not found');
       }
 
-      const prData = prDoc.data();
-      const prNumber = prData.prNumber;
-      const description = prData.description || '';
+      const pr = prDoc.data();
+      const functions = getFunctions();
+      const sendStatusChangeNotification = httpsCallable(functions, 'sendStatusChangeNotification');
+
+      // Get user's name, falling back to email username if firstName/lastName not available
+      const updaterName = user.firstName && user.lastName 
+        ? `${user.firstName} ${user.lastName}`
+        : user.email.split('@')[0];
 
       // Prepare notification data
-      const notificationData: StatusChangeNotification = {
-        prNumber,
-        description,
+      const notificationData = {
+        prId,
+        prNumber: pr.prNumber,
         oldStatus,
         newStatus,
-        updatedBy: user.email,
-        notes: notes || ''
+        updaterName,
+        updaterEmail: user.email,
+        requestorEmail: pr.requestorEmail,
+        notes: notes || '',
+        description: pr.description,
+        department: pr.department,
+        requiredDate: pr.requiredDate
       };
 
-      // Log notification
+      // Send notification using callable function
+      await sendStatusChangeNotification(notificationData);
+
+      // Log the notification
       await this.logNotification(
         'STATUS_CHANGE',
         prId,
-        [prData.requestorEmail],
-        'pending'
+        [pr.requestorEmail, 'procurement@1pwrafrica.com'],
+        'sent'
       );
-
-      // Send email notification
-      const sendStatusChangeEmail = httpsCallable(getFunctions(), 'sendStatusChangeEmail');
-      await sendStatusChangeEmail(notificationData);
     } catch (error) {
       console.error('Error sending status change notification:', error);
-      throw error;
+      throw new Error('Failed to send status change notification');
     }
   }
 

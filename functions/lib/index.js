@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateUserEmail = exports.createUser = exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.testEmailNotification = exports.sendStatusChangeEmail = exports.sendPRNotification = void 0;
+exports.updateUserEmail = exports.createUser = exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.sendStatusChangeNotification = exports.sendSubmissionEmail = exports.testEmailNotification = exports.sendStatusChangeEmail = exports.sendPRNotification = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions"));
 const nodemailer = __importStar(require("nodemailer"));
@@ -217,12 +217,13 @@ exports.sendPRNotification = functions.https.onCall(async (data, context) => {
 exports.sendStatusChangeEmail = functions.https.onCall(async (data, context) => {
     try {
         const { notification, recipients } = data;
-        const { prId, prNumber, oldStatus, newStatus, changedBy, notes } = notification;
+        const { prId, prNumber, description, oldStatus, newStatus, changedBy, notes } = notification;
         // Create email content
         const emailContent = {
             text: `
                 PR Status Change Notification - ${prNumber}
                 
+                Description: ${description}
                 Status Changed: ${oldStatus} → ${newStatus}
                 Changed By: ${changedBy.email}
                 Date: ${new Date().toLocaleDateString()}
@@ -232,6 +233,7 @@ exports.sendStatusChangeEmail = functions.https.onCall(async (data, context) => 
             `,
             html: `
                 <h2>PR Status Change Notification - ${prNumber}</h2>
+                <p><strong>Description:</strong> ${description}</p>
                 <p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
                 <p><strong>Changed By:</strong> ${changedBy.email}</p>
                 <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
@@ -278,6 +280,109 @@ exports.testEmailNotification = functions.https.onCall(async (data, context) => 
     catch (error) {
         console.error('Error sending test email:', error);
         throw new functions.https.HttpsError('internal', 'Failed to send test email');
+    }
+});
+// Function to send PR submission notification
+exports.sendSubmissionEmail = functions.https.onCall(async (data, context) => {
+    try {
+        const { prNumber, description, submittedBy, requestor, category, expenseType, site, amount, currency, requiredDate } = data;
+        // Create email content
+        const emailContent = {
+            text: `
+                New PR Submission - ${prNumber}
+                
+                Description: ${description}
+                Submitted By: ${submittedBy}
+                Requestor: ${requestor.name} (${requestor.email})
+                Department: ${requestor.department}
+                Category: ${category}
+                Expense Type: ${expenseType}
+                Site: ${site}
+                Amount: ${amount} ${currency}
+                Required Date: ${requiredDate}
+                Date: ${new Date().toLocaleDateString()}
+                
+                Please review the purchase request in the system.
+            `,
+            html: `
+                <h2>New PR Submission - ${prNumber}</h2>
+                <p><strong>Description:</strong> ${description}</p>
+                <p><strong>Submitted By:</strong> ${submittedBy}</p>
+                <p><strong>Requestor:</strong> ${requestor.name} (${requestor.email})</p>
+                <p><strong>Department:</strong> ${requestor.department}</p>
+                <p><strong>Category:</strong> ${category}</p>
+                <p><strong>Expense Type:</strong> ${expenseType}</p>
+                <p><strong>Site:</strong> ${site}</p>
+                <p><strong>Amount:</strong> ${amount} ${currency}</p>
+                <p><strong>Required Date:</strong> ${requiredDate}</p>
+                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                
+                <p>Please <a href="${process.env.VITE_APP_URL || 'http://localhost:5173'}/pr/${prNumber}">click here</a> to review the purchase request in the system.</p>
+            `
+        };
+        // Send email to procurement team and cc the requestor
+        const info = await transporter.sendMail({
+            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
+            to: 'procurement@1pwrafrica.com',
+            cc: requestor.email,
+            subject: `New PR Submission - ${prNumber}`,
+            text: emailContent.text,
+            html: emailContent.html
+        });
+        console.log('Submission notification sent:', info.messageId);
+        return {
+            success: true,
+            messageId: info.messageId
+        };
+    }
+    catch (error) {
+        console.error('Error sending submission notification:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to send submission notification');
+    }
+});
+exports.sendStatusChangeNotification = functions.https.onCall(async (data) => {
+    const { prNumber, description, oldStatus, newStatus, updaterName, updaterEmail, requestorEmail, notes, department, requiredDate } = data;
+    try {
+        const info = await transporter.sendMail({
+            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
+            to: 'procurement@1pwrafrica.com',
+            cc: requestorEmail,
+            subject: `PR Status Change - ${prNumber}`,
+            text: `
+Purchase Request ${prNumber}
+
+Status Changed: ${oldStatus} → ${newStatus}
+Updated By: ${updaterName} (${updaterEmail})
+
+Department: ${department}
+Description: ${description}
+Required Date: ${requiredDate}
+
+Notes: ${notes}
+
+Please click here to review the purchase request in the system.
+`,
+            html: `
+<h2>Purchase Request ${prNumber}</h2>
+
+<p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}<br>
+<strong>Updated By:</strong> ${updaterName} (${updaterEmail})</p>
+
+<p><strong>Department:</strong> ${department}<br>
+<strong>Description:</strong> ${description}<br>
+<strong>Required Date:</strong> ${requiredDate}</p>
+
+<p><strong>Notes:</strong> ${notes}</p>
+
+<p>Please <a href="${process.env.VITE_APP_URL}/pr/${prNumber}">click here</a> to review the purchase request in the system.</p>
+`
+        });
+        console.log('Status change email sent:', info.messageId);
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Error sending status change email:', error);
+        throw new Error('Failed to send status change email');
     }
 });
 //# sourceMappingURL=index.js.map

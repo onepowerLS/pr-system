@@ -333,6 +333,64 @@ export const sendSubmissionEmail = functions.https.onCall(async (data, context) 
     }
 });
 
+export const sendStatusChangeNotification = functions.https.onCall(async (data) => {
+    const {
+        prNumber,
+        description,
+        oldStatus,
+        newStatus,
+        updaterName,
+        updaterEmail,
+        requestorEmail,
+        notes,
+        department,
+        requiredDate
+    } = data;
+
+    try {
+        const info = await transporter.sendMail({
+            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
+            to: 'procurement@1pwrafrica.com',
+            cc: requestorEmail,
+            subject: `PR Status Change - ${prNumber}`,
+            text: `
+Purchase Request ${prNumber}
+
+Status Changed: ${oldStatus} → ${newStatus}
+Updated By: ${updaterName} (${updaterEmail})
+
+Department: ${department}
+Description: ${description}
+Required Date: ${requiredDate}
+
+Notes: ${notes}
+
+Please click here to review the purchase request in the system.
+`,
+            html: `
+<h2>Purchase Request ${prNumber}</h2>
+
+<p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}<br>
+<strong>Updated By:</strong> ${updaterName} (${updaterEmail})</p>
+
+<p><strong>Department:</strong> ${department}<br>
+<strong>Description:</strong> ${description}<br>
+<strong>Required Date:</strong> ${requiredDate}</p>
+
+<p><strong>Notes:</strong> ${notes}</p>
+
+<p>Please <a href="${process.env.VITE_APP_URL}/pr/${prNumber}">click here</a> to review the purchase request in the system.</p>
+`
+        });
+
+        console.log('Status change email sent:', info.messageId);
+        return { success: true };
+    } catch (error) {
+        console.error('Error sending status change email:', error);
+        throw new Error('Failed to send status change email');
+    }
+});
+
 export {
     updateUserPassword,
     setUserClaims,
