@@ -29,6 +29,20 @@ import { ConfirmationDialog } from '../common/ConfirmationDialog';
 import { Link } from 'react-router-dom';
 import { referenceDataService } from '../../services/referenceData';
 
+interface StatusHistoryEntry {
+  status: PRStatus;
+  timestamp: string | number | Date;
+  updatedBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
+interface PRWithHistory extends PRRequest {
+  statusHistory?: StatusHistoryEntry[];
+}
+
 const UrgentTableRow = styled(TableRow)(({ theme }) => ({
   backgroundColor: `${theme.palette.error.main}15`,
   '&:hover': {
@@ -322,6 +336,90 @@ export const Dashboard = () => {
     [PRStatus.REJECTED]: { label: 'Rejected', color: '#E91E63' }
   };
 
+  const calculateDaysOpen = (pr: PRWithHistory): number => {
+    if (!pr.createdAt) return 0;
+
+    const createdDate = new Date(pr.createdAt);
+    let endDate: Date;
+
+    // For closed PRs (completed, canceled, rejected), use the status change date
+    const closedStatuses = [PRStatus.COMPLETED, PRStatus.CANCELED, PRStatus.REJECTED];
+    if (closedStatuses.includes(pr.status)) {
+      // Find the latest status history entry for the current status
+      const statusChange = pr.statusHistory?.find(history => history.status === pr.status);
+      if (statusChange?.timestamp) {
+        // Handle both Date objects and Firestore Timestamps
+        const timestamp = statusChange.timestamp;
+        endDate = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
+      } else {
+        endDate = new Date();
+      }
+    } else {
+      // For open PRs, use current date
+      endDate = new Date();
+    }
+
+    const diffTime = Math.abs(endDate.getTime() - createdDate.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const getStatusChangeDate = (pr: PRWithHistory): string => {
+    console.log('Getting status change date:', {
+      prNumber: pr.prNumber,
+      status: pr.status,
+      statusHistory: pr.statusHistory,
+      hasHistory: Boolean(pr.statusHistory?.length)
+    });
+
+    if (pr.status === PRStatus.SUBMITTED) return '';
+    
+    // Get the latest status history entry for the current status
+    const statusChange = pr.statusHistory?.find(history => history.status === pr.status);
+    console.log('Found status change:', {
+      prNumber: pr.prNumber,
+      status: pr.status,
+      statusChange,
+      timestamp: statusChange?.timestamp
+    });
+
+    if (!statusChange?.timestamp) {
+      // Fallback to updatedAt if no status history
+      if (pr.updatedAt) {
+        console.log('Using updatedAt as fallback:', {
+          prNumber: pr.prNumber,
+          updatedAt: pr.updatedAt
+        });
+        return new Date(pr.updatedAt).toLocaleDateString();
+      }
+      // Fallback to workflowHistory if available
+      const workflowEntry = pr.workflowHistory?.find(entry => entry.step === pr.status);
+      if (workflowEntry?.timestamp) {
+        console.log('Using workflow history as fallback:', {
+          prNumber: pr.prNumber,
+          workflowEntry
+        });
+        const timestamp = workflowEntry.timestamp;
+        const date = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
+        return date.toLocaleDateString();
+      }
+      return '-';
+    }
+
+    try {
+      // Handle both Date objects and Firestore Timestamps
+      const timestamp = statusChange.timestamp;
+      const date = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
+      return date.toLocaleDateString();
+    } catch (error) {
+      console.error('Error formatting status change date:', {
+        error,
+        statusChange,
+        prNumber: pr.prNumber
+      });
+      return '-';
+    }
+  };
+
   const statusPRs = getStatusPRs(selectedStatus);
 
   const handleDeleteClick = (event: React.MouseEvent, prId: string) => {
@@ -411,33 +509,16 @@ export const Dashboard = () => {
                     <TableCell>Description</TableCell>
                     <TableCell>Submitted By</TableCell>
                     <TableCell>Created Date</TableCell>
-                    {selectedStatus === PRStatus.SUBMITTED && (
-                      <>
-                        <TableCell>Days Open</TableCell>
-                        <TableCell>Resubmitted Date</TableCell>
-                      </>
+                    <TableCell>Days Open</TableCell>
+                    {selectedStatus !== PRStatus.SUBMITTED && (
+                      <TableCell>Status Change Date</TableCell>
                     )}
                     <TableCell>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {statusPRs.map((pr) => {
-                    console.log('Rendering PR row:', {
-                      id: pr.id,
-                      prNumber: pr.prNumber,
-                      isUrgent: pr.isUrgent,
-                      status: pr.status
-                    });
-                    
-                    // Ensure boolean conversion for isUrgent
+                  {statusPRs.map((pr: PRWithHistory) => {
                     const isUrgent = Boolean(pr.isUrgent);
-                    console.log('PR urgency state:', {
-                      id: pr.id,
-                      prNumber: pr.prNumber,
-                      rawIsUrgent: pr.isUrgent,
-                      convertedIsUrgent: isUrgent
-                    });
-                    
                     const RowComponent = isUrgent ? UrgentTableRow : TableRow;
                     return (
                       <RowComponent
@@ -472,15 +553,13 @@ export const Dashboard = () => {
                             ? new Date(pr.createdAt).toLocaleDateString()
                             : 'Date not available'}
                         </TableCell>
-                        {selectedStatus === PRStatus.SUBMITTED && (
-                          <>
-                            <TableCell>
-                              {pr.metrics?.daysOpen || Math.ceil((Date.now() - new Date(pr.createdAt).getTime()) / (1000 * 60 * 60 * 24))}
-                            </TableCell>
-                            <TableCell>
-                              {pr.resubmittedAt ? new Date(pr.resubmittedAt).toLocaleDateString() : '-'}
-                            </TableCell>
-                          </>
+                        <TableCell>
+                          {calculateDaysOpen(pr)}
+                        </TableCell>
+                        {selectedStatus !== PRStatus.SUBMITTED && (
+                          <TableCell>
+                            {getStatusChangeDate(pr)}
+                          </TableCell>
                         )}
                         <TableCell>
                           <IconButton

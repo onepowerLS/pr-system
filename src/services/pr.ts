@@ -716,6 +716,14 @@ export const prService = {
         updatedAt: now,
       };
 
+      // Always add to status history
+      const statusHistoryEntry = {
+        status: newStatus,
+        timestamp: now,
+        updatedBy: user || null
+      };
+      updateData.statusHistory = arrayUnion(statusHistoryEntry);
+
       // Add to workflow history if notes are provided
       if (notes) {
         const historyEntry = {
@@ -724,12 +732,14 @@ export const prService = {
           notes,
           user: user || null
         };
-
         updateData.workflowHistory = arrayUnion(historyEntry);
       }
 
       await updateDoc(prRef, updateData);
-      console.log(`PR ${prId} status updated to ${newStatus}`);
+      console.log(`PR ${prId} status updated to ${newStatus}`, {
+        statusHistoryEntry,
+        updateData
+      });
     } catch (error) {
       console.error('Error updating PR status:', error);
       throw new Error('Failed to update PR status');
