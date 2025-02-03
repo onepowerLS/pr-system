@@ -43,7 +43,8 @@ import {
   Timestamp,
   deleteDoc,
   writeBatch,
-  arrayUnion
+  arrayUnion,
+  serverTimestamp
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
@@ -115,125 +116,65 @@ export const prService = {
    * @returns {Promise<string>} ID of the created purchase request
    */
   async createPR(prData: Partial<PRRequest>): Promise<string> {
+    console.log('Creating PR with data:', prData);
+    
     try {
-      console.log('Creating PR with data:', JSON.stringify(prData, null, 2));
-      const prNumber = await this.generatePRNumber(prData.organization!);
+      // Validate required fields
+      if (!prData.organization) {
+        throw new Error('organization is required');
+      }
+      if (!prData.requestorId) {
+        throw new Error('requestorId is required');
+      }
+
+      // Generate PR number
+      const prNumber = await this.generatePRNumber(prData.organization);
+      console.log('Generated PR number:', prNumber);
+
+      // Get current user for audit fields
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      // Set initial status and timestamps
+      const now = Timestamp.now();
+      const serverNow = serverTimestamp();
       
-      // Create PR document with properly structured requestor data
-      const prRef = await addDoc(collection(db, PR_COLLECTION), {
+      const pr = {
         ...prData,
         prNumber,
-        requestor: {
-          id: prData.requestorId || '',
-          name: prData.requestor?.name || prData.requestorEmail?.split('@')[0] || '',
-          email: prData.requestorEmail || '',
-          role: prData.requestor?.role || 'USER',
-          department: prData.requestor?.department || prData.department || '',
-          organization: prData.organization || '',
-          isActive: true
+        status: 'SUBMITTED' as PRStatus,
+        createdAt: serverNow,
+        updatedAt: serverNow,
+        createdBy: {
+          id: user.uid,
+          name: user.displayName || '',
+          email: user.email || ''
         },
-        status: PRStatus.SUBMITTED,  // Always SUBMITTED
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
-      });
+        updatedBy: {
+          id: user.uid,
+          name: user.displayName || '',
+          email: user.email || ''
+        },
+        statusHistory: [{
+          status: 'SUBMITTED',
+          timestamp: now, // Use regular Timestamp for array
+          updatedBy: {
+            id: user.uid,
+            name: user.displayName || '',
+            email: user.email || ''
+          }
+        }]
+      };
 
-      // Move files from temp storage to permanent storage and update URLs
-      if (prData.lineItems) {
-        const updatedLineItems = await Promise.all(
-          prData.lineItems.map(async (lineItem) => {
-            if (lineItem.attachments?.length > 0) {
-              const updatedAttachments = await Promise.all(
-                lineItem.attachments.map(async (attachment) => {
-                  // Move file from temp to permanent storage
-                  const permanentPath = await StorageService.moveToPermanentStorage(
-                    attachment.path, // Use path instead of url
-                    prNumber,        // PR number for folder structure
-                    attachment.name  // Original filename
-                  );
-                  
-                  // Return updated attachment with new URL
-                  return {
-                    ...attachment,
-                    url: permanentPath
-                  };
-                })
-              );
-              
-              return {
-                ...lineItem,
-                attachments: updatedAttachments
-              };
-            }
-            return lineItem;
-          })
-        );
+      // Create PR document
+      const docRef = await addDoc(collection(db, PR_COLLECTION), pr);
+      console.log('Created PR with ID:', docRef.id);
 
-        // Update PR document with new file URLs
-        await updateDoc(doc(db, PR_COLLECTION, prRef.id), {
-          lineItems: updatedLineItems
-        });
-      }
-
-      // Send email notification using Cloud Function
-      try {
-        console.log('Line items before notification:', JSON.stringify(prData.lineItems, null, 2));
-        const notificationData = {
-          prNumber,
-          department: prData.department,
-          requestorName: prData.requestor?.name,
-          requestorEmail: prData.requestorEmail,
-          description: prData.description,
-          requiredDate: prData.requiredDate,
-          isUrgent: prData.isUrgent,
-          items: prData.lineItems?.map(item => {
-            console.log('Processing line item attachments:', JSON.stringify(item.attachments, null, 2));
-            return {
-              description: item.description,
-              quantity: item.quantity,
-              uom: item.uom,
-              notes: item.notes,
-              attachments: item.attachments?.map(att => ({
-                name: att.name,
-                size: att.size,
-                type: att.type,
-                url: att.url // Include the URL in notification data
-              })) || []
-            };
-          })
-        };
-
-        console.log('Sending PR notification with data:', JSON.stringify(notificationData, null, 2));
-        const result = await sendPRNotification(notificationData);
-        console.log('PR notification sent:', JSON.stringify(result, null, 2));
-      } catch (notificationError) {
-        console.error('Error sending PR notification:', JSON.stringify(notificationError, null, 2));
-        // Don't throw here - we want the PR to be created even if notification fails
-      }
-
-      // Log notification in Firestore
-      await notificationService.logNotification(
-        'PR_SUBMITTED',
-        prRef.id,
-        ['procurement@1pwrafrica.com', prData.requestorEmail!],
-        'pending'
-      );
-
-      // Handle status change notification
-      await notificationService.handleStatusChange(
-        prRef.id,
-        '',  // No previous status for new PR
-        PRStatus.SUBMITTED,
-        {
-          id: prData.requestorId!,
-          email: prData.requestorEmail!,
-          name: prData.requestor?.name || 'Unknown',
-          organization: prData.organization!
-        } as User
-      );
-
-      return prRef.id;
+      return docRef.id;
     } catch (error) {
-      console.error('Error creating PR:', JSON.stringify(error, null, 2));
+      console.error('Error creating PR:', error);
       throw error;
     }
   },
@@ -245,16 +186,12 @@ export const prService = {
    */
   async generatePRNumber(organization: string, attempt: number = 1): Promise<string> {
     try {
-      if (attempt > 100) {
-        throw new Error('Failed to generate unique PR number after 100 attempts');
-      }
-
       // Get current year and month in YYYYMM format
       const now = new Date();
       const yearMonth = now.getFullYear().toString() + 
                        (now.getMonth() + 1).toString().padStart(2, '0');
       
-      console.log('Generating PR number for yearMonth:', JSON.stringify(yearMonth, null, 2));
+      console.log('Generating PR number for yearMonth:', yearMonth);
 
       // Query for all PRs for this organization and filter client-side
       const q = query(
@@ -270,7 +207,13 @@ export const prService = {
       
       const thisMonthPRs = querySnapshot.docs.filter(doc => {
         const data = doc.data();
-        const createdAt = data.createdAt?.toDate();
+        if (!data.createdAt) return false;
+        
+        // Handle both Firestore Timestamp and Date objects
+        const createdAt = data.createdAt instanceof Date 
+          ? data.createdAt 
+          : data.createdAt.toDate?.() || new Date(data.createdAt);
+          
         return createdAt >= startOfMonth && createdAt <= endOfMonth;
       });
 
@@ -288,11 +231,11 @@ export const prService = {
 
       // Use the next number after the highest found, plus any additional attempts
       const nextNumber = maxNumber + attempt;
-      console.log('Next PR number:', JSON.stringify(nextNumber, null, 2));
+      console.log('Next PR number:', nextNumber);
 
       // Format: PR-YYYYMM-XXX where XXX is sequential number
       const prNumber = `PR-${yearMonth}-${nextNumber.toString().padStart(3, '0')}`;
-      console.log('Generated PR number:', JSON.stringify(prNumber, null, 2));
+      console.log('Generated PR number:', prNumber);
 
       // Double-check uniqueness
       const existingQ = query(
@@ -302,14 +245,14 @@ export const prService = {
       const existingDocs = await getDocs(existingQ);
       
       if (!existingDocs.empty) {
-        console.log('PR number collision detected:', JSON.stringify(prNumber, null, 2), 'Attempt:', JSON.stringify(attempt, null, 2));
+        console.log('PR number collision detected:', prNumber, 'Attempt:', attempt);
         // If there's a collision, try the next number by incrementing attempt
         return this.generatePRNumber(organization, attempt + 1);
       }
 
       return prNumber;
     } catch (error) {
-      console.error('Error generating PR number:', JSON.stringify(error, null, 2));
+      console.error('Error generating PR number:', error);
       throw error;
     }
   },
@@ -389,6 +332,27 @@ export const prService = {
         console.error('Failed to send PR creation notification:', JSON.stringify(error, null, 2));
         // Don't throw error, as PR is already created
       }
+
+      // Log notification in Firestore
+      await notificationService.logNotification(
+        'PR_SUBMITTED',
+        docRef.id,
+        ['procurement@1pwrafrica.com', prData.requestorEmail!],
+        'pending'
+      );
+
+      // Handle status change notification
+      await notificationService.handleStatusChange(
+        docRef.id,
+        '',  // No previous status for new PR
+        PRStatus.SUBMITTED,
+        {
+          id: prData.requestorId!,
+          email: prData.requestorEmail!,
+          name: prData.requestor?.name || 'Unknown',
+          organization: prData.organization!
+        } as User
+      );
 
       return docRef.id;
     } catch (error) {

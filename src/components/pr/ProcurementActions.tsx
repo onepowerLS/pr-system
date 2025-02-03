@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -31,6 +32,7 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const { enqueueSnackbar } = useSnackbar();
+  const navigate = useNavigate();
 
   const handleActionClick = (action: 'queue' | 'reject' | 'revise') => {
     setSelectedAction(action);
@@ -84,6 +86,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
       enqueueSnackbar('PR status updated successfully', { variant: 'success' });
       handleClose();
       onStatusChange(); // Trigger parent refresh
+
+      // Navigate to dashboard after any successful status change
+      navigate('/dashboard');
     } catch (error) {
       console.error('Error updating PR status:', error);
       enqueueSnackbar('Failed to update PR status', { variant: 'error' });

@@ -27,12 +27,7 @@
  *    - Quantity and UOM
  *    - Notes and attachments
  * 
- * 3. Quotes & Vendors
- *    - Vendor selection
- *    - Quote details
- *    - Quote attachments
- * 
- * 4. Review & Submit
+ * 3. Review & Submit
  *    - Summary view
  *    - Total calculation
  *    - Submit for approval
@@ -94,11 +89,10 @@ import { approverService } from '../../services/approver';
 import { ReferenceDataItem } from '../../types/referenceData';
 import { BasicInformationStep } from './steps/BasicInformationStep';
 import { LineItemsStep } from './steps/LineItemsStep';
-import { QuotesStep } from './steps/QuotesStep';
 import { ReviewStep } from './steps/ReviewStep';
 
 // Form steps definition
-const steps = ['Basic Information', 'Line Items', 'Quotes', 'Review'];
+const steps = ['Basic Information', 'Line Items', 'Review'];
 
 // Type definitions for form data structures
 interface ReferenceDataItem {
@@ -209,9 +203,7 @@ export const NewPRForm = () => {
   const [currencies, setCurrencies] = useState<ReferenceDataItem[]>([]);
 
   // Business rule state
-  const [requiresQuotes, setRequiresQuotes] = useState(false);
   const [requiresFinanceApproval, setRequiresFinanceApproval] = useState(false);
-  const [isApprovedVendor, setIsApprovedVendor] = useState(false);
 
   // Initial form state
   const initialFormState = useMemo(() => ({
@@ -234,7 +226,7 @@ export const NewPRForm = () => {
     preferredVendor: undefined,
     customVendorName: undefined,
     lineItems: [],
-    quotes: [],
+    quotes: [], // Keep this for compatibility with PR View
     isUrgent: false
   }), [user]);
 
@@ -344,26 +336,18 @@ export const NewPRForm = () => {
     console.log('NewPRForm: Updating requirements based on amount and vendor');
     try {
       const amount = formState.estimatedAmount;
-      const hasPreferredVendor = Boolean(formState.preferredVendor);
-      
-      // If amount is over threshold and no preferred vendor, require quotes
-      const needsQuotes = amount >= PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED && !hasPreferredVendor;
       const needsFinanceApproval = amount >= PR_AMOUNT_THRESHOLDS.FINANCE_APPROVAL;
       
       console.log('NewPRForm: Setting requirements:', {
         amount,
-        hasPreferredVendor,
-        needsQuotes,
         needsFinanceApproval
       });
 
-      setRequiresQuotes(needsQuotes);
       setRequiresFinanceApproval(needsFinanceApproval);
-      setIsApprovedVendor(hasPreferredVendor);
     } catch (error) {
       console.error('NewPRForm: Error updating requirements:', error);
     }
-  }, [formState.estimatedAmount, formState.preferredVendor]);
+  }, [formState.estimatedAmount]);
 
   // Form navigation handlers
   const handleNext = useCallback(() => {
@@ -399,9 +383,7 @@ export const NewPRForm = () => {
           item.quantity > 0 && 
           item.uom
         );
-      case 2: // Quotes
-        return validateQuotes();
-      case 3: // Review
+      case 2: // Review
         return true;
       default:
         return true;
@@ -409,59 +391,59 @@ export const NewPRForm = () => {
   }, [formState]);
 
   // Get step content
-  const getStepContent = useCallback((step: number) => {
-    switch (step) {
+  const renderBasicInfo = () => (
+    <BasicInformationStep
+      formState={formState}
+      setFormState={setFormState}
+      departments={departments}
+      projectCategories={projectCategories}
+      sites={sites}
+      expenseTypes={expenseTypes}
+      vehicles={vehicles}
+      vendors={vendors}
+      approvers={availableApprovers}
+      currencies={currencies}
+      loading={isLoadingData}
+    />
+  );
+
+  const renderLineItems = () => (
+    <LineItemsStep
+      formState={formState}
+      setFormState={setFormState}
+      loading={isLoading}
+    />
+  );
+
+  const renderReview = () => (
+    <ReviewStep
+      formState={formState}
+      setFormState={setFormState}
+      vendors={vendors}
+      projectCategories={projectCategories}
+      sites={sites}
+      approvers={availableApprovers}
+      loading={isLoading}
+      onSubmit={handleSubmit}
+    />
+  );
+
+  // Update step rendering logic
+  const renderStep = () => {
+    const currentStep = steps[activeStep];
+    if (!currentStep) return null;
+
+    switch (activeStep) {
       case 0:
-        return (
-          <BasicInformationStep
-            formState={formState}
-            setFormState={setFormState}
-            departments={departments}
-            projectCategories={projectCategories}
-            sites={sites}
-            expenseTypes={expenseTypes}
-            vehicles={vehicles}
-            vendors={vendors}
-            approvers={availableApprovers}
-            currencies={currencies}
-            loading={isLoadingData}
-          />
-        );
+        return renderBasicInfo();
       case 1:
-        return (
-          <LineItemsStep
-            formState={formState}
-            setFormState={setFormState}
-            loading={isLoading}
-          />
-        );
+        return renderLineItems();
       case 2:
-        return (
-          <QuotesStep
-            formState={formState}
-            setFormState={setFormState}
-            vendors={vendors}
-            currencies={currencies}
-            loading={isLoading}
-          />
-        );
-      case 3:
-        return (
-          <ReviewStep
-            formState={formState}
-            setFormState={setFormState}
-            vendors={vendors}
-            projectCategories={projectCategories}
-            sites={sites}
-            approvers={availableApprovers}
-            loading={isLoading}
-            onSubmit={handleSubmit}
-          />
-        );
+        return renderReview();
       default:
         return null;
     }
-  }, [formState, setFormState, departments, projectCategories, sites, expenseTypes, vehicles, vendors, availableApprovers, currencies, isLoadingData, isLoading]);
+  };
 
   // Handle next step
   const handleNextStep = () => {
@@ -486,15 +468,6 @@ export const NewPRForm = () => {
         return;
       }
       console.log('Line items validation passed, moving to next step');
-    } else if (activeStep === 2) {
-      console.log('Validating quotes...');
-      const isValid = isStepValid(2);
-      console.log('Quotes validation result:', isValid);
-      if (!isValid) {
-        console.log('Quotes validation failed');
-        return;
-      }
-      console.log('Quotes validation passed, moving to next step');
     }
 
     handleNext();
@@ -707,41 +680,6 @@ export const NewPRForm = () => {
     }
   };
 
-  const validateQuotes = () => {
-    try {
-      console.log('Starting quotes validation...');
-      console.log('Form state:', formState);
-
-      // Check if quotes are required based on estimated amount
-      const requiresQuotes = formState.estimatedAmount > PR_AMOUNT_THRESHOLDS.QUOTES_REQUIRED;
-      
-      if (requiresQuotes && (!formState.quotes || formState.quotes.length === 0)) {
-        console.log('Quotes are required but none provided');
-        enqueueSnackbar('At least one quote is required for this purchase request', { variant: 'error' });
-        return false;
-      }
-
-      // Validate each quote if there are any
-      if (formState.quotes && formState.quotes.length > 0) {
-        const invalidQuotes = formState.quotes.filter(quote => {
-          return !quote.vendorId || !quote.amount || !quote.currency || !quote.quoteDate;
-        });
-
-        if (invalidQuotes.length > 0) {
-          console.log('Found invalid quotes:', invalidQuotes);
-          enqueueSnackbar('Please complete all required fields in quotes', { variant: 'error' });
-          return false;
-        }
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error validating quotes:', error);
-      enqueueSnackbar('Error validating quotes', { variant: 'error' });
-      return false;
-    }
-  };
-
   const handleLineItemChange = (index: number, field: string, value: any) => {
     console.log('Updating line item:', index, field, value);
     
@@ -785,49 +723,6 @@ export const NewPRForm = () => {
     }));
   };
 
-  const handleAddQuote = () => {
-    setFormState(prev => ({
-      ...prev,
-      quotes: [
-        ...prev.quotes,
-        {
-          id: crypto.randomUUID(),
-          vendorId: '',
-          vendorName: '',
-          amount: 0,
-          currency: '',
-          quoteDate: '',
-          contactName: '',
-          contactPhone: '',
-          contactEmail: '',
-          notes: '',
-          attachments: []
-        }
-      ]
-    }));
-  };
-
-  const handleRemoveQuote = (index: number) => {
-    setFormState(prev => ({
-      ...prev,
-      quotes: prev.quotes.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleQuoteChange = (index: number, field: string, value: any) => {
-    setFormState(prev => {
-      const newQuotes = [...prev.quotes];
-      newQuotes[index] = {
-        ...newQuotes[index],
-        [field]: value
-      };
-      return {
-        ...prev,
-        quotes: newQuotes
-      };
-    });
-  };
-
   const handleSubmit = async () => {
     console.log('Submitting form...', formState);
     setIsSubmitting(true);
@@ -841,11 +736,8 @@ export const NewPRForm = () => {
       const lineItemsValid = await validateLineItems();
       console.log('Line items validation:', lineItemsValid);
       
-      const quotesValid = await validateQuotes();
-      console.log('Quotes validation:', quotesValid);
-      
-      if (!basicInfoValid || !lineItemsValid || !quotesValid) {
-        console.log('Form validation failed:', { basicInfoValid, lineItemsValid, quotesValid });
+      if (!basicInfoValid || !lineItemsValid) {
+        console.log('Form validation failed:', { basicInfoValid, lineItemsValid });
         setIsSubmitting(false);
         return;
       }
@@ -998,516 +890,6 @@ export const NewPRForm = () => {
     });
   };
 
-  const renderBasicInfo = () => (
-    <Grid container spacing={2}>
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Organization"
-          value={formState.organization?.name || ''}
-          onChange={(e) => handleInputChange('organization', { id: e.target.value, name: e.target.value })}
-          required
-          disabled
-        />
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Department"
-          value={formState.department}
-          onChange={(e) => handleInputChange('department', e.target.value)}
-          required
-        />
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Requestor Name"
-          value={formState.requestor}
-          onChange={(e) => handleInputChange('requestor', e.target.value)}
-          required
-          disabled
-        />
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Email"
-          type="email"
-          value={formState.email}
-          onChange={(e) => handleInputChange('email', e.target.value)}
-          required
-          disabled
-        />
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
-          <InputLabel>Project Category</InputLabel>
-          <Select
-            value={formState.projectCategory}
-            onChange={(e) => handleInputChange('projectCategory', e.target.value)}
-            label="Project Category"
-          >
-            {projectCategories.map((category) => (
-              <MenuItem key={category.id} value={category.id}>
-                {category.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
-          <InputLabel>Site</InputLabel>
-          <Select
-            value={formState.site}
-            onChange={(e) => handleInputChange('site', e.target.value)}
-            label="Site"
-          >
-            {sites.map((site) => (
-              <MenuItem key={site.id} value={site.id}>
-                {site.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
-          <InputLabel>Expense Type</InputLabel>
-          <Select
-            value={formState.expenseType}
-            onChange={(e) => handleInputChange('expenseType', e.target.value)}
-            label="Expense Type"
-          >
-            {expenseTypes.map((type) => (
-              <MenuItem key={type.id} value={type.id}>
-                {type.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Grid>
-      {formState.expenseType === '4' && (
-        <Grid item xs={12} md={6}>
-          <FormControl fullWidth required>
-            <InputLabel>Vehicle</InputLabel>
-            <Select
-              value={formState.vehicle}
-              onChange={(e) => handleInputChange('vehicle', e.target.value)}
-              label="Vehicle"
-            >
-              {vehicles.map((vehicle) => (
-                <MenuItem key={vehicle.id} value={vehicle.id}>
-                  {vehicle.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Grid>
-      )}
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth>
-          <InputLabel>Preferred Vendor</InputLabel>
-          <Select
-            value={formState.preferredVendor}
-            onChange={(e) => handleInputChange('preferredVendor', e.target.value)}
-            label="Preferred Vendor"
-          >
-            {vendors.map((vendor) => (
-              <MenuItem key={vendor.id} value={vendor.id}>
-                {vendor.name}
-              </MenuItem>
-            ))}
-          </Select>
-          <FormHelperText>
-            Select if you have a specific vendor in mind. This may affect quote requirements.
-          </FormHelperText>
-        </FormControl>
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Estimated Amount"
-          type="number"
-          value={formState.estimatedAmount}
-          onChange={(e) => handleInputChange('estimatedAmount', parseFloat(e.target.value))}
-          required
-          InputProps={{
-            startAdornment: <InputLabel>LSL</InputLabel>,
-            inputProps: { min: 0 }
-          }}
-        />
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
-          <InputLabel>Approvers</InputLabel>
-          <Select
-            multiple
-            value={formState.approvers}
-            onChange={(e) => {
-              console.log('Selected approvers:', e.target.value);
-              handleInputChange('approvers', e.target.value);
-            }}
-            label="Approvers"
-          >
-            {availableApprovers.map((approver) => (
-              <MenuItem key={approver.id} value={approver.id}>
-                {approver.name} ({approver.email})
-              </MenuItem>
-            ))}
-          </Select>
-          <FormHelperText>Select at least one approver</FormHelperText>
-        </FormControl>
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Required Date"
-          type="date"
-          value={formState.requiredDate}
-          onChange={(e) => handleInputChange('requiredDate', e.target.value)}
-          required
-          InputLabelProps={{
-            shrink: true,
-          }}
-        />
-      </Grid>
-      <Grid item xs={12}>
-        <TextField
-          fullWidth
-          label="Description"
-          multiline
-          rows={3}
-          value={formState.description}
-          onChange={(e) => handleInputChange('description', e.target.value)}
-          required
-          helperText="Provide a detailed description of what you need and why"
-        />
-      </Grid>
-    </Grid>
-  );
-
-  const renderQuotesSection = () => (
-    <Grid container spacing={3}>
-      <Grid item xs={12}>
-        <Typography variant="h6">
-          Quotes {requiresQuotes && <span style={{ color: 'red' }}>*</span>}
-        </Typography>
-        {requiresQuotes && (
-          <Typography variant="body2" color="textSecondary">
-            Three quotes are required for this amount
-            {formState.estimatedAmount > PR_AMOUNT_THRESHOLDS.FINANCE_APPROVAL && 
-              ". This PR will require adjudication review before proceeding to PO."
-            }
-          </Typography>
-        )}
-      </Grid>
-      {formState.quotes?.map((quote, index) => (
-        <Grid item xs={12} key={quote.id}>
-          <Card>
-            <CardContent>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Vendor ID"
-                    value={quote.vendorId}
-                    onChange={(e) => handleQuoteChange(index, 'vendorId', e.target.value)}
-                    required
-                  />
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <TextField
-                    fullWidth
-                    label="Vendor Name"
-                    value={quote.vendorName}
-                    onChange={(e) => handleQuoteChange(index, 'vendorName', e.target.value)}
-                    required
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <TextField
-                    fullWidth
-                    label="Amount"
-                    type="number"
-                    value={quote.amount}
-                    onChange={(e) => handleQuoteChange(index, 'amount', Number(e.target.value))}
-                    required
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <TextField
-                    fullWidth
-                    label="Currency"
-                    value={quote.currency}
-                    onChange={(e) => handleQuoteChange(index, 'currency', e.target.value)}
-                    required
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <TextField
-                    fullWidth
-                    label="Quote Date"
-                    type="date"
-                    value={quote.quoteDate}
-                    onChange={(e) => handleQuoteChange(index, 'quoteDate', e.target.value)}
-                    required
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <TextField
-                    fullWidth
-                    label="Contact Name"
-                    value={quote.contactName}
-                    onChange={(e) => handleQuoteChange(index, 'contactName', e.target.value)}
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <TextField
-                    fullWidth
-                    label="Contact Phone"
-                    value={quote.contactPhone}
-                    onChange={(e) => handleQuoteChange(index, 'contactPhone', e.target.value)}
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <TextField
-                    fullWidth
-                    label="Contact Email"
-                    value={quote.contactEmail}
-                    onChange={(e) => handleQuoteChange(index, 'contactEmail', e.target.value)}
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Notes"
-                    multiline
-                    rows={2}
-                    value={quote.notes}
-                    onChange={(e) => handleQuoteChange(index, 'notes', e.target.value)}
-                  />
-                </Grid>
-              </Grid>
-            </CardContent>
-            <CardActions>
-              <Button
-                startIcon={<DeleteIcon />}
-                onClick={() => handleRemoveQuote(index)}
-                color="error"
-              >
-                Remove Quote
-              </Button>
-            </CardActions>
-          </Card>
-        </Grid>
-      ))}
-      <Grid item xs={12}>
-        <Button
-          startIcon={<AddIcon />}
-          onClick={handleAddQuote}
-          variant="outlined"
-        >
-          Add Quote
-        </Button>
-      </Grid>
-    </Grid>
-  );
-
-  const renderLineItems = () => (
-    <Box>
-      <Typography variant="h6" gutterBottom>
-        Line Items
-      </Typography>
-      <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-        Add items you need to purchase. Procurement will determine prices later.
-      </Typography>
-      
-      {formState.lineItems.map((item, index) => (
-        <Paper key={index} sx={{ p: 2, mb: 2 }}>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={11}>
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Description"
-                    value={item.description}
-                    onChange={(e) => handleLineItemChange(index, 'description', e.target.value)}
-                    required
-                    helperText="Detailed description of the item needed"
-                  />
-                </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Quantity"
-                    type="number"
-                    value={item.quantity}
-                    onChange={(e) => handleLineItemChange(index, 'quantity', parseFloat(e.target.value))}
-                    required
-                    InputProps={{
-                      inputProps: { min: 1 }
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={6}>
-                  <TextField
-                    fullWidth
-                    label="Unit of Measure"
-                    value={item.uom}
-                    onChange={(e) => handleLineItemChange(index, 'uom', e.target.value)}
-                    required
-                    helperText="e.g., kg, L, pieces"
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    fullWidth
-                    label="Notes"
-                    multiline
-                    rows={2}
-                    value={item.notes}
-                    onChange={(e) => handleLineItemChange(index, 'notes', e.target.value)}
-                    helperText="Any additional specifications or requirements"
-                  />
-                </Grid>
-              </Grid>
-            </Grid>
-            <Grid item xs={1}>
-              <IconButton
-                onClick={() => handleRemoveLineItem(index)}
-                disabled={formState.lineItems.length === 1}
-              >
-                <DeleteIcon />
-              </IconButton>
-            </Grid>
-          </Grid>
-        </Paper>
-      ))}
-      
-      <Button
-        startIcon={<AddIcon />}
-        onClick={handleAddLineItem}
-        variant="outlined"
-        sx={{ mt: 2 }}
-      >
-        Add Another Item
-      </Button>
-    </Box>
-  );
-
-  const renderReview = () => (
-    <Box>
-      <Typography variant="h6" gutterBottom>
-        Review Purchase Request
-      </Typography>
-
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle1" gutterBottom>
-          Basic Information
-        </Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Organization: {formState.organization?.name}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Department: {formState.department}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Requestor: {formState.requestor}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Email: {formState.email}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Project Category: {formState.projectCategory}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Site: {formState.site}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Expense Type: {formState.expenseType}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="body2" color="textSecondary">
-              Required Date: {formState.requiredDate}
-            </Typography>
-          </Grid>
-          <Grid item xs={12}>
-            <Typography variant="body2" color="textSecondary">
-              Description: {formState.description}
-            </Typography>
-          </Grid>
-        </Grid>
-      </Paper>
-
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle1" gutterBottom>
-          Line Items
-        </Typography>
-        {formState.lineItems.map((item, index) => (
-          <Box key={index} sx={{ mb: 2 }}>
-            <Typography variant="body2" color="textSecondary">
-              Item {index + 1}:
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <Typography variant="body2">
-                  Description: {item.description}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2">
-                  Quantity: {item.quantity}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2">
-                  Unit of Measure: {item.uom}
-                </Typography>
-              </Grid>
-              {item.notes && (
-                <Grid item xs={12}>
-                  <Typography variant="body2">
-                    Notes: {item.notes}
-                  </Typography>
-                </Grid>
-              )}
-            </Grid>
-          </Box>
-        ))}
-      </Paper>
-
-      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleSubmit}
-          disabled={isSubmitting}
-          aria-label="Submit purchase request"
-        >
-          {isSubmitting ? <CircularProgress size={24} /> : 'Submit Purchase Request'}
-        </Button>
-      </Box>
-    </Box>
-  );
-
   return (
     <Box sx={{ width: '100%', p: 3 }}>
       <Typography variant="h4" gutterBottom>
@@ -1541,7 +923,7 @@ export const NewPRForm = () => {
             ))}
           </Stepper>
 
-          {getStepContent(activeStep)}
+          {renderStep()}
 
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
             <Button
