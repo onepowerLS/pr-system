@@ -41,7 +41,7 @@ import { User } from '../types/user';
  * 
  * Handles logging and sending notifications for PR status changes, approvals, and comments.
  */
-class NotificationService {
+export class NotificationService {
   /**
    * Collection name for notification logs in Firestore
    */
@@ -101,53 +101,135 @@ class NotificationService {
 
       const prData = prDoc.data();
       const prNumber = prData.prNumber;
-      const requestorEmail = prData.requestorEmail || prData.requestor?.email;
+      const description = prData.description || '';
 
-      if (!requestorEmail) {
-        throw new Error('Requestor email not found');
-      }
-
-      const notification: StatusChangeNotification = {
-        prId,
+      // Prepare notification data
+      const notificationData: StatusChangeNotification = {
         prNumber,
+        description,
         oldStatus,
         newStatus,
-        changedBy: user,
-        timestamp: new Date()
+        updatedBy: user.email,
+        notes: notes || ''
       };
 
-      // Only add notes if they exist
-      if (notes) {
-        notification.notes = notes;
-      }
-
-      console.log('Status change notification:', notification);
-
-      // Log the notification in Firestore
-      const notificationId = await this.logNotification(
+      // Log notification
+      await this.logNotification(
         'STATUS_CHANGE',
         prId,
-        ['procurement@1pwrafrica.com', requestorEmail], // Include both procurement and requestor email
+        [prData.requestorEmail],
+        'pending'
+      );
+
+      // Send email notification
+      const sendStatusChangeEmail = httpsCallable(getFunctions(), 'sendStatusChangeEmail');
+      await sendStatusChangeEmail(notificationData);
+    } catch (error) {
+      console.error('Error sending status change notification:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Handles a PR submission notification.
+   * 
+   * @param prId PR ID associated with the notification
+   * @param description PR description
+   * @param user User who submitted the PR
+   */
+  async handleSubmission(prId: string, description: string, user: User): Promise<void> {
+    try {
+      // Get PR data to get PR number and requestor email
+      const prRef = doc(db, 'purchaseRequests', prId);
+      const prDoc = await getDoc(prRef);
+      
+      if (!prDoc.exists()) {
+        throw new Error('PR not found');
+      }
+
+      const pr = prDoc.data();
+      const functions = getFunctions();
+      const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
+
+      // Get user's name, falling back to email username if firstName/lastName not available
+      const requestorName = user.firstName && user.lastName 
+        ? `${user.firstName} ${user.lastName}`
+        : user.email.split('@')[0];
+
+      // Prepare notification data
+      const notificationData = {
+        prId,
+        prNumber: pr.prNumber,
+        description,
+        requestorName,
+        requestorEmail: user.email,
+        department: pr.department,
+        requiredDate: pr.requiredDate,
+        isUrgent: pr.isUrgent,
+        items: pr.lineItems
+      };
+
+      // Send notification using callable function
+      await sendPRNotification(notificationData);
+
+      // Log the notification
+      await this.logNotification(
+        'PR_CREATED',
+        prId,
+        ['procurement@1pwrafrica.com', user.email],
+        'sent'
+      );
+    } catch (error) {
+      console.error('Error sending submission notification:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sends a direct notification to a specific user.
+   * 
+   * @param prId PR ID associated with the notification
+   * @param userId ID of the user to notify
+   * @param message Custom message for the notification
+   */
+  async sendNotification(
+    prId: string,
+    userId: string,
+    message: string
+  ): Promise<void> {
+    try {
+      // Get user data to get email
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+      
+      if (!userDoc.exists()) {
+        throw new Error('User not found');
+      }
+
+      const userData = userDoc.data();
+      
+      // Log notification
+      await this.logNotification(
+        'CUSTOM',
+        prId,
+        [userData.email],
         'pending'
       );
 
       // Send email via Cloud Function
       const functions = getFunctions();
-      const sendEmail = httpsCallable(functions, 'sendStatusChangeEmail');
-      await sendEmail({
-        notification,
-        recipients: ['procurement@1pwrafrica.com', requestorEmail]
+      const sendEmailNotification = httpsCallable(functions, 'sendEmailNotification');
+      await sendEmailNotification({ 
+        notification: {
+          type: 'CUSTOM',
+          prId,
+          message,
+          timestamp: Timestamp.now()
+        }
       });
 
-      // Update notification status to sent
-      const notificationRef = collection(db, this.notificationsCollection);
-      await addDoc(notificationRef, {
-        id: notificationId,
-        status: 'sent',
-        sentAt: new Date()
-      });
     } catch (error) {
-      console.error('Error handling notification:', error);
+      console.error('Error sending notification:', error);
       throw error;
     }
   }

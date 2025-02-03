@@ -23,7 +23,10 @@ export interface NotificationLog {
 }
 
 export interface StatusChangeNotification {
+  type: 'STATUS_CHANGE';
   prId: string;
+  prNumber: string;
+  description: string;
   oldStatus: string;
   newStatus: string;
   changedBy: User;

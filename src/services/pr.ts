@@ -173,6 +173,14 @@ export const prService = {
       const docRef = await addDoc(collection(db, PR_COLLECTION), pr);
       console.log('Created PR with ID:', docRef.id);
 
+      // Send notification for PR submission
+      try {
+        await notificationService.handleSubmission(docRef.id, pr.description || '', user);
+      } catch (notificationError) {
+        console.error('Error sending PR submission notification:', notificationError);
+        // Don't throw the error since PR was created successfully
+      }
+
       return docRef.id;
     } catch (error) {
       console.error('Error creating PR:', error);
@@ -608,14 +616,6 @@ export const prService = {
         updatedAt: Timestamp.fromDate(new Date()),
         isUrgent: prData.isUrgent ?? false  // Ensure isUrgent is always a boolean
       });
-
-      // Create status change notification
-      await notificationService.handleStatusChange(
-        prId,
-        oldStatus,
-        status,
-        updatedBy
-      );
     } catch (error) {
       console.error('Error updating PR status:', JSON.stringify(error, null, 2));
       throw error;
@@ -661,42 +661,39 @@ export const prService = {
    * @param {string} prId - ID or PR number of the purchase request
    * @returns {Promise<PRRequest | null>} Purchase request data or null if not found
    */
-  getPR: async (prId: string): Promise<PRRequest | null> => {
+  async getPR(prId: string): Promise<PRRequest | null> {
     try {
-      // First try to get PR by document ID
-      const docRef = doc(db, PR_COLLECTION, prId);
-      const docSnap = await getDoc(docRef);
-      
-      let prData = null;
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        prData = {
-          id: docSnap.id,
-          ...data,
-          createdAt: convertTimestamps(data.createdAt),
-          updatedAt: convertTimestamps(data.updatedAt),
-          resubmittedAt: convertTimestamps(data.resubmittedAt)
-        } as PRRequest;
-      } else {
-        // If not found, try to get PR by PR number
+      // First try to get PR by ID
+      let prRef = doc(db, PR_COLLECTION, prId);
+      let prDoc = await getDoc(prRef);
+
+      if (!prDoc.exists()) {
+        // If not found by ID, try to find by PR number
         const q = query(
           collection(db, PR_COLLECTION),
           where('prNumber', '==', prId)
         );
-        
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
-          const doc = querySnapshot.docs[0];
-          const data = doc.data();
-          prData = {
-            id: doc.id,
-            ...data,
-            createdAt: convertTimestamps(data.createdAt),
-            updatedAt: convertTimestamps(data.updatedAt),
-            resubmittedAt: convertTimestamps(data.resubmittedAt)
-          } as PRRequest;
+          prDoc = querySnapshot.docs[0];
+          prId = prDoc.id;
+        } else {
+          return null;
         }
       }
+
+      let prData = {
+        id: prId,
+        ...prDoc.data(),
+        workflowHistory: prDoc.data().workflowHistory || [],
+        statusHistory: prDoc.data().statusHistory || []
+      } as PRRequest;
+
+      // Convert timestamps
+      prData = convertTimestamps(prData) as PRRequest;
+
+      // Calculate metrics
+      prData = calculatePRMetrics(prData);
 
       if (prData) {
         // Fetch and populate requestor details
@@ -720,6 +717,27 @@ export const prService = {
         } catch (error) {
           console.error('Error fetching requestor details:', error);
         }
+
+        // Initialize workflow history if it doesn't exist
+        if (!prData.workflowHistory) {
+          prData.workflowHistory = [];
+          
+          // If we have status history, convert it to workflow history
+          if (prData.statusHistory && prData.statusHistory.length > 0) {
+            prData.workflowHistory = prData.statusHistory.map(sh => ({
+              step: sh.status,
+              timestamp: sh.timestamp,
+              notes: 'Status changed to ' + PRStatus[sh.status],
+              user: sh.updatedBy
+            }));
+
+            // Update the PR with the new workflow history
+            await updateDoc(doc(db, PR_COLLECTION, prId), {
+              workflowHistory: prData.workflowHistory
+            });
+          }
+        }
+
         return prData;
       }
 
@@ -746,7 +764,14 @@ export const prService = {
   ): Promise<void> {
     try {
       const prRef = doc(db, PR_COLLECTION, prId);
+      const prDoc = await getDoc(prRef);
+      
+      if (!prDoc.exists()) {
+        throw new Error('PR not found');
+      }
+
       const now = Timestamp.now();
+      const currentStatus = prDoc.data().status;
       
       const updateData: any = {
         status: newStatus,
@@ -757,24 +782,65 @@ export const prService = {
       const statusHistoryEntry = {
         status: newStatus,
         timestamp: now,
-        updatedBy: user || null
+        updatedBy: user ? {
+          id: user.id,
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`
+        } : { id: 'system', email: 'system@1pwrafrica.com', name: 'System' }
       };
       updateData.statusHistory = arrayUnion(statusHistoryEntry);
 
-      // Add to workflow history if notes are provided
-      if (notes) {
-        const historyEntry = {
-          step: newStatus,
-          timestamp: now,
-          notes,
-          user: user || null
-        };
-        updateData.workflowHistory = arrayUnion(historyEntry);
+      // Always add to workflow history with appropriate message
+      let historyNotes = notes;
+      if (!historyNotes) {
+        // Generate default notes based on status change
+        if (newStatus === PRStatus.PENDING_APPROVAL) {
+          historyNotes = 'PR pushed to approver';
+        } else if (newStatus === PRStatus.REJECTED) {
+          historyNotes = 'PR rejected';
+        } else if (newStatus === PRStatus.REVISION_REQUIRED) {
+          historyNotes = 'Revision requested';
+        } else if (newStatus === PRStatus.CANCELED) {
+          historyNotes = 'PR canceled';
+        } else if (newStatus === PRStatus.RESUBMITTED) {
+          historyNotes = 'PR resubmitted after revisions';
+        } else if (newStatus === PRStatus.IN_QUEUE) {
+          historyNotes = 'PR moved to queue';
+        } else {
+          historyNotes = `PR status changed to ${newStatus}`;
+        }
       }
 
+      const historyEntry = {
+        step: newStatus,
+        timestamp: now,
+        notes: historyNotes,
+        user: user ? {
+          id: user.id,
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`
+        } : { id: 'system', email: 'system@1pwrafrica.com', name: 'System' }
+      };
+      updateData.workflowHistory = arrayUnion(historyEntry);
+
       await updateDoc(prRef, updateData);
-      console.log(`PR ${prId} status updated to ${newStatus}`, {
+      
+      // Send notifications for all status changes
+      await notificationService.handleStatusChange(
+        prId,
+        currentStatus,
+        newStatus,
+        user ? {
+          id: user.id,
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`
+        } : { id: 'system', email: 'system@1pwrafrica.com', name: 'System' },
+        historyNotes
+      );
+      
+      console.log(`PR ${prId} status updated from ${currentStatus} to ${newStatus}`, {
         statusHistoryEntry,
+        historyEntry,
         updateData
       });
     } catch (error) {

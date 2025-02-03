@@ -165,13 +165,25 @@ const generatePREmailContent = (prData) => {
 };
 // Function to send PR notification
 exports.sendPRNotification = functions.https.onCall(async (data, context) => {
-    var _a;
+    var _a, _b, _c;
+    // Add CORS headers
+    const corsWhitelist = [
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://pr-system-4ea55.web.app',
+        'https://pr-system-4ea55.firebaseapp.com'
+    ];
+    // Validate origin
+    const origin = (_b = (_a = context.rawRequest) === null || _a === void 0 ? void 0 : _a.headers) === null || _b === void 0 ? void 0 : _b.origin;
+    if (!origin || !corsWhitelist.includes(origin)) {
+        throw new functions.https.HttpsError('failed-precondition', 'Origin not allowed');
+    }
     try {
         if (!data.requestorEmail) {
-            throw new Error('Requestor email is required');
+            throw new functions.https.HttpsError('invalid-argument', 'Requestor email is required');
         }
         console.log('Received notification data:', data);
-        console.log('Items with attachments:', (_a = data.items) === null || _a === void 0 ? void 0 : _a.map((item) => ({
+        console.log('Items with attachments:', (_c = data.items) === null || _c === void 0 ? void 0 : _c.map((item) => ({
             description: item.description,
             attachments: item.attachments
         })));

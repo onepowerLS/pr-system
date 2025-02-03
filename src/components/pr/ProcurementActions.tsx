@@ -28,13 +28,13 @@ interface ProcurementActionsProps {
 
 export function ProcurementActions({ prId, currentStatus, requestorEmail, currentUser, onStatusChange }: ProcurementActionsProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedAction, setSelectedAction] = useState<'approve' | 'reject' | 'revise' | 'cancel' | null>(null);
+  const [selectedAction, setSelectedAction] = useState<'approve' | 'reject' | 'revise' | 'cancel' | 'queue' | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
 
-  const handleActionClick = (action: 'approve' | 'reject' | 'revise' | 'cancel') => {
+  const handleActionClick = (action: 'approve' | 'reject' | 'revise' | 'cancel' | 'queue') => {
     setSelectedAction(action);
     setIsDialogOpen(true);
     setNotes('');
@@ -70,6 +70,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         case 'cancel':
           newStatus = PRStatus.CANCELED;
           break;
+        case 'queue':
+          newStatus = PRStatus.IN_QUEUE;
+          break;
         default:
           return;
       }
@@ -91,57 +94,6 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         notes || (selectedAction === 'approve' ? 'PR pushed to approver' : undefined),
         currentUser
       );
-
-      // Send notifications
-      try {
-        if (selectedAction === 'approve' && pr.approvers) {
-          // Prepare detailed messages for approvers
-          const approverMessage = `Please review PR ${pr.prNumber}:\n\n` +
-            `Requestor: ${pr.requestor.name}\n` +
-            `Category: ${pr.projectCategory}\n` +
-            `Expense Type: ${pr.expenseType}\n` +
-            `Site: ${pr.site}\n` +
-            `Amount: ${pr.estimatedAmount} ${pr.currency}\n` +
-            `Vendor: ${pr.preferredVendor || 'Not specified'}\n` +
-            `Required by: ${new Date(pr.requiredDate).toLocaleDateString()}`;
-
-          // Send to all approvers
-          await Promise.all(pr.approvers.map(approverId =>
-            notificationService.handleStatusChange(
-              prId,
-              currentStatus,
-              newStatus,
-              currentUser,
-              approverMessage,
-              approverId
-            )
-          ));
-
-          // Notify requestor
-          const requestorMessage = `Your PR ${pr.prNumber} has been pushed for approval`;
-          await notificationService.handleStatusChange(
-            prId,
-            currentStatus,
-            newStatus,
-            currentUser,
-            requestorMessage,
-            pr.requestor.id
-          );
-        } else {
-          // For other actions, send standard notification
-          await notificationService.handleStatusChange(
-            prId,
-            currentStatus,
-            newStatus,
-            currentUser,
-            notes || `PR status changed to ${newStatus}`
-          );
-        }
-      } catch (notificationError) {
-        console.error('Error sending notifications:', notificationError);
-        // Don't fail the whole operation if notifications fail
-        enqueueSnackbar('PR updated but there was an error sending notifications', { variant: 'warning' });
-      }
 
       enqueueSnackbar('PR status updated successfully', { variant: 'success' });
       handleClose();
@@ -360,7 +312,7 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           <Button
             variant="contained"
             color="primary"
-            onClick={() => handleActionClick('queue')}
+            onClick={() => handleActionClick('queue' as const)}
           >
             Move to Queue
           </Button>
