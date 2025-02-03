@@ -15,6 +15,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   TextField,
   InputAdornment,
@@ -454,6 +455,8 @@ export function PRView() {
   const [approvers, setApprovers] = useState<Array<{id: string; name: string; department: string}>>([]);
   const [loadingApprovers, setLoadingApprovers] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
+  const [isExitingEditMode, setIsExitingEditMode] = React.useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
 
   // Fetch PR data
   const fetchPR = async () => {
@@ -748,11 +751,11 @@ export function PRView() {
       
       return newEdits;
     });
+    setHasUnsavedChanges(true);
   };
 
   const handleCancel = (): void => {
-    setEditedPR({});
-    navigate(`/pr/${id}`);
+    handleExitEditMode();
   };
 
   const handleSave = async () => {
@@ -761,47 +764,19 @@ export function PRView() {
     try {
       setLoading(true);
 
-      // Remove undefined values and empty strings from the updates
-      const cleanObject = (obj: any): any => {
-        return Object.entries(obj).reduce((acc: any, [key, value]) => {
-          // Skip undefined or empty string values
-          if (value === undefined || value === '') {
-            return acc;
-          }
-
-          // Handle nested objects and arrays
-          if (Array.isArray(value)) {
-            const cleanArray = value.map(item => 
-              typeof item === 'object' ? cleanObject(item) : item
-            ).filter(item => item !== undefined && item !== '');
-            if (cleanArray.length > 0) {
-              acc[key] = cleanArray;
-            }
-          } else if (value && typeof value === 'object') {
-            const cleanValue = cleanObject(value);
-            if (Object.keys(cleanValue).length > 0) {
-              acc[key] = cleanValue;
-            }
-          } else {
-            acc[key] = value;
-          }
-          return acc;
-        }, {});
-      };
-
-      // Create a clean copy of the PR without undefined values
-      const updates = cleanObject({
-        ...pr,
-        updatedAt: new Date().toISOString(),
+      // Prepare updates object
+      const updates: Partial<PRRequest> = {
         ...editedPR,
         lineItems: lineItems.map(item => ({
-          ...item,
-          id: item.id || crypto.randomUUID(),
-          quantity: item.quantity || 0,
+          id: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          uom: item.uom,
+          notes: item.notes || '',
           unitPrice: item.unitPrice || 0,
           attachments: item.attachments || []
         }))
-      });
+      };
 
       console.log('Saving PR updates:', updates);
       await prService.updatePR(pr.id, updates);
@@ -809,7 +784,9 @@ export function PRView() {
       // Exit edit mode and refresh the PR
       setEditedPR({});
       await fetchPR();
+      navigate(`/pr/${pr.id}`); // Exit edit mode by navigating to view mode
       enqueueSnackbar('Changes saved successfully', { variant: 'success' });
+      setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error updating PR:', error);
       enqueueSnackbar('Failed to save changes', { variant: 'error' });
@@ -1291,8 +1268,9 @@ export function PRView() {
   const renderQuotes = () => {
     if (!pr) return null;
 
-    const canEditQuotes = currentUser?.permissionLevel === 3 && 
-      (pr.status === PRStatus.IN_QUEUE || pr.status === PRStatus.REVISIONS_REQUIRED) && 
+    // Allow procurement team to edit quotes in IN_QUEUE status
+    const canEditQuotes = currentUser?.permissionLevel >= 2 && 
+      pr.status === PRStatus.IN_QUEUE && 
       isEditMode;
 
     return (
@@ -1338,7 +1316,8 @@ export function PRView() {
                 const updates = { quotes };
                 await prService.updatePR(pr.id, updates);
                 enqueueSnackbar('Quotes saved successfully', { variant: 'success' });
-                navigate(`/pr/${pr.id}`);
+                setHasUnsavedChanges(false);
+                navigate(`/pr/${pr.id}`); // Exit edit mode by navigating to view mode
               } catch (error) {
                 console.error('Error saving quotes:', error);
                 enqueueSnackbar('Failed to save quotes', { variant: 'error' });
@@ -1433,6 +1412,23 @@ export function PRView() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExitEditMode = () => {
+    if (hasUnsavedChanges) {
+      setIsExitingEditMode(true);
+    } else {
+      navigate(`/pr/${pr.id}`);
+    }
+  };
+
+  const confirmExitEditMode = () => {
+    setIsExitingEditMode(false);
+    navigate(`/pr/${pr.id}`);
+  };
+
+  const cancelExitEditMode = () => {
+    setIsExitingEditMode(false);
   };
 
   return (
@@ -1593,6 +1589,28 @@ export function PRView() {
           )}
         </Box>
       )}
+      <Dialog
+        open={isExitingEditMode}
+        onClose={cancelExitEditMode}
+        aria-labelledby="exit-edit-mode-dialog-title"
+      >
+        <DialogTitle id="exit-edit-mode-dialog-title">
+          Unsaved Changes
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            You have unsaved changes. Are you sure you want to exit edit mode? All changes will be lost.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelExitEditMode} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={confirmExitEditMode} color="error">
+            Exit Without Saving
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

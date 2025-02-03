@@ -53,6 +53,7 @@ import { notificationService } from './notification';
 import { calculateDaysOpen } from '../utils/formatters';
 import { StorageService } from './storage';
 import { auth } from '../config/firebase';
+import { UserRole } from '../types/user';
 
 const PR_COLLECTION = 'purchaseRequests';
 const functions = getFunctions();
@@ -456,32 +457,45 @@ export const prService = {
         where('organization', '==', organization)
       );
 
-      // If user is not procurement/admin, only show their PRs
+      // Get user details and permission level
       const userDoc = await getDoc(doc(db, 'users', userId));
-      const userData = userDoc.data();
-      const userRoles = userData?.roles || [];
-      const isProcurementOrAdmin = userRoles.some(role => 
-        role === 'procurement' || role === 'admin'
-      );
+      if (!userDoc.exists()) {
+        console.error('User document not found:', userId);
+        return [];
+      }
 
-      if (!isProcurementOrAdmin) {
+      const userData = userDoc.data();
+      const permissionLevel = userData?.permissionLevel || 5; // Default to REQ level (5)
+      console.log('User data loaded:', { userId, permissionLevel });
+
+      // Check if user has procurement or admin level permissions
+      // ADMIN = 1, APPROVER = 2, PROC = 3, FIN_AD = 4, REQ = 5
+      const canViewAllPRs = permissionLevel === 3; // Only PROC can see all PRs
+
+      // If not procurement, only show their PRs
+      if (!canViewAllPRs) {
+        console.log('User is not procurement (level 3), filtering to their PRs only');
         q = query(
           collection(db, PR_COLLECTION),
           where('organization', '==', organization),
           where('createdBy.id', '==', userId)
         );
+      } else {
+        console.log('User is procurement (level 3), showing all PRs');
       }
       
       const querySnapshot = await getDocs(q);
       console.log('PR Service: Found PRs:', {
         count: querySnapshot.size,
         organization,
-        userRoles,
+        permissionLevel,
+        canViewAllPRs,
         prs: querySnapshot.docs.map(doc => ({
           id: doc.id,
           prNumber: doc.data().prNumber,
           organization: doc.data().organization,
-          status: doc.data().status
+          status: doc.data().status,
+          createdBy: doc.data().createdBy
         }))
       });
       

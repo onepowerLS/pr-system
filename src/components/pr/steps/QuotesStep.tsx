@@ -73,6 +73,8 @@ export function QuotesStep({
 }: QuotesStepProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [deleteIndex, setDeleteIndex] = React.useState<number | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
   const quotes = formState.quotes || [];
   const readOnly = !isEditing;
 
@@ -205,6 +207,46 @@ export function QuotesStep({
       });
     } catch (error) {
       console.error('Error uploading files:', error);
+    }
+  };
+
+  const validateQuote = (quote: Quote): boolean => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!quote.vendorName) {
+      newErrors[`vendor-${quote.id}`] = 'Vendor is required';
+    }
+    if (!quote.amount || quote.amount <= 0) {
+      newErrors[`amount-${quote.id}`] = 'Amount must be greater than 0';
+    }
+    if (!quote.currency) {
+      newErrors[`currency-${quote.id}`] = 'Currency is required';
+    }
+    if (!quote.quoteDate) {
+      newErrors[`quoteDate-${quote.id}`] = 'Quote date is required';
+    }
+
+    setErrors(prev => ({ ...prev, ...newErrors }));
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!onSave || readOnly) return;
+    
+    // Validate all quotes
+    const isValid = quotes.every(validateQuote);
+    if (!isValid) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      await onSave();
+    } catch (error) {
+      console.error('Error saving quotes:', error);
+      // Error handling is done in parent component
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -404,31 +446,28 @@ export function QuotesStep({
         </Table>
       </TableContainer>
 
-      <Box mt={2}>
+      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         {!readOnly && (
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleAddQuote}
-              startIcon={<AddIcon />}
-              title="Add a new vendor quote"
-            >
-              Add Quote
-            </Button>
-            {onSave && (
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={onSave}
-                disabled={loading || quotes.some(q => !q.vendorId || !q.quoteDate || !q.amount || !q.currency)}
-                startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
-                title="Save all quotes"
-              >
-                Save Quotes
-              </Button>
-            )}
-          </Box>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={handleAddQuote}
+            disabled={isSaving}
+          >
+            Add Quote
+          </Button>
+        )}
+        {!readOnly && onSave && (
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={isSaving ? <CircularProgress size={20} /> : <SaveIcon />}
+            onClick={handleSave}
+            disabled={isSaving || Object.keys(errors).length > 0}
+          >
+            {isSaving ? 'Saving...' : 'Save Quotes'}
+          </Button>
         )}
       </Box>
 

@@ -62,141 +62,84 @@ export const Dashboard = () => {
   const [selectedStatus, setSelectedStatus] = useState<PRStatus>(PRStatus.SUBMITTED);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [prToDelete, setPrToDelete] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Initialize selectedOrg with user's organization when component mounts or when user changes
   useEffect(() => {
-    if (user?.organization) {
-      console.log('Setting organization from user:', {
-        organization: user.organization,
-        additionalOrgs: user.additionalOrganizations
-      });
-      
-      // Get the organization details from the reference data service
-      const loadUserOrg = async () => {
-        try {
-          const orgs = await referenceDataService.getOrganizations();
-          console.log('Available organizations:', orgs.map(org => ({
-            id: org.id,
-            name: org.name,
-            code: org.code,
-            type: org.type
-          })));
-          
-          // Try to find org by ID, code, or name
-          const userOrg = orgs.find(org => {
-            const orgId = org.id.toString().toLowerCase();
-            const orgCode = (org.code || '').toString().toLowerCase();
-            const orgName = org.name.toString().toLowerCase();
-            const userOrgId = user.organization.toString().toLowerCase();
-            
-            console.log('Comparing organization:', {
-              orgId,
-              orgCode,
-              orgName,
-              userOrgId
-            });
-            
-            return (
-              orgId === userOrgId ||
-              orgCode === userOrgId ||
-              orgName === userOrgId ||
-              // Also try with underscores replaced by spaces
-              orgId === userOrgId.replace(/_/g, ' ') ||
-              orgCode === userOrgId.replace(/_/g, ' ') ||
-              orgName === userOrgId.replace(/_/g, ' ')
-            );
-          });
-          
-          if (userOrg) {
-            console.log('Found matching organization:', {
-              id: userOrg.id,
-              name: userOrg.name,
-              code: userOrg.code,
-              userOrg: user.organization
-            });
-            setSelectedOrg({ id: userOrg.id, name: userOrg.name });
-          } else {
-            console.log('No matching organization found for:', {
-              userOrg: user.organization,
-              availableOrgs: orgs.map(org => ({
-                id: org.id,
-                name: org.name,
-                code: org.code
-              }))
-            });
-          }
-        } catch (error) {
-          console.error('Error loading user organization:', error);
-        }
-      };
-      loadUserOrg();
-    }
+    setUserId(user?.id);
   }, [user]);
 
-  // Add real-time update effect
+  // Load PRs when organization is selected
   useEffect(() => {
-    if (!user?.id || !selectedOrg) {
-      console.log('Dashboard: No user ID or organization available', {
-        userId: user?.id,
-        selectedOrg,
-        userOrg: user?.organization
-      });
-      return;
-    }
+    const loadPRs = async () => {
+      if (!userId || !selectedOrg?.name) {
+        console.log('Dashboard: No user ID or organization available', { userId, selectedOrg, userOrg: user?.organization });
+        return;
+      }
 
-    console.log('Dashboard: Loading data for user:', {
-      userId: user.id,
-      organization: selectedOrg,
-      role: user.role
-    });
-
-    const loadDashboardData = async () => {
-      dispatch(setLoading(true));
+      console.log('Dashboard: Loading data for user:', { userId, organization: selectedOrg, role: user?.role });
       try {
-        // Get organization name for filtering
-        const orgName = selectedOrg.name;
-
-        // Load user's PRs with organization filter
-        console.log('Dashboard: Fetching PRs for org:', {
-          userId: user.id,
-          organization: orgName,
-          role: user.role
-        });
-        const userPRsData = await prService.getUserPRs(user.id, orgName);
-        console.log('Dashboard: Received PRs:', {
-          count: userPRsData.length,
-          prs: userPRsData.map(pr => ({
-            id: pr.id,
-            prNumber: pr.prNumber,
-            status: pr.status,
-            organization: pr.organization
-          }))
-        });
-        dispatch(setUserPRs(userPRsData));
-
-        // Load pending approvals if user is an approver
-        if (user.role === UserRole.APPROVER || user.role === UserRole.ADMIN) {
-          const pendingApprovalsData = await prService.getPendingApprovals(user.id, orgName);
-          console.log('Dashboard: Received pending approvals:', {
-            count: pendingApprovalsData.length,
-            prs: pendingApprovalsData.map(pr => ({
-              id: pr.id,
-              prNumber: pr.prNumber,
-              status: pr.status,
-              organization: pr.organization
-            }))
-          });
-          dispatch(setPendingApprovals(pendingApprovalsData));
-        }
+        setIsLoading(true);
+        const prs = await prService.getUserPRs(userId, selectedOrg.name);
+        dispatch(setUserPRs(prs));
       } catch (error) {
-        console.error('Error loading dashboard data:', error);
-        // Don't rethrow - we want to show empty state rather than crash
+        console.error('Error loading PRs:', error);
+        setError('Failed to load purchase requests. Please try again.');
       } finally {
-        dispatch(setLoading(false));
+        setIsLoading(false);
       }
     };
-    loadDashboardData();
-  }, [user, selectedOrg, dispatch]);
+
+    loadPRs();
+  }, [userId, selectedOrg?.name, dispatch]);
+
+  // Set initial organization from user data
+  useEffect(() => {
+    if (!user?.organization) return;
+
+    console.log('Setting organization from user:', { 
+      organization: user.organization,
+      additionalOrgs: user.additionalOrganizations || []
+    });
+
+    // Load available organizations
+    const loadOrganizations = async () => {
+      try {
+        const orgs = await referenceDataService.getOrganizations();
+        console.log('Available organizations:', orgs);
+
+        // Find matching organization
+        const matchingOrg = orgs.find(org => {
+          const orgId = org.id.toLowerCase();
+          const orgCode = org.code.toLowerCase();
+          const orgName = org.name.toLowerCase();
+          const userOrgId = user.organization.toLowerCase();
+
+          console.log('Comparing organization:', { orgId, orgCode, orgName, userOrgId });
+
+          return orgId === userOrgId || 
+                 orgCode === userOrgId || 
+                 orgName === userOrgId;
+        });
+
+        if (matchingOrg) {
+          console.log('Found matching organization:', {
+            id: matchingOrg.id,
+            name: matchingOrg.name,
+            code: matchingOrg.code,
+            userOrg: user.organization
+          });
+          setSelectedOrg(matchingOrg);
+        }
+      } catch (error) {
+        console.error('Error loading organizations:', error);
+        setError('Failed to load organizations. Please try again.');
+      }
+    };
+
+    loadOrganizations();
+  }, [user?.organization]);
 
   // Get PRs for the selected status
   const getStatusPRs = (status: PRStatus) => {
@@ -497,7 +440,7 @@ export const Dashboard = () => {
               </Box>
             </Box>
 
-            {loading ? (
+            {isLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
                 <CircularProgress />
               </Box>
