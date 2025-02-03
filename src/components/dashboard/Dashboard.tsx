@@ -428,15 +428,18 @@ export const Dashboard = () => {
                 Purchase Requests
               </Typography>
               <Box sx={{ display: 'flex', gap: 1 }}>
-                {Object.values(PRStatus).map((status) => (
-                  <Chip
-                    key={status}
-                    label={statusConfig[status].label}
-                    color={selectedStatus === status ? 'primary' : 'default'}
-                    onClick={() => setSelectedStatus(status)}
-                    sx={{ cursor: 'pointer' }}
-                  />
-                ))}
+                {Object.values(PRStatus).map((status) => {
+                  const statusCount = getStatusCounts()[status];
+                  return (
+                    <Chip
+                      key={status}
+                      label={`${statusConfig[status].label} (${statusCount})`}
+                      color={selectedStatus === status ? 'primary' : 'default'}
+                      onClick={() => setSelectedStatus(status)}
+                      sx={{ cursor: 'pointer' }}
+                    />
+                  );
+                })}
               </Box>
             </Box>
 
