@@ -58,6 +58,7 @@ export interface Rule extends ReferenceDataItem {
   number: string;
   description: string;
   threshold: number;
+  currency: string;
   active: boolean;
   organization: {
     id: string;

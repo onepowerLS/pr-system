@@ -262,6 +262,7 @@ const ruleFields: ReferenceDataField[] = [
   { name: 'number', label: 'Number', required: true },
   { name: 'description', label: 'Description', required: true, sx: { width: '40%' } },
   { name: 'threshold', label: 'Threshold', required: true, type: 'number' },
+  { name: 'currency', label: 'Currency', required: true, type: 'currency' },
   { name: 'active', label: 'Active', type: 'boolean', defaultValue: true },
   { name: 'organizationId', label: 'Organization', required: true, type: 'organization' }
 ];
@@ -336,6 +337,7 @@ function getDisplayFields(type: ReferenceDataType): ReferenceDataField[] {
         { name: 'number', label: 'Number' },
         { name: 'description', label: 'Description', sx: { width: '40%' } },
         { name: 'threshold', label: 'Threshold' },
+        { name: 'currency', label: 'Currency' },
         { name: 'active', label: 'Active', type: 'boolean' },
         { name: 'organization', label: 'Organization', type: 'organization' }
       ];
@@ -387,6 +389,8 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
   const [selectedType, setSelectedType] = useState<ReferenceDataType>('departments');
   const [items, setItems] = useState<ReferenceDataItem[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [currencies, setCurrencies] = useState<ReferenceDataItem[]>([]);
+  const [isCurrenciesLoading, setIsCurrenciesLoading] = useState(false);
   const [selectedOrganization, setSelectedOrganization] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<ReferenceDataItem | null>(null);
@@ -451,6 +455,30 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
       });
     }
   };
+
+  useEffect(() => {
+    const loadCurrencies = async () => {
+      try {
+        setIsCurrenciesLoading(true);
+        const currencyItems = await referenceDataAdminService.getItems('currencies', '');
+        // Sort currencies by code
+        const sortedCurrencies = [...currencyItems].sort((a, b) => 
+          (a.code || '').localeCompare(b.code || '')
+        );
+        setCurrencies(sortedCurrencies);
+      } catch (error) {
+        console.error('Error loading currencies:', error);
+        setSnackbar({
+          open: true,
+          message: 'Failed to load currencies',
+          severity: 'error'
+        });
+      } finally {
+        setIsCurrenciesLoading(false);
+      }
+    };
+    loadCurrencies();
+  }, []);
 
   useEffect(() => {
     loadOrganizations();
@@ -732,6 +760,61 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
                 {org.name}
               </MenuItem>
             ))}
+          </Select>
+          {helperText && <FormHelperText>{helperText}</FormHelperText>}
+        </FormControl>
+      );
+    }
+
+    if (field.type === 'currency') {
+      return (
+        <FormControl 
+          key={field.name} 
+          fullWidth 
+          margin="normal" 
+          error={!!error}
+        >
+          <InputLabel id={`${selectedType}-${field.name}-label`}>
+            {field.label}
+          </InputLabel>
+          <Select
+            labelId={`${selectedType}-${field.name}-label`}
+            id={`${selectedType}-${field.name}`}
+            name={field.name}
+            value={value}
+            label={field.label}
+            onChange={(e) => {
+              if (editItem) {
+                setEditItem({
+                  ...editItem,
+                  [field.name]: e.target.value
+                });
+              }
+            }}
+            required={field.required}
+            autoComplete="off"
+            disabled={isCurrenciesLoading}
+          >
+            {isCurrenciesLoading ? (
+              <MenuItem disabled>Loading currencies...</MenuItem>
+            ) : currencies.length === 0 ? (
+              <MenuItem disabled>No currencies available</MenuItem>
+            ) : (
+              currencies.map((currency) => (
+                <MenuItem 
+                  key={currency.code} 
+                  value={currency.code}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                  }}
+                >
+                  <span style={{ fontWeight: 500 }}>{currency.code}</span>
+                  <span style={{ color: 'text.secondary' }}>- {currency.name}</span>
+                </MenuItem>
+              ))
+            )}
           </Select>
           {helperText && <FormHelperText>{helperText}</FormHelperText>}
         </FormControl>
