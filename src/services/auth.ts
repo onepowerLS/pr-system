@@ -170,6 +170,16 @@ export const getUserDetails = async (uid: string): Promise<User> => {
       });
       userData.organization = '1PWR LESOTHO';
     }
+
+    // Map permissions based on role and permission level
+    const permissions: UserPermissions = {
+      canCreatePR: true, // All users can create PRs
+      canApprovePR: userData.permissionLevel <= 4, // Levels 1-4 can approve
+      canProcessPR: userData.permissionLevel <= 3, // Levels 1-3 can process
+      canManageUsers: userData.permissionLevel === 1, // Only admins
+      canViewReports: userData.permissionLevel <= 4, // Levels 1-4 can view reports
+      approvalLimit: getApprovalLimit(userData.permissionLevel)
+    };
     
     return {
       id: uid,
@@ -180,13 +190,30 @@ export const getUserDetails = async (uid: string): Promise<User> => {
       organization: userData.organization,
       isActive: userData.isActive,
       permissionLevel: userData.permissionLevel,
-      additionalOrganizations: userData.additionalOrganizations || []
+      additionalOrganizations: userData.additionalOrganizations || [],
+      permissions // Add permissions to user object
     };
   } catch (error) {
     console.error('Error fetching user details:', error);
     throw error;
   }
 };
+
+// Helper function to get approval limit based on permission level
+function getApprovalLimit(permissionLevel: number): number {
+  switch (permissionLevel) {
+    case 1: // Admin
+      return Infinity;
+    case 2: // Approver
+      return 1000000;
+    case 3: // Procurement
+      return 500000;
+    case 4: // Finance Admin
+      return 100000;
+    default:
+      return 0;
+  }
+}
 
 export const getCurrentUser = async (): Promise<User | null> => {
   const user = getAuth().currentUser;

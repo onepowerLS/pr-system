@@ -31,29 +31,33 @@
  */
 
 import { 
-  collection,
-  doc,
-  addDoc,
-  updateDoc,
+  getFirestore, 
+  collection, 
+  doc, 
   getDoc,
   getDocs,
   query,
   where,
-  orderBy,
-  Timestamp,
+  limit,
+  updateDoc,
   deleteDoc,
-  writeBatch,
-  arrayUnion,
-  serverTimestamp
+  serverTimestamp,
+  Timestamp,
+  DocumentData,
+  DocumentSnapshot,
+  QuerySnapshot,
+  arrayUnion
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
-import { PRRequest, PRStatus, User, Quote } from '../types/pr';
+import { PRRequest, PRStatus } from '../types/pr';
 import { notificationService } from './notification';
 import { calculateDaysOpen } from '../utils/formatters';
 import { StorageService } from './storage';
 import { auth } from '../config/firebase';
 import { UserRole } from '../types/user';
+import { User } from '../types/user';
+import { Rule } from '../types/referenceData';
 
 const PR_COLLECTION = 'purchaseRequests';
 const functions = getFunctions();
@@ -511,8 +515,12 @@ export const prService = {
       const prs = querySnapshot.docs.map(doc => {
         const data = doc.data();
         // Convert Firestore timestamps to Date objects
-        const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : null;
-        const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt.toDate() : null;
+        const createdAt = data.createdAt instanceof Date 
+          ? data.createdAt 
+          : data.createdAt.toDate?.() || new Date(data.createdAt);
+        const updatedAt = data.updatedAt instanceof Date 
+          ? data.updatedAt 
+          : data.updatedAt.toDate?.() || new Date(data.updatedAt);
         
         return {
           id: doc.id,
@@ -763,6 +771,7 @@ export const prService = {
     user?: User
   ): Promise<void> {
     try {
+      const db = getFirestore();
       const prRef = doc(db, PR_COLLECTION, prId);
       const prDoc = await getDoc(prRef);
       
@@ -770,82 +779,95 @@ export const prService = {
         throw new Error('PR not found');
       }
 
-      const now = Timestamp.now();
-      const currentStatus = prDoc.data().status;
-      
-      const updateData: any = {
-        status: newStatus,
-        updatedAt: now,
-      };
+      const prData = prDoc.data() as PRRequest;
+      const timestamp = Timestamp.now();
 
-      // Always add to status history
-      const statusHistoryEntry = {
-        status: newStatus,
-        timestamp: now,
-        updatedBy: user ? {
-          id: user.id,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`
-        } : { id: 'system', email: 'system@1pwrafrica.com', name: 'System' }
-      };
-      updateData.statusHistory = arrayUnion(statusHistoryEntry);
-
-      // Always add to workflow history with appropriate message
-      let historyNotes = notes;
-      if (!historyNotes) {
-        // Generate default notes based on status change
-        if (newStatus === PRStatus.PENDING_APPROVAL) {
-          historyNotes = 'PR pushed to approver';
-        } else if (newStatus === PRStatus.REJECTED) {
-          historyNotes = 'PR rejected';
-        } else if (newStatus === PRStatus.REVISION_REQUIRED) {
-          historyNotes = 'Revision requested';
-        } else if (newStatus === PRStatus.CANCELED) {
-          historyNotes = 'PR canceled';
-        } else if (newStatus === PRStatus.RESUBMITTED) {
-          historyNotes = 'PR resubmitted after revisions';
-        } else if (newStatus === PRStatus.IN_QUEUE) {
-          historyNotes = 'PR moved to queue';
-        } else {
-          historyNotes = `PR status changed to ${newStatus}`;
-        }
-      }
-
+      // Prepare workflow history entry
       const historyEntry = {
         step: newStatus,
-        timestamp: now,
-        notes: historyNotes,
-        user: user ? {
-          id: user.id,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`
-        } : { id: 'system', email: 'system@1pwrafrica.com', name: 'System' }
+        timestamp,
+        user: user || null,
+        notes: notes || ''
       };
-      updateData.workflowHistory = arrayUnion(historyEntry);
 
+      // Prepare base update object
+      const updateData: any = {
+        status: newStatus,
+        [`workflowHistory`]: arrayUnion(historyEntry),
+        lastModifiedAt: timestamp,
+        lastModifiedBy: user?.email || 'system'
+      };
+
+      // Special handling for PENDING_APPROVAL status
+      if (newStatus === PRStatus.PENDING_APPROVAL) {
+        // Get approver details
+        const approver = await this.getApproverForPR(prData);
+        if (!approver) {
+          throw new Error('No eligible approver found for PR');
+        }
+
+        updateData.approvalWorkflow = {
+          currentApprover: approver.id,
+          approvalChain: [approver.id],
+          approvalHistory: [],
+          submittedForApprovalAt: timestamp
+        };
+
+        // Send notifications to all relevant parties
+        await this.sendStatusChangeNotifications(prId, newStatus, {
+          requestor: prData.requestorEmail,
+          procurement: user?.email,
+          approver: approver.email,
+          prNumber: prData.prNumber,
+          amount: prData.estimatedAmount,
+          currency: prData.currency,
+          description: prData.description
+        });
+      }
+
+      // Update the PR
       await updateDoc(prRef, updateData);
-      
-      // Send notifications for all status changes
-      await notificationService.handleStatusChange(
-        prId,
-        currentStatus,
-        newStatus,
-        user ? {
-          id: user.id,
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`
-        } : { id: 'system', email: 'system@1pwrafrica.com', name: 'System' },
-        historyNotes
-      );
-      
-      console.log(`PR ${prId} status updated from ${currentStatus} to ${newStatus}`, {
-        statusHistoryEntry,
-        historyEntry,
-        updateData
-      });
+
+      console.log('PR status updated successfully:', { prId, newStatus });
     } catch (error) {
       console.error('Error updating PR status:', error);
       throw new Error('Failed to update PR status');
+    }
+  },
+
+  async sendStatusChangeNotifications(
+    prId: string,
+    status: PRStatus,
+    details: {
+      requestor: string;
+      procurement?: string;
+      approver?: string;
+      prNumber: string;
+      amount: number;
+      currency: string;
+      description: string;
+    }
+  ): Promise<void> {
+    try {
+      const notifyFunction = httpsCallable(functions, 'notifyStatusChange');
+      await notifyFunction({
+        prId,
+        status,
+        recipients: {
+          requestor: details.requestor,
+          procurement: details.procurement,
+          approver: details.approver
+        },
+        prDetails: {
+          prNumber: details.prNumber,
+          amount: details.amount,
+          currency: details.currency,
+          description: details.description
+        }
+      });
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+      // Don't throw error to prevent blocking PR status update
     }
   },
 
@@ -950,4 +972,78 @@ export const prService = {
       throw error;
     }
   },
+
+  /**
+   * Fetches organization-specific rules
+   * @param {string} organizationId - ID of the organization
+   * @param {number} amount - Amount to check against rules
+   * @returns {Promise<Rule | null>} Organization rule or null if not found
+   */
+  async getRuleForOrganization(organizationId: string, amount?: number): Promise<Rule | null> {
+    try {
+      const db = getFirestore();
+      const rulesRef = collection(db, 'referenceData_rules');
+      
+      // Convert organization ID to lowercase format
+      const normalizedOrgId = organizationId.toLowerCase().replace(/\s+/g, '_');
+      
+      // Get all rules for the organization
+      const q = query(rulesRef, where('organizationId', '==', normalizedOrgId));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        console.warn(`No rules found for organization: ${organizationId} (normalized: ${normalizedOrgId})`);
+        return null;
+      }
+
+      // Convert all documents to Rule objects
+      const rules = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          number: data.number || '1',
+          description: data.description || '',
+          threshold: Number(data.threshold) || 0,
+          currency: data.currency || 'LSL',
+          active: data.active ?? true,
+          organization: data.organization || {
+            id: normalizedOrgId,
+            name: organizationId
+          },
+          organizationId: data.organizationId || normalizedOrgId,
+          approverThresholds: {
+            procurement: data.approverThresholds?.procurement || 100000,
+            financeAdmin: data.approverThresholds?.financeAdmin || 500000,
+            ceo: data.approverThresholds?.ceo || null
+          },
+          quoteRequirements: {
+            aboveThreshold: data.quoteRequirements?.aboveThreshold || 3,
+            belowThreshold: {
+              approved: data.quoteRequirements?.belowThreshold?.approved || 1,
+              default: data.quoteRequirements?.belowThreshold?.default || 1
+            }
+          },
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString()
+        } as Rule;
+      });
+
+      // Sort rules by threshold in ascending order
+      rules.sort((a, b) => a.threshold - b.threshold);
+
+      if (!amount) {
+        // If no amount provided, return the rule with the highest threshold
+        return rules[rules.length - 1];
+      }
+
+      // Find the first rule where the amount is below the threshold
+      const applicableRule = rules.find(rule => amount <= rule.threshold);
+      
+      // If no applicable rule found (amount is above all thresholds), use the highest threshold rule
+      return applicableRule || rules[rules.length - 1];
+    } catch (error) {
+      console.error('Error fetching organization rules:', error);
+      throw new Error('Failed to fetch organization rules');
+    }
+  }
 };

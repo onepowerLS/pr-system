@@ -54,7 +54,8 @@ export interface ReferenceDataItem {
   active?: boolean;
 }
 
-export interface Rule extends ReferenceDataItem {
+export interface Rule {
+  id: string;
   number: string;
   description: string;
   threshold: number;
@@ -65,6 +66,20 @@ export interface Rule extends ReferenceDataItem {
     name: string;
   };
   organizationId: string;
+  approverThresholds: {
+    procurement: number;
+    financeAdmin: number;
+    ceo: number | null;
+  };
+  quoteRequirements: {
+    aboveThreshold: number;
+    belowThreshold: {
+      approved: number;
+      default: number;
+    };
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type ReferenceDataType = 

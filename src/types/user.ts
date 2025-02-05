@@ -55,6 +55,8 @@ export interface User {
   permissionLevel: number;
   /** Additional organizations */
   additionalOrganizations?: string[];
+  /** User permissions */
+  permissions: UserPermissions;
 }
 
 /**

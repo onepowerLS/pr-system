@@ -17,6 +17,7 @@ import { PRStatus } from '@/types/pr';
 import { prService } from '@/services/pr';
 import { notificationService } from '@/services/notification';
 import { User } from '@/types/user';
+import { validatePRForApproval } from '@/utils/prValidation';
 
 interface ProcurementActionsProps {
   prId: string;
@@ -56,30 +57,110 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         return;
       }
 
+      // Get the PR data
+      const pr = await prService.getPR(prId);
+      if (!pr) {
+        setError('PR not found');
+        return;
+      }
+
       let newStatus: PRStatus;
       switch (selectedAction) {
         case 'approve':
+          // Get the rule for this organization
+          const rule = await prService.getRuleForOrganization(pr.organization, pr.estimatedAmount);
+          if (!rule) {
+            setError('No approval rules found for this organization');
+            return;
+          }
+
+          // Validate PR against rules
+          const validation = await validatePRForApproval(
+            pr,
+            rule,
+            currentUser,
+            pr.status === PRStatus.PENDING_APPROVAL ? PRStatus.APPROVED : PRStatus.PENDING_APPROVAL
+          );
+          if (!validation.isValid) {
+            setError(validation.errors.join('\n'));
+            return;
+          }
+
+          // Change designation from PR to PO
+          const poNumber = pr.prNumber.replace('PR', 'PO');
           newStatus = PRStatus.PENDING_APPROVAL;
+          
+          // Update PR with PO number and approver information
+          await prService.updatePR(prId, {
+            prNumber: poNumber,
+            status: newStatus,
+            lastModifiedBy: currentUser.email,
+            lastModifiedAt: new Date().toISOString(),
+            approvalWorkflow: {
+              currentApprover: pr.approvers[0], // Start with first approver
+              approvalChain: pr.approvers,
+              approvalHistory: [],
+              submittedForApprovalAt: new Date().toISOString()
+            }
+          });
+
+          // Send notification to first approver
+          await notificationService.handleStatusChange(
+            prId,
+            currentStatus,
+            newStatus,
+            currentUser,
+            `PR ${pr.prNumber} has been converted to PO ${poNumber} and is pending your approval.`
+          );
           break;
+
         case 'reject':
           newStatus = PRStatus.REJECTED;
+          await notificationService.handleStatusChange(
+            prId,
+            currentStatus,
+            newStatus,
+            currentUser,
+            notes
+          );
           break;
+
         case 'revise':
           newStatus = PRStatus.REVISION_REQUIRED;
+          await notificationService.handleStatusChange(
+            prId,
+            currentStatus,
+            newStatus,
+            currentUser,
+            notes
+          );
           break;
+
         case 'cancel':
           newStatus = PRStatus.CANCELED;
+          await notificationService.handleStatusChange(
+            prId,
+            currentStatus,
+            newStatus,
+            currentUser,
+            notes || 'PR canceled by requestor'
+          );
           break;
+
         case 'queue':
           newStatus = PRStatus.IN_QUEUE;
+          await notificationService.handleStatusChange(
+            prId,
+            currentStatus,
+            newStatus,
+            currentUser,
+            notes || 'PR moved to queue'
+          );
           break;
+
         default:
           return;
       }
-
-      // Get PR details first to prepare notifications
-      const pr = await prService.getPR(prId);
-      if (!pr) throw new Error('PR not found');
 
       // For push to approver, ensure we have approvers
       if (selectedAction === 'approve' && (!pr.approvers || pr.approvers.length === 0)) {
@@ -87,13 +168,8 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         return;
       }
 
-      // Update PR status with notes
-      await prService.updatePRStatus(
-        prId,
-        newStatus,
-        notes || (selectedAction === 'approve' ? 'PR pushed to approver' : undefined),
-        currentUser
-      );
+      // Update PR status
+      await prService.updatePRStatus(prId, newStatus, notes, currentUser);
 
       enqueueSnackbar('PR status updated successfully', { variant: 'success' });
       handleClose();
@@ -103,7 +179,7 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
       navigate('/dashboard');
     } catch (error) {
       console.error('Error updating PR status:', error);
-      enqueueSnackbar('Failed to update PR status', { variant: 'error' });
+      setError(error instanceof Error ? error.message : 'Failed to update PR status');
     }
   };
 
