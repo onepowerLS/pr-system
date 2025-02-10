@@ -169,94 +169,38 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
   const loadPermissions = async () => {
     try {
       console.log('Loading permissions...');
-      const permissionsRef = collection(db, 'rd_permissions');
+      const permissionsRef = collection(db, 'referenceData_permissions');
       const permissionsQuery = query(permissionsRef);
       const querySnapshot = await getDocs(permissionsQuery);
       const loadedPermissions: Permission[] = [];
       
+      console.log('Found permissions:', querySnapshot.size);
+      
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         console.log('Permission data:', { id: doc.id, ...data });
-        loadedPermissions.push({
-          ...data,
+        
+        // Ensure all required fields are present with default values
+        const permission: Permission = {
           id: doc.id,
-          level: Number(data.level) // Always convert to number when loading
-        });
+          code: data.code || doc.id.toUpperCase(),
+          name: data.name || `Level ${data.level}`,
+          description: data.description || `Permission level ${data.level}`,
+          level: Number(data.level),
+          actions: Array.isArray(data.actions) ? data.actions : ['read'],
+          scope: Array.isArray(data.scope) ? data.scope : ['organization'],
+          active: data.active !== false,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString()
+        };
+        
+        loadedPermissions.push(permission);
       });
       
-      // If no permissions exist, initialize them
-      if (loadedPermissions.length === 0) {
-        console.log('No permissions found, initializing...');
-        const defaultPermissions = [
-          {
-            code: 'ADMIN',
-            name: 'Admin',
-            description: 'Full system access with all administrative privileges',
-            level: 1,
-            actions: ['read', 'write', 'delete', 'approve', 'admin'],
-            scope: ['global'],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            code: 'APPROVER',
-            name: 'Approver',
-            description: 'Can approve requests within assigned organizations',
-            level: 2,
-            actions: ['read', 'write', 'approve'],
-            scope: ['organization'],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            code: 'PROC',
-            name: 'Procurement',
-            description: 'Can manage procurement process and vendor relationships',
-            level: 3,
-            actions: ['read', 'write', 'process'],
-            scope: ['organization'],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            code: 'FIN_AD',
-            name: 'Financial Admin',
-            description: 'Can process financial aspects of procurement requests',
-            level: 4,
-            actions: ['read', 'write', 'process'],
-            scope: ['organization'],
-            active: true,
-            createdAt: new Date().toISOString()
-          },
-          {
-            code: 'REQ',
-            name: 'Requester',
-            description: 'Can create and submit procurement requests',
-            level: 5,
-            actions: ['read', 'write'],
-            scope: ['organization'],
-            active: true,
-            createdAt: new Date().toISOString()
-          }
-        ];
-
-        for (const permission of defaultPermissions) {
-          const docRef = doc(permissionsRef, permission.code.toLowerCase());
-          await setDoc(docRef, {
-            ...permission,
-            updatedAt: new Date().toISOString()
-          });
-          loadedPermissions.push({
-            ...permission,
-            id: permission.code.toLowerCase(),
-            level: Number(permission.level)
-          });
-        }
-      }
-      
-      // Sort permissions by level
-      loadedPermissions.sort((a, b) => Number(a.level) - Number(b.level));
+      // Sort permissions by level for consistent display
+      loadedPermissions.sort((a, b) => a.level - b.level);
       console.log('Loaded permissions:', loadedPermissions);
+      
       setPermissions(loadedPermissions);
     } catch (error) {
       console.error('Error loading permissions:', error);
@@ -269,6 +213,15 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
       const loadedUsers: User[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+        
+        // Log user data for debugging
+        console.log('Loading user data:', {
+          id: doc.id,
+          rawPermissionLevel: data.permissionLevel,
+          convertedPermissionLevel: typeof data.permissionLevel === 'number' ? data.permissionLevel : 
+            typeof data.permissionLevel === 'string' ? Number(data.permissionLevel) : 5
+        });
+        
         loadedUsers.push({
           id: doc.id,
           firstName: data.firstName || '',
@@ -279,10 +232,20 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
           additionalOrganizations: Array.isArray(data.additionalOrganizations) 
             ? data.additionalOrganizations.map(org => typeof org === 'string' ? org : org?.name || '')
             : [],
-          permissionLevel: typeof data.permissionLevel === 'number' ? data.permissionLevel : 5, // Default to requester (level 5)
+          // Handle both string and number permission levels
+          permissionLevel: typeof data.permissionLevel === 'number' ? data.permissionLevel : 
+            typeof data.permissionLevel === 'string' ? Number(data.permissionLevel) : 5,
           isActive: data.isActive !== false
         });
       });
+      
+      // Log all loaded users
+      console.log('All loaded users:', loadedUsers.map(u => ({ 
+        id: u.id, 
+        email: u.email,
+        permissionLevel: u.permissionLevel 
+      })));
+      
       setUsers(loadedUsers);
     } catch (error) {
       console.error('Error loading users:', error);
@@ -352,6 +315,8 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
 
   const handleAdd = () => {
     setEditingUser(null);
+    // Find the highest permission level (usually requester)
+    const defaultPermission = permissions.find(p => p.code === 'REQ') || permissions[permissions.length - 1];
     setFormData({
       firstName: '',
       lastName: '',
@@ -359,7 +324,7 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
       department: '',
       organization: '',
       additionalOrganizations: [],
-      permissionLevel: 5,
+      permissionLevel: defaultPermission ? Number(defaultPermission.level) : undefined,
       isActive: true
     });
     setIsDialogOpen(true);
@@ -376,7 +341,7 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
       department: '',
       organization: '',
       additionalOrganizations: [],
-      permissionLevel: 5,
+      permissionLevel: undefined,
       isActive: true
     });
   };
@@ -476,40 +441,51 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
   };
 
   const handleSubmit = async () => {
-    try {
-      const dept = findDepartmentById(formData.department);
-      
-      const userData = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        department: dept?.name || '',
-        organization: formData.organization,
-        permissionLevel: Number(formData.permissionLevel),
-        additionalOrganizations: formData.additionalOrganizations || [],
-        isActive: formData.isActive
-      };
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.organization || !formData.permissionLevel) {
+      showSnackbar('Please fill in all required fields', 'error');
+      return;
+    }
 
+    try {
+      setIsLoading(true);
+      
       if (editingUser) {
-        await handleUserUpdate(editingUser.id, userData);
-      } else {
-        await handleNewUser({
-          email: userData.email,
-          password: generateRandomPassword(),
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          department: userData.department,
-          organization: userData.organization,
-          permissionLevel: userData.permissionLevel,
-          isActive: userData.isActive
+        await handleUserUpdate(editingUser.id, {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          department: formData.department,
+          organization: formData.organization,
+          additionalOrganizations: formData.additionalOrganizations,
+          permissionLevel: formData.permissionLevel,
+          isActive: formData.isActive
         });
+      } else {
+        // Create new user
+        const password = generateRandomPassword();
+        const newUserData = {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          department: formData.department,
+          organization: formData.organization,
+          additionalOrganizations: formData.additionalOrganizations,
+          permissionLevel: formData.permissionLevel,
+          isActive: formData.isActive,
+          createdAt: new Date().toISOString()
+        };
+
+        await createUser(newUserData, password);
+        await loadUsers();
       }
 
-      setIsDialogOpen(false);
-      loadUsers();
+      handleClose();
+      showSnackbar(editingUser ? 'User updated successfully' : 'User created successfully', 'success');
     } catch (error) {
       console.error('Error saving user:', error);
-      // Handle error appropriately
+      showSnackbar(error instanceof Error ? error.message : 'Failed to save user', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -571,8 +547,19 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
   };
 
   const getPermissionName = (level: number): string => {
-    const permission = permissions.find(p => Number(p.level) === level);
-    return permission?.name || `Level ${level}`;
+    // Convert level to number to ensure consistent comparison
+    const numericLevel = Number(level);
+    const permission = permissions.find(p => Number(p.level) === numericLevel);
+    
+    // Log for debugging
+    console.log('Getting permission name:', { 
+      inputLevel: level,
+      numericLevel,
+      foundPermission: permission,
+      allPermissions: permissions.map(p => ({ level: p.level, name: p.name }))
+    });
+    
+    return permission?.name || `Unknown Permission`;
   };
 
   return (
@@ -759,8 +746,8 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
               <FormControl fullWidth margin="normal">
                 <InputLabel>Permission Level</InputLabel>
                 <Select
-                  value={editingUser?.permissionLevel || ''}
-                  onChange={(e) => setEditingUser(prev => prev ? { ...prev, permissionLevel: Number(e.target.value) } : null)}
+                  value={formData.permissionLevel || ''}
+                  onChange={(e) => setFormData({ ...formData, permissionLevel: Number(e.target.value) })}
                   label="Permission Level"
                 >
                   {permissions.map((permission) => (
