@@ -68,26 +68,44 @@ const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
  * @param {any} data - Data to convert
  * @returns {any} Converted data
  */
-const convertTimestamps = (data: any): any => {
-  if (!data) return data;
-  
-  if (data instanceof Timestamp) {
-    return data.toDate().toISOString();
+function convertTimestamps(obj: any): any {
+  if (!obj) return obj;
+
+  if (obj instanceof Timestamp) {
+    return obj.toDate().toISOString();
   }
-  
-  if (Array.isArray(data)) {
-    return data.map(item => convertTimestamps(item));
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => convertTimestamps(item));
   }
-  
-  if (typeof data === 'object') {
-    const result: any = {};
-    for (const key in data) {
-      result[key] = convertTimestamps(data[key]);
+
+  if (typeof obj === 'object') {
+    const converted: any = {};
+    for (const key in obj) {
+      if (key === 'timestamp' && obj[key] instanceof Timestamp) {
+        converted[key] = obj[key].toDate().toISOString();
+      } else if (key === 'statusHistory' && Array.isArray(obj[key])) {
+        converted[key] = obj[key].map((historyItem: any) => ({
+          ...historyItem,
+          timestamp: historyItem.timestamp instanceof Timestamp 
+            ? historyItem.timestamp.toDate().toISOString()
+            : historyItem.timestamp
+        }));
+      } else if (key === 'workflowHistory' && Array.isArray(obj[key])) {
+        converted[key] = obj[key].map((historyItem: any) => ({
+          ...historyItem,
+          timestamp: historyItem.timestamp instanceof Timestamp 
+            ? historyItem.timestamp.toDate().toISOString()
+            : historyItem.timestamp
+        }));
+      } else {
+        converted[key] = convertTimestamps(obj[key]);
+      }
     }
-    return result;
+    return converted;
   }
-  
-  return data;
+
+  return obj;
 };
 
 /**
@@ -452,10 +470,13 @@ export const prService = {
 
   /**
    * Get PRs for a specific user in an organization
+   * @param userId User ID
+   * @param organization Organization name
+   * @param filterToUser Optional, if true only show PRs created by or assigned to the user
    */
-  async getUserPRs(userId: string, organization: string): Promise<PRRequest[]> {
+  async getUserPRs(userId: string, organization: string, filterToUser: boolean = false): Promise<PRRequest[]> {
     try {
-      console.log('PR Service: Fetching PRs for:', { userId, organization });
+      console.log('PR Service: Fetching PRs:', { userId, organization, filterToUser });
       
       // Get user permissions from auth
       const user = auth.currentUser;
@@ -477,31 +498,58 @@ export const prService = {
       }
 
       const userData = userDoc.data();
-      const permissionLevel = userData?.permissionLevel || 5; // Default to REQ level (5)
-      console.log('User data loaded:', { userId, permissionLevel });
+      console.log('User data loaded:', { userId, permissionLevel: userData?.permissionLevel });
 
-      // Check if user has procurement or admin level permissions
-      // ADMIN = 1, APPROVER = 2, PROC = 3, FIN_AD = 4, REQ = 5
-      const canViewAllPRs = permissionLevel === 3; // Only PROC can see all PRs
+      // If filterToUser is true, show PRs that are either:
+      // 1. Created by the user
+      // 2. Assigned to the user for approval (either in approvers array or workflow)
+      if (filterToUser) {
+        console.log('Filtering to user PRs and approvals');
+        
+        // We need to do multiple queries and combine results
+        const [createdPRs, assignedPRs, workflowPRs] = await Promise.all([
+          // Query for PRs created by user
+          getDocs(query(
+            collection(db, PR_COLLECTION),
+            where('organization', '==', organization),
+            where('createdBy.id', '==', userId)
+          )),
+          // Query for PRs where user is in approvers array
+          getDocs(query(
+            collection(db, PR_COLLECTION),
+            where('organization', '==', organization),
+            where('approvers', 'array-contains', userId)
+          )),
+          // Query for PRs where user is the workflow approver
+          getDocs(query(
+            collection(db, PR_COLLECTION),
+            where('organization', '==', organization),
+            where('workflow.procurementReview.approver.id', '==', userId)
+          ))
+        ]);
 
-      // If not procurement, only show their PRs
-      if (!canViewAllPRs) {
-        console.log('User is not procurement (level 3), filtering to their PRs only');
-        q = query(
-          collection(db, PR_COLLECTION),
-          where('organization', '==', organization),
-          where('createdBy.id', '==', userId)
-        );
-      } else {
-        console.log('User is procurement (level 3), showing all PRs');
+        // Combine results, removing duplicates by PR ID
+        const prMap = new Map();
+        [...createdPRs.docs, ...assignedPRs.docs, ...workflowPRs.docs].forEach(doc => {
+          if (!prMap.has(doc.id)) {
+            const data = doc.data();
+            prMap.set(doc.id, {
+              id: doc.id,
+              ...convertTimestamps(data)
+            });
+          }
+        });
+
+        // Convert map to array
+        return Array.from(prMap.values()) as PRRequest[];
       }
-      
+
+      // If not filtering, get all PRs for the organization
+      console.log('Showing all PRs');
       const querySnapshot = await getDocs(q);
       console.log('PR Service: Found PRs:', {
         count: querySnapshot.size,
         organization,
-        permissionLevel,
-        canViewAllPRs,
         prs: querySnapshot.docs.map(doc => ({
           id: doc.id,
           prNumber: doc.data().prNumber,
@@ -530,8 +578,11 @@ export const prService = {
         };
       }) as PRRequest[];
 
+      // Convert all timestamps to ISO strings before storing in Redux
+      const convertedPRs = prs.map(pr => convertTimestamps(pr));
+
       // Sort by urgency first, then by creation date
-      return prs.sort((a, b) => {
+      return convertedPRs.sort((a, b) => {
         if (a.isUrgent !== b.isUrgent) {
           return a.isUrgent ? -1 : 1;
         }
@@ -779,7 +830,7 @@ export const prService = {
         throw new Error('PR not found');
       }
 
-      const prData = prDoc.data() as PRRequest;
+      const pr = prDoc.data() as PRRequest;
       const timestamp = Timestamp.now();
 
       // Prepare workflow history entry
@@ -801,7 +852,7 @@ export const prService = {
       // Special handling for PENDING_APPROVAL status
       if (newStatus === PRStatus.PENDING_APPROVAL) {
         // Get approver details
-        const approver = await this.getApproverForPR(prData);
+        const approver = await this.getApproverForPR(pr);
         if (!approver) {
           throw new Error('No eligible approver found for PR');
         }
@@ -815,13 +866,13 @@ export const prService = {
 
         // Send notifications to all relevant parties
         await this.sendStatusChangeNotifications(prId, newStatus, {
-          requestor: prData.requestorEmail,
+          requestor: pr.requestorEmail,
           procurement: user?.email,
           approver: approver.email,
-          prNumber: prData.prNumber,
-          amount: prData.estimatedAmount,
-          currency: prData.currency,
-          description: prData.description
+          prNumber: pr.prNumber,
+          amount: pr.estimatedAmount,
+          currency: pr.currency,
+          description: pr.description
         });
       }
 

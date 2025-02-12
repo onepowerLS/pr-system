@@ -55,7 +55,7 @@ export const Dashboard = () => {
   const dispatch = useDispatch();
   const location = useLocation();
   const { user } = useSelector((state: RootState) => state.auth);
-  const { userPRs, pendingApprovals, loading } = useSelector(
+  const { userPRs, pendingApprovals, loading, showOnlyMyPRs } = useSelector(
     (state: RootState) => state.pr
   );
   const [selectedOrg, setSelectedOrg] = useState<{ id: string; name: string } | null>(null);
@@ -70,7 +70,7 @@ export const Dashboard = () => {
     setUserId(user?.id);
   }, [user]);
 
-  // Load PRs when organization is selected
+  // Load PRs when organization is selected or filter changes
   useEffect(() => {
     const loadPRs = async () => {
       if (!userId || !selectedOrg?.name) {
@@ -78,10 +78,10 @@ export const Dashboard = () => {
         return;
       }
 
-      console.log('Dashboard: Loading data for user:', { userId, organization: selectedOrg, role: user?.role });
+      console.log('Dashboard: Loading data for user:', { userId, organization: selectedOrg, showOnlyMyPRs });
       try {
         setIsLoading(true);
-        const prs = await prService.getUserPRs(userId, selectedOrg.name);
+        const prs = await prService.getUserPRs(userId, selectedOrg.name, showOnlyMyPRs);
         dispatch(setUserPRs(prs));
       } catch (error) {
         console.error('Error loading PRs:', error);
@@ -92,7 +92,7 @@ export const Dashboard = () => {
     };
 
     loadPRs();
-  }, [userId, selectedOrg?.name, dispatch]);
+  }, [userId, selectedOrg?.name, showOnlyMyPRs, dispatch]);
 
   // Set initial organization from user data
   useEffect(() => {
@@ -334,31 +334,15 @@ export const Dashboard = () => {
         });
         return new Date(pr.updatedAt).toLocaleDateString();
       }
-      // Fallback to workflowHistory if available
-      const workflowEntry = pr.workflowHistory?.find(entry => entry.step === pr.status);
-      if (workflowEntry?.timestamp) {
-        console.log('Using workflow history as fallback:', {
-          prNumber: pr.prNumber,
-          workflowEntry
-        });
-        const timestamp = workflowEntry.timestamp;
-        const date = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
-        return date.toLocaleDateString();
-      }
       return '-';
     }
 
     try {
-      // Handle both Date objects and Firestore Timestamps
-      const timestamp = statusChange.timestamp;
-      const date = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
+      // Handle ISO string timestamps (converted from Firestore Timestamp)
+      const date = new Date(statusChange.timestamp);
       return date.toLocaleDateString();
     } catch (error) {
-      console.error('Error formatting status change date:', {
-        error,
-        statusChange,
-        prNumber: pr.prNumber
-      });
+      console.error('Error formatting status change date:', error);
       return '-';
     }
   };
@@ -423,10 +407,18 @@ export const Dashboard = () => {
 
         <Grid item xs={12}>
           <Paper sx={{ p: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="h5" component="h1">
+                  Purchase Requests
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  {showOnlyMyPRs ? "Showing your PRs and approvals" : "Showing all PRs"}
+                </Typography>
+              </Box>
+            </Box>
+
             <Box sx={{ mb: 2 }}>
-              <Typography variant="h6" gutterBottom>
-                Purchase Requests
-              </Typography>
               <Box sx={{ display: 'flex', gap: 1 }}>
                 {Object.values(PRStatus).map((status) => {
                   const statusCount = getStatusCounts()[status];

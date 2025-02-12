@@ -17,6 +17,8 @@ import {
   Menu,
   MenuItem,
   styled,
+  Switch,
+  FormControlLabel
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -25,10 +27,11 @@ import {
   List as ListIcon,
   Person,
   AdminPanelSettings,
+  FilterList
 } from '@mui/icons-material';
 import { signOut } from '../../services/auth';
 import { clearUser } from '../../store/slices/authSlice';
-import { clearPRState } from '../../store/slices/prSlice';
+import { clearPRState, setShowOnlyMyPRs } from '../../store/slices/prSlice';
 import { UserProfile } from '@/components/user/UserProfile';
 
 const NavItem = styled('div')(({ theme }) => ({
@@ -48,6 +51,7 @@ export const Layout = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.auth.user);
+  const showOnlyMyPRs = useSelector((state: RootState) => state.pr.showOnlyMyPRs);
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -63,6 +67,10 @@ export const Layout = () => {
 
   const handleClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleMyPRsToggle = () => {
+    dispatch(setShowOnlyMyPRs(!showOnlyMyPRs));
   };
 
   const handleSignOut = async () => {
@@ -90,17 +98,27 @@ export const Layout = () => {
           </ListItemIcon>
           <ListItemText primary="Dashboard" />
         </NavItem>
-        <NavItem onClick={() => navigate('/pr/new')}>
+        <NavItem>
           <ListItemIcon>
-            <AddCircle />
+            <FilterList />
           </ListItemIcon>
-          <ListItemText primary="New PR" />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showOnlyMyPRs}
+                onChange={handleMyPRsToggle}
+                name="myPRs"
+                color="primary"
+              />
+            }
+            label="My PRs"
+          />
         </NavItem>
         <NavItem onClick={() => navigate('/pr/list')}>
           <ListItemIcon>
             <ListIcon />
           </ListItemIcon>
-          <ListItemText primary="My PRs" />
+          <ListItemText primary="PRs" />
         </NavItem>
         {hasAdminAccess && (
           <>

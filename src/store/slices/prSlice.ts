@@ -7,6 +7,7 @@ interface PRState {
   pendingApprovals: PRRequest[];
   loading: boolean;
   error: string | null;
+  showOnlyMyPRs: boolean;
 }
 
 const initialState: PRState = {
@@ -15,6 +16,7 @@ const initialState: PRState = {
   pendingApprovals: [],
   loading: false,
   error: null,
+  showOnlyMyPRs: false,
 };
 
 const prSlice = createSlice({
@@ -33,6 +35,9 @@ const prSlice = createSlice({
       state.pendingApprovals = action.payload;
       state.error = null;
     },
+    setShowOnlyMyPRs: (state, action: PayloadAction<boolean>) => {
+      state.showOnlyMyPRs = action.payload;
+    },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
@@ -46,6 +51,7 @@ const prSlice = createSlice({
       state.pendingApprovals = [];
       state.loading = false;
       state.error = null;
+      state.showOnlyMyPRs = false;
     },
     removePR: (state, action: PayloadAction<string>) => {
       state.userPRs = state.userPRs.filter(pr => pr.id !== action.payload);
@@ -58,6 +64,7 @@ export const {
   setCurrentPR,
   setUserPRs,
   setPendingApprovals,
+  setShowOnlyMyPRs,
   setLoading,
   setError,
   clearPRState,
