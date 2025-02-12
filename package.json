@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "seed": "tsx src/scripts/seed.ts",
     "seed-reference-data": "tsx src/scripts/seedReferenceData.ts",
+    "initialize-permissions": "tsx src/scripts/initializePermissions.ts",
     "test": "vitest",
     "test:coverage": "vitest run --coverage"
   },

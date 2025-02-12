@@ -6,6 +6,7 @@ export const PERMISSION_LEVELS = {
   PROC: 3,
   FIN_AD: 4,
   REQ: 5,
+  APPROVER_2: 6,
 } as const;
 
 export const REFERENCE_DATA_TYPES = {
@@ -28,6 +29,7 @@ export const PERMISSION_NAMES = {
   [PERMISSION_LEVELS.PROC]: 'Procurement',
   [PERMISSION_LEVELS.FIN_AD]: 'Finance Admin',
   [PERMISSION_LEVELS.REQ]: 'Requester',
+  [PERMISSION_LEVELS.APPROVER_2]: 'Approver',
 } as const;
 
 export interface ReferenceDataAccess {
