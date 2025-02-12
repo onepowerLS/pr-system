@@ -46,7 +46,8 @@ import {
   DocumentData,
   DocumentSnapshot,
   QuerySnapshot,
-  arrayUnion
+  arrayUnion,
+  addDoc
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
@@ -58,6 +59,7 @@ import { auth } from '../config/firebase';
 import { UserRole } from '../types/user';
 import { User } from '../types/user';
 import { Rule } from '../types/referenceData';
+import { PERMISSION_LEVELS } from '../config/permissions';
 
 const PR_COLLECTION = 'purchaseRequests';
 const functions = getFunctions();
@@ -484,12 +486,6 @@ export const prService = {
         throw new Error('User not authenticated');
       }
 
-      // Base query for organization
-      let q = query(
-        collection(db, PR_COLLECTION),
-        where('organization', '==', organization)
-      );
-
       // Get user details and permission level
       const userDoc = await getDoc(doc(db, 'users', userId));
       if (!userDoc.exists()) {
@@ -500,7 +496,46 @@ export const prService = {
       const userData = userDoc.data();
       console.log('User data loaded:', { userId, permissionLevel: userData?.permissionLevel });
 
-      // If filterToUser is true, show PRs that are either:
+      // For procurement users (level 3) and admins (level 1), show all PRs in the organization
+      if (userData?.permissionLevel === PERMISSION_LEVELS.PROC || userData?.permissionLevel === PERMISSION_LEVELS.ADMIN) {
+        console.log('User is procurement or admin, showing all PRs');
+        const q = query(
+          collection(db, PR_COLLECTION),
+          where('organization', '==', organization)
+        );
+        
+        const querySnapshot = await getDocs(q);
+        console.log('PR Service: Found PRs:', {
+          count: querySnapshot.size,
+          organization,
+          prs: querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            prNumber: doc.data().prNumber,
+            organization: doc.data().organization,
+            status: doc.data().status,
+            createdBy: doc.data().createdBy
+          }))
+        });
+
+        // Convert to array and sort in memory
+        const prs = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...convertTimestamps(data)
+          };
+        });
+
+        // Sort by urgency first, then by creation date
+        return prs.sort((a, b) => {
+          if (a.isUrgent !== b.isUrgent) {
+            return a.isUrgent ? -1 : 1;
+          }
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+      }
+
+      // For other users, if filterToUser is true, show PRs that are either:
       // 1. Created by the user
       // 2. Assigned to the user for approval (either in approvers array or workflow)
       if (filterToUser) {
@@ -540,12 +575,23 @@ export const prService = {
           }
         });
 
-        // Convert map to array
-        return Array.from(prMap.values()) as PRRequest[];
+        // Convert map to array and sort
+        const prs = Array.from(prMap.values()) as PRRequest[];
+        return prs.sort((a, b) => {
+          if (a.isUrgent !== b.isUrgent) {
+            return a.isUrgent ? -1 : 1;
+          }
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
       }
 
-      // If not filtering, get all PRs for the organization
+      // If not filtering and not procurement/admin, show all PRs in the organization
       console.log('Showing all PRs');
+      const q = query(
+        collection(db, PR_COLLECTION),
+        where('organization', '==', organization)
+      );
+      
       const querySnapshot = await getDocs(q);
       console.log('PR Service: Found PRs:', {
         count: querySnapshot.size,
@@ -558,35 +604,21 @@ export const prService = {
           createdBy: doc.data().createdBy
         }))
       });
-      
-      // Convert to array and sort in memory
+
+      // Convert to array and sort
       const prs = querySnapshot.docs.map(doc => {
         const data = doc.data();
-        // Convert Firestore timestamps to Date objects
-        const createdAt = data.createdAt instanceof Date 
-          ? data.createdAt 
-          : data.createdAt.toDate?.() || new Date(data.createdAt);
-        const updatedAt = data.updatedAt instanceof Date 
-          ? data.updatedAt 
-          : data.updatedAt.toDate?.() || new Date(data.updatedAt);
-        
         return {
           id: doc.id,
-          ...data,
-          createdAt,
-          updatedAt
+          ...convertTimestamps(data)
         };
-      }) as PRRequest[];
+      });
 
-      // Convert all timestamps to ISO strings before storing in Redux
-      const convertedPRs = prs.map(pr => convertTimestamps(pr));
-
-      // Sort by urgency first, then by creation date
-      return convertedPRs.sort((a, b) => {
+      return prs.sort((a, b) => {
         if (a.isUrgent !== b.isUrgent) {
           return a.isUrgent ? -1 : 1;
         }
-        return (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0);
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
     } catch (error) {
       console.error('Error fetching user PRs:', error);
