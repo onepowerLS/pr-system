@@ -496,48 +496,8 @@ export const prService = {
       const userData = userDoc.data();
       console.log('User data loaded:', { userId, permissionLevel: userData?.permissionLevel });
 
-      // For procurement users (level 3) and admins (level 1), show all PRs in the organization
-      if (userData?.permissionLevel === PERMISSION_LEVELS.PROC || userData?.permissionLevel === PERMISSION_LEVELS.ADMIN) {
-        console.log('User is procurement or admin, showing all PRs');
-        const q = query(
-          collection(db, PR_COLLECTION),
-          where('organization', '==', organization)
-        );
-        
-        const querySnapshot = await getDocs(q);
-        console.log('PR Service: Found PRs:', {
-          count: querySnapshot.size,
-          organization,
-          prs: querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            prNumber: doc.data().prNumber,
-            organization: doc.data().organization,
-            status: doc.data().status,
-            createdBy: doc.data().createdBy
-          }))
-        });
-
-        // Convert to array and sort in memory
-        const prs = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...convertTimestamps(data)
-          };
-        });
-
-        // Sort by urgency first, then by creation date
-        return prs.sort((a, b) => {
-          if (a.isUrgent !== b.isUrgent) {
-            return a.isUrgent ? -1 : 1;
-          }
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
-      }
-
-      // For other users, if filterToUser is true, show PRs that are either:
-      // 1. Created by the user
-      // 2. Assigned to the user for approval (either in approvers array or workflow)
+      // If filterToUser is true, show only PRs created by or assigned to the user
+      // This applies to ALL users, regardless of permission level
       if (filterToUser) {
         console.log('Filtering to user PRs and approvals');
         
@@ -585,7 +545,7 @@ export const prService = {
         });
       }
 
-      // If not filtering and not procurement/admin, show all PRs in the organization
+      // If not filtering to user, show all PRs in the organization
       console.log('Showing all PRs');
       const q = query(
         collection(db, PR_COLLECTION),
