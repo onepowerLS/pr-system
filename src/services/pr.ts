@@ -741,6 +741,25 @@ export const prService = {
         statusHistory: prDoc.data().statusHistory || []
       } as PRRequest;
 
+      // Initialize approver if missing
+      if (!prData.approvers || prData.approvers.length === 0) {
+        console.log('PR Service: No approver assigned for PR:', prId);
+        
+        // Get appropriate approver based on rules
+        const approver = await this.getApproverForPR(prData);
+        console.log('PR Service: Selected approver:', approver?.id || null);
+        
+        if (approver) {
+          prData.approvers = [approver.id];
+          // Update the PR document with the approver
+          await updateDoc(prRef, {
+            approvers: [approver.id]
+          });
+        } else {
+          console.warn('PR Service: No eligible approver found for PR:', prId);
+        }
+      }
+
       // Convert timestamps
       prData = convertTimestamps(prData) as PRRequest;
 
@@ -897,6 +916,7 @@ export const prService = {
       await notifyFunction({
         prId,
         status,
+        baseUrl: window.location.origin,
         recipients: {
           requestor: details.requestor,
           procurement: details.procurement,
@@ -1091,26 +1111,58 @@ export const prService = {
    */
   async getApproverForPR(pr: PRRequest): Promise<User | null> {
     try {
-      const db = getFirestore();
-      const usersRef = collection(db, 'users');
-      const usersSnap = await getDocs(usersRef);
-      
-      // Get all users with appropriate permission level
-      const eligibleApprovers = usersSnap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as User))
-        .filter(user => 
-          user.permissionLevel === PERMISSION_LEVELS.APPROVER ||
-          user.permissionLevel === PERMISSION_LEVELS.APPROVER_2
-        );
-
-      if (eligibleApprovers.length === 0) {
-        console.warn('No eligible approvers found');
+      if (!pr.organization) {
+        console.warn('No organization specified for PR');
         return null;
       }
 
-      // For now, just return the first eligible approver
-      // TODO: Implement more sophisticated approver selection logic
-      return eligibleApprovers[0];
+      const db = getFirestore();
+      
+      // Get organization rules to determine approval thresholds
+      const rules = await this.getRuleForOrganization(pr.organization, pr.estimatedAmount);
+      const prAmount = pr.estimatedAmount || 0;
+      
+      // Find the applicable rule based on PR amount
+      const applicableRule = rules.find(rule => prAmount <= rule.threshold) || rules[rules.length - 1];
+      const requiredPermissionLevel = applicableRule?.requiredPermissionLevel || PERMISSION_LEVELS.APPROVER;
+      
+      console.log('PR Service: Finding approver with rules:', {
+        amount: prAmount,
+        applicableRule,
+        requiredPermissionLevel
+      });
+
+      const usersRef = collection(db, 'users');
+      const usersSnap = await getDocs(usersRef);
+      
+      // Get all users with appropriate permission level and matching organization
+      const eligibleApprovers = usersSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as User))
+        .filter(user => {
+          const hasPermission = user.permissionLevel >= requiredPermissionLevel;
+          const matchesOrg = user.organization === pr.organization;
+          const isActive = user.isActive !== false; // Default to true if not specified
+          const notRequestor = user.id !== pr.requestorId; // Approver cannot be the requestor
+          
+          return hasPermission && matchesOrg && isActive && notRequestor;
+        });
+
+      if (eligibleApprovers.length === 0) {
+        console.warn(`No eligible approvers found for organization: ${pr.organization}, amount: ${prAmount}`);
+        return null;
+      }
+
+      // Sort approvers by permission level and select the one with the lowest sufficient level
+      eligibleApprovers.sort((a, b) => a.permissionLevel - b.permissionLevel);
+      const selectedApprover = eligibleApprovers[0];
+      
+      console.log('PR Service: Selected approver:', {
+        id: selectedApprover.id,
+        permissionLevel: selectedApprover.permissionLevel,
+        organization: selectedApprover.organization
+      });
+
+      return selectedApprover;
     } catch (error) {
       console.error('Error getting approver for PR:', error);
       return null;

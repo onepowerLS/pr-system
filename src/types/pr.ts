@@ -142,6 +142,36 @@ export interface PRRequest {
   rejectedAt?: string;
   /** When PR was canceled */
   canceledAt?: string;
+  /** Approval workflow information */
+  approvalWorkflow?: ApprovalWorkflow | null;
+}
+
+/**
+ * Approval Workflow Interface
+ * Represents the approval workflow information for a PR
+ */
+export interface ApprovalWorkflow {
+  /** Current approver for the PR */
+  currentApprover: string | null;
+  /** History of approval steps */
+  approvalHistory: ApprovalHistoryItem[];
+  /** Timestamp of last update */
+  lastUpdated: string;
+}
+
+/**
+ * Approval History Item Interface
+ * Represents a single step in the approval history
+ */
+export interface ApprovalHistoryItem {
+  /** ID of the approver */
+  approverId: string;
+  /** Timestamp of the approval step */
+  timestamp: string;
+  /** Whether the approval was successful */
+  approved: boolean;
+  /** Notes about the approval step */
+  notes?: string;
 }
 
 /**

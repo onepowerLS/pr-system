@@ -107,8 +107,8 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           // Send notification to first approver
           await notificationService.handleStatusChange(
             prId,
-            currentStatus,
-            newStatus,
+            String(currentStatus),
+            String(newStatus),
             currentUser,
             `PR ${pr.prNumber} has been converted to PO ${poNumber} and is pending your approval.`
           );
@@ -118,10 +118,10 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           newStatus = PRStatus.REJECTED;
           await notificationService.handleStatusChange(
             prId,
-            currentStatus,
-            newStatus,
+            String(currentStatus),
+            String(newStatus),
             currentUser,
-            notes
+            notes || 'PR rejected'
           );
           break;
 
@@ -129,10 +129,10 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           newStatus = PRStatus.REVISION_REQUIRED;
           await notificationService.handleStatusChange(
             prId,
-            currentStatus,
-            newStatus,
+            String(currentStatus),
+            String(newStatus),
             currentUser,
-            notes
+            notes || 'PR requires revision'
           );
           break;
 
@@ -140,8 +140,8 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           newStatus = PRStatus.CANCELED;
           await notificationService.handleStatusChange(
             prId,
-            currentStatus,
-            newStatus,
+            String(currentStatus),
+            String(newStatus),
             currentUser,
             notes || 'PR canceled by requestor'
           );
@@ -151,8 +151,8 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           newStatus = PRStatus.IN_QUEUE;
           await notificationService.handleStatusChange(
             prId,
-            currentStatus,
-            newStatus,
+            String(currentStatus),
+            String(newStatus),
             currentUser,
             notes || 'PR moved to queue'
           );

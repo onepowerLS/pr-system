@@ -86,45 +86,56 @@ export async function validatePRForApproval(
     return { isValid: false, errors };
   }
 
-  // 3. Validate quotes exist
-  if (!pr.quotes || pr.quotes.length === 0) {
-    errors.push('At least one quote is required');
-    return { isValid: false, errors };
-  }
+  // 3. Early validation of quotes
+  const hasQuotes = pr.quotes && pr.quotes.length > 0;
+  const validQuotes = hasQuotes ? pr.quotes.filter(quote => {
+    // A quote is valid if it has attachments array and at least one attachment
+    const attachments = quote.attachments || [];
+    const hasAttachments = attachments.length > 0;
+    console.log('Validating quote:', {
+      quoteId: quote.id,
+      hasAttachments,
+      attachmentsCount: attachments.length,
+      attachments
+    });
+    return hasAttachments;
+  }) : [];
 
-  // 4. Validate quote attachments
-  const validQuotes = pr.quotes.filter(quote => 
-    quote.attachments && quote.attachments.length > 0
-  );
-
-  console.log('Quote validation:', {
-    totalQuotes: pr.quotes.length,
-    validQuotes: validQuotes.length,
+  console.log('Quote validation summary:', {
+    totalQuotes: pr.quotes?.length || 0,
+    validQuotesCount: validQuotes.length,
     quotesWithAttachments: validQuotes.map(q => ({
       id: q.id,
-      hasAttachments: q.attachments?.length > 0
+      attachmentsCount: q.attachments?.length || 0,
+      attachments: q.attachments || []
     }))
   });
 
-  // 5. Convert all quote amounts to rule currency for comparison
-  console.log('Converting quote amounts:', {
-    quotes: pr.quotes,
-    targetCurrency: rule1.currency
-  });
+  // 4. Convert quote amounts to rule currency for comparison
+  let lowestQuoteAmount = 0;
+  if (hasQuotes) {
+    console.log('Converting quote amounts:', {
+      quotes: pr.quotes,
+      targetCurrency: rule1.currency
+    });
 
-  const convertedQuoteAmounts = await Promise.all(
-    pr.quotes.map(async quote => ({
-      quote,
-      convertedAmount: await convertAmount(
-        quote.amount,
-        quote.currency,
-        rule1.currency
-      )
-    }))
-  );
+    const convertedQuoteAmounts = await Promise.all(
+      pr.quotes.map(async quote => ({
+        quote,
+        convertedAmount: await convertAmount(
+          quote.amount,
+          quote.currency,
+          rule1.currency
+        )
+      }))
+    );
 
-  // 6. Get lowest quote amount for threshold comparison
-  const lowestQuoteAmount = Math.min(...convertedQuoteAmounts.map(q => q.convertedAmount));
+    // Get lowest quote amount for threshold comparison
+    lowestQuoteAmount = Math.min(...convertedQuoteAmounts.map(q => q.convertedAmount));
+  } else {
+    // If no quotes, use estimated amount for threshold comparison
+    lowestQuoteAmount = pr.estimatedAmount || 0;
+  }
 
   console.log('Threshold check:', {
     lowestQuoteAmount,
@@ -138,7 +149,7 @@ export async function validatePRForApproval(
   const isAboveRule2Threshold = lowestQuoteAmount >= rule2.threshold;
   const isAboveRule1Threshold = lowestQuoteAmount >= rule1.threshold;
 
-  // 7. Apply quote requirements based on thresholds
+  // 5. Apply quote requirements based on thresholds
   if (isAboveRule2Threshold) {
     // Above Rule 2: Always need 3 quotes with attachments
     if (validQuotes.length < 3) {
@@ -150,7 +161,11 @@ export async function validatePRForApproval(
     console.log('Rule 1 validation:', {
       isPreferredVendor,
       quotesRequired: isPreferredVendor ? 1 : 3,
-      quotesProvided: validQuotes.length
+      quotesProvided: validQuotes.length,
+      validQuotes: validQuotes.map(q => ({
+        id: q.id,
+        attachmentsCount: q.attachments?.length || 0
+      }))
     });
     
     if (!isPreferredVendor && validQuotes.length < 3) {
@@ -158,50 +173,42 @@ export async function validatePRForApproval(
     } else if (isPreferredVendor && validQuotes.length < 1) {
       errors.push(`At least one quote with attachment is required when using an approved vendor`);
     }
-  } else {
-    // Below Rule 1: Need 1 quote
-    if (validQuotes.length < 1) {
-      errors.push('At least one quote is required');
-    }
   }
+  // Below Rule 1: Quotes are optional, no validation needed
 
-  // 8. Check if there are approvers with sufficient permission
+  // 6. Check if there are approvers with sufficient permission
   const approvers = await approverService.getApprovers(pr.organization);
   console.log('Available approvers:', approvers);
 
-  const hasValidApprover = approvers.some(approver => {
+  // Check if any approver has insufficient permissions
+  const hasInsufficientApprover = approvers.some(approver => {
     // Level 1 and 2 can approve any amount
     if (approver.permissionLevel === 1 || approver.permissionLevel === 2) {
-      return true;
+      return false;
     }
     
-    // Level 6 can only approve below Rule 1 threshold
-    if (approver.permissionLevel === 6) {
-      return lowestQuoteAmount < rule1.threshold;
+    // Level 6 cannot approve above Rule 1 threshold
+    if (approver.permissionLevel === 6 && lowestQuoteAmount >= rule1.threshold) {
+      return true;
     }
     
     return false;
   });
 
-  if (!hasValidApprover) {
+  if (hasInsufficientApprover) {
     if (isAboveRule2Threshold) {
       errors.push(`Only Level 1 or 2 approvers can approve PRs above ${rule2.threshold} ${rule2.currency}`);
     } else if (isAboveRule1Threshold) {
       errors.push(`Only Level 1 or 2 approvers can approve PRs above ${rule1.threshold} ${rule1.currency}`);
-    } else {
-      errors.push('No approvers found with sufficient permission');
     }
   }
 
-  console.log('Validation complete:', {
-    errors,
-    isValid: errors.length === 0,
-    validQuotes: validQuotes.length,
-    requiredQuotes: isAboveRule2Threshold ? 3 : (isAboveRule1Threshold ? 3 : 1),
-    hasValidApprover
-  });
+  // Also check if there are any approvers at all
+  if (approvers.length === 0) {
+    errors.push('No approvers found for this organization');
+  }
 
-  // 9. Verify vendor status if preferred vendor is specified
+  // 7. Verify vendor status if preferred vendor is specified
   if (pr.preferredVendor) {
     const isLowValue = lowestQuoteAmount < 1000;  
     if (!isLowValue) {
@@ -212,7 +219,7 @@ export async function validatePRForApproval(
     }
   }
 
-  // 10. Check adjudication requirements
+  // 8. Check adjudication requirements
   if (targetStatus === PRStatus.APPROVED && lowestQuoteAmount > rule2.threshold) {
     if (!pr.adjudication?.notes) {
       errors.push('Validation Error:\nAdjudication notes are required for high-value PRs');

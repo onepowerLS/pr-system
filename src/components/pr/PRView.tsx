@@ -464,7 +464,7 @@ export function PRView() {
   const [loadingReference, setLoadingReference] = useState(true);
   const [approvers, setApprovers] = useState<Approver[]>([]);
   const [selectedApprover, setSelectedApprover] = useState<string | undefined>(
-    pr?.approver || undefined
+    pr?.approver || pr?.approvalWorkflow?.currentApprover || undefined
   );
   const [loadingApprovers, setLoadingApprovers] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
@@ -475,28 +475,59 @@ export function PRView() {
   const fetchPR = async () => {
     if (!id) return;
     try {
-      console.log('Fetching PR with ID:', id);
+      setLoading(true);
       const prData = await prService.getPR(id);
+      console.log('PR data received:', {
+        id: prData.id,
+        department: prData.department,
+        organization: prData.organization,
+        requestor: prData.requestor,
+        approvalWorkflow: prData.approvalWorkflow,
+        status: prData.status
+      });
+
       if (!prData) {
-        console.error('PR not found');
         setError('PR not found');
         return;
       }
-      console.log('PR data received:', prData);
-      console.log('PR department:', prData.department);
-      console.log('PR preferred vendor:', prData.preferredVendor);
-      console.log('PR organization:', prData.organization);
-      console.log('PR requestor:', prData.requestor);
+
+      // Initialize approval workflow if missing
+      if (!prData.approvalWorkflow) {
+        console.log('Initializing missing approval workflow');
+        prData.approvalWorkflow = {
+          currentApprover: undefined,
+          approvalHistory: [],
+          lastUpdated: new Date().toISOString()
+        };
+      }
+
       setPr(prData);
 
-      // Load reference data after PR is loaded
+      // Load requestor details if not already loaded
+      if (prData.requestorId && (!prData.requestor || !prData.requestor.organization)) {
+        try {
+          const requestorData = await userService.getUserById(prData.requestorId);
+          console.log('Requestor data loaded:', requestorData);
+          
+          // Update PR with requestor data
+          setPr(prev => ({
+            ...prev,
+            requestor: requestorData,
+            organization: requestorData.organization || prev.organization
+          }));
+        } catch (error) {
+          console.error('Error loading requestor details:', error);
+        }
+      }
+
       try {
-        setLoadingReference(true);
-        const organization = prData.requestor?.organization || prData.organization;
+        // Get organization from PR or requestor
+        const organization = prData.organization || prData.requestor?.organization;
         console.log('Using organization for reference data:', {
           organization,
-          fromRequestor: Boolean(prData.requestor?.organization),
-          fromPR: Boolean(prData.organization)
+          fromPR: !!prData.organization,
+          fromRequestor: !!prData.requestor?.organization,
+          approvalWorkflow: prData.approvalWorkflow
         });
 
         if (!organization) {
@@ -504,6 +535,35 @@ export function PRView() {
           throw new Error('No organization found');
         }
 
+        // Load approvers first
+        console.log('Loading approvers for organization:', organization);
+        const approverList = await approverService.getApprovers(organization);
+        console.log('Loaded approvers:', {
+          count: approverList.length,
+          approvers: approverList.map(a => ({
+            id: a.id,
+            name: a.name,
+            department: a.department,
+            permissionLevel: a.permissionLevel,
+            organization: a.organization
+          }))
+        });
+        setApprovers(approverList);
+
+        // Set initial selected approver if present
+        if (prData.approvalWorkflow?.currentApprover) {
+          const currentApprover = approverList.find(a => a.id === prData.approvalWorkflow?.currentApprover);
+          console.log('Setting current approver:', {
+            workflowApproverId: prData.approvalWorkflow.currentApprover,
+            foundApprover: currentApprover,
+            workflow: prData.approvalWorkflow
+          });
+          if (currentApprover) {
+            setSelectedApprover(currentApprover.id);
+          }
+        }
+
+        // Load reference data
         const [
           depts,
           categories,
@@ -517,40 +577,28 @@ export function PRView() {
           referenceDataService.getItemsByType('projectCategories', organization),
           referenceDataService.getItemsByType('sites', organization),
           referenceDataService.getItemsByType('expenseTypes', organization),
-          referenceDataService.getItemsByType('vehicles', organization),  // Pass organization here
-          referenceDataService.getItemsByType('vendors'),  // This is org-independent
-          referenceDataService.getItemsByType('currencies'),  // This is org-independent
+          referenceDataService.getItemsByType('vehicles', organization),
+          referenceDataService.getItemsByType('vendors'),
+          referenceDataService.getItemsByType('currencies'),
         ]);
-
-        console.log('Loaded reference data:', { 
-          departments: depts, 
-          vendors: vendorList,
-          vehicles: vehicleList,  // Log vehicles
-          organization  // Log organization
-        });
-
-        // Only set active vehicles
-        const activeVehicles = vehicleList.filter(v => v.active !== false);
-        console.log('Active vehicles:', activeVehicles);
 
         setDepartments(depts);
         setProjectCategories(categories);
         setSites(siteList);
         setExpenseTypes(expenses);
-        setVehicles(activeVehicles);  // Set only active vehicles
+        setVehicles(vehicleList);
         setVendors(vendorList);
         setCurrencies(currencyList);
       } catch (error) {
         console.error('Error loading reference data:', error);
         enqueueSnackbar('Error loading reference data', { variant: 'error' });
-      } finally {
-        setLoadingReference(false);
       }
     } catch (error) {
       console.error('Error fetching PR:', error);
       setError('Error fetching PR');
     } finally {
       setLoading(false);
+      setLoadingReference(false);
     }
   };
 
@@ -584,31 +632,56 @@ export function PRView() {
   }, [pr?.lineItems]);
 
   useEffect(() => {
-    const loadApprovers = async () => {
-      if (!pr?.organization) {
-        console.log('No organization specified');
-        setApprovers([]);
-        return;
-      }
+    if (!pr?.organization) {
+      console.log('No organization available to load approvers');
+      return;
+    }
 
+    let mounted = true;
+    const loadApprovers = async () => {
       try {
         console.log('Loading approvers for organization:', pr.organization);
         const approverList = await approverService.getApprovers(pr.organization);
-        console.log('Setting approvers:', approverList);
-        setApprovers(approverList);
         
+        if (!mounted) return;
+
+        console.log('Loaded approvers:', {
+          count: approverList.length,
+          approvers: approverList.map(a => ({
+            id: a.id,
+            name: a.name,
+            department: a.department,
+            permissionLevel: a.permissionLevel
+          }))
+        });
+
+        setApprovers(approverList);
+
         // Set initial selected approver if present
-        if (pr.approver && !selectedApprover) {
-          setSelectedApprover(pr.approver);
+        if (pr.approvalWorkflow?.currentApprover) {
+          const currentApprover = approverList.find(a => a.id === pr.approvalWorkflow?.currentApprover);
+          console.log('Setting current approver:', {
+            workflowApproverId: pr.approvalWorkflow.currentApprover,
+            foundApprover: currentApprover,
+            workflow: pr.approvalWorkflow
+          });
+          if (currentApprover) {
+            setSelectedApprover(currentApprover.id);
+          }
         }
       } catch (error) {
         console.error('Error loading approvers:', error);
-        setApprovers([]);
+        if (mounted) {
+          setApprovers([]);
+        }
       }
     };
 
     loadApprovers();
-  }, [pr?.organization]);
+    return () => {
+      mounted = false;
+    };
+  }, [pr?.organization]); // Only reload when organization changes
 
   const handleAddLineItem = (): void => {
     const newItem: LineItem = {
@@ -864,11 +937,14 @@ export function PRView() {
       };
 
       console.log('Saving PR updates:', updates);
-      const prRef = doc(db, 'prs', id!);
-      await updateDoc(prRef, updates);
+      await prService.updatePR(id!, updates);
 
       enqueueSnackbar('Changes saved successfully', { variant: 'success' });
       setHasUnsavedChanges(false);
+      
+      // Refresh PR data after save
+      await fetchPR();
+      
       navigate(`/pr/${pr.id}`); // Exit edit mode by navigating to view mode
     } catch (error) {
       console.error('Error updating PR:', error);
@@ -1127,14 +1203,14 @@ export function PRView() {
                     onChange={(e) => handleApproverChange(e.target.value)}
                     label="Approver"
                   >
-                    {!selectedApprover && <MenuItem value="">Select Approver</MenuItem>}
-                    {approvers
-                      .filter(approver => !selectedApprover || approver.id === selectedApprover)
-                      .map((approver) => (
-                        <MenuItem key={approver.id} value={approver.id}>
-                          {approver.name}{approver.department ? ` (${approver.department})` : ''}
-                        </MenuItem>
-                      ))}
+                    <MenuItem value="">
+                      <em>None</em>
+                    </MenuItem>
+                    {approvers.map((approver) => (
+                      <MenuItem key={approver.id} value={approver.id}>
+                        {approver.name}{approver.department ? ` (${approver.department})` : ''}
+                      </MenuItem>
+                    ))}
                   </Select>
                 </FormControl>
               </Grid>
@@ -1193,23 +1269,79 @@ export function PRView() {
                 />
               </Grid>
               <Grid item xs={12}>
-                <Typography color="textSecondary">Approvers</Typography>
+                <Typography color="textSecondary">Current Approver</Typography>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  {selectedApprover && (
-                    <Box>
-                      <Typography variant="body2" color="textSecondary">
-                        Approver
-                      </Typography>
-                      {approvers
-                        .filter(approver => approver.id === selectedApprover)
-                        .map((approver) => (
-                          <Chip
-                            key={approver.id}
-                            label={`${approver.name}${approver.department ? ` (${approver.department})` : ''}`}
-                            size="small"
-                          />
-                        ))}
-                    </Box>
+                  {(() => {
+                    const approverId = pr.approvers?.[0];
+                    console.log('Finding current approver:', { 
+                      approverId, 
+                      approversCount: approvers.length,
+                      approvers: approvers.map(a => ({ id: a.id, name: a.name }))
+                    });
+                    
+                    if (!approverId) {
+                      return (
+                        <Typography variant="body2" color="textSecondary">
+                          No approver assigned
+                        </Typography>
+                      );
+                    }
+
+                    if (approvers.length === 0) {
+                      return (
+                        <Typography variant="body2" color="textSecondary">
+                          Loading approver information...
+                        </Typography>
+                      );
+                    }
+
+                    const approver = approvers.find(a => a.id === approverId);
+                    console.log('Found current approver:', approver);
+
+                    if (!approver) {
+                      return (
+                        <Typography variant="body2" color="error">
+                          Approver not found or inactive (ID: {approverId})
+                        </Typography>
+                      );
+                    }
+
+                    return (
+                      <Chip
+                        label={`${approver.name}${approver.department ? ` (${approver.department})` : ''}`}
+                        color="primary"
+                        size="small"
+                        sx={{ mt: 1 }}
+                      />
+                    );
+                  })()}
+                </div>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography color="textSecondary">Approval History</Typography>
+                <div className="flex flex-col gap-2 mt-1">
+                  {pr.approvalWorkflow?.approvalHistory?.length > 0 ? (
+                    pr.approvalWorkflow.approvalHistory.map((history, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Chip
+                          label={(() => {
+                            const approver = approvers.find(a => a.id === history.approverId);
+                            return approver ? 
+                              `${approver.name}${approver.department ? ` (${approver.department})` : ''}` : 
+                              'Loading approver...';
+                          })()}
+                          color={history.approved ? "success" : "error"}
+                          size="small"
+                        />
+                        <Typography variant="caption" color="textSecondary">
+                          {new Date(history.timestamp).toLocaleString()}
+                        </Typography>
+                      </div>
+                    ))
+                  ) : (
+                    <Typography variant="body2" color="textSecondary">
+                      No approval history
+                    </Typography>
                   )}
                 </div>
               </Grid>
@@ -1464,34 +1596,39 @@ export function PRView() {
       console.log('Loading approvers for organization:', pr?.organization);
       
       if (!pr?.organization) {
-        console.log('No organization set, skipping approver load');
+        console.log('No organization specified');
         return;
       }
 
-      const loadedApprovers = await approverService.getApprovers(pr.organization);
-      
-      // Map to the format expected by the component
-      const mappedApprovers = loadedApprovers.map(a => ({
-        id: a.id,
-        name: a.name,
-        department: a.department || 'N/A',
-        permissionLevel: a.permissionLevel
-      }));
-      
-      console.log('Setting approvers:', mappedApprovers);
-      setApprovers(mappedApprovers);
+      const approverList = await approverService.getApprovers(pr.organization);
+      console.log('Loaded approvers:', {
+        count: approverList.length,
+        approvers: approverList.map(a => ({
+          id: a.id,
+          name: a.name,
+          department: a.department,
+          permissionLevel: a.permissionLevel
+        }))
+      });
+      setApprovers(approverList);
+
+      // Set initial selected approver if present
+      if (pr.approvalWorkflow?.currentApprover) {
+        const currentApprover = approverList.find(a => a.id === pr.approvalWorkflow?.currentApprover);
+        console.log('Setting current approver:', {
+          workflowApproverId: pr.approvalWorkflow.currentApprover,
+          foundApprover: currentApprover,
+          workflow: pr.approvalWorkflow
+        });
+        if (currentApprover) {
+          setSelectedApprover(currentApprover.id);
+        }
+      }
     } catch (error) {
       console.error('Error loading approvers:', error);
       enqueueSnackbar('Error loading approvers', { variant: 'error' });
     }
   };
-
-  // Load approvers when PR is loaded
-  useEffect(() => {
-    if (pr?.organization) {
-      loadApprovers();
-    }
-  }, [pr?.organization]);
 
   // Load reference data
   useEffect(() => {

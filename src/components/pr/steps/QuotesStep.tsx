@@ -35,6 +35,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import { StorageService } from '../../../services/storage';
 import { Quote, ReferenceDataItem } from '../../../types/pr';
+import { auth } from '../../../config/firebase';
 
 interface QuotesStepProps {
   formState: {
@@ -180,9 +181,21 @@ export function QuotesStep({
           const result = await StorageService.uploadToTempStorage(file);
           console.log('File uploaded:', result);
           return {
+            id: crypto.randomUUID(),
             name: result.name,
             url: result.url,
-            id: crypto.randomUUID()
+            path: result.path,
+            type: result.type,
+            size: result.size,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: {
+              id: auth.currentUser?.uid || '',
+              email: auth.currentUser?.email || '',
+              name: auth.currentUser?.displayName || '',
+              organization: formState.organization || '',
+              isActive: true,
+              role: 'USER'
+            }
           };
         })
       );

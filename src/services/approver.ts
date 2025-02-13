@@ -99,34 +99,33 @@ class ApproverService {
           } as Approver;
         })
         .filter(approver => {
-          // Log each approver and whether they pass the filter
-          const isGlobal = approver.permissionLevel === 1;
-          const normalizedApproverOrg = this.normalizeOrganizationId(approver.organization || '');
-          const normalizedTargetOrg = this.normalizeOrganizationId(organizationId);
-          const isOrgMatch = (approver.permissionLevel === 2 || approver.permissionLevel === 6) && 
-                           normalizedApproverOrg === normalizedTargetOrg;
+          // Level 1 approvers (global) are always included
+          if (approver.permissionLevel === 1) return true;
           
-          console.log('ApproverService: Filtering approver:', {
-            approver,
-            isGlobal,
-            isOrgMatch,
-            organizationId,
-            organizationComparison: {
-              approverOrg: approver.organization,
-              normalizedApproverOrg,
-              targetOrg: organizationId,
-              normalizedTargetOrg,
-              isEqual: normalizedApproverOrg === normalizedTargetOrg
-            }
-          });
-          return isGlobal || isOrgMatch;
+          // Level 2 approvers must match the organization
+          if (approver.permissionLevel === 2) {
+            const normalizedOrgId = this.normalizeOrganizationId(organizationId);
+            const approverOrgId = this.normalizeOrganizationId(approver.organization || '');
+            console.log('ApproverService: Comparing organizations:', {
+              approver: approver.name,
+              normalizedOrgId,
+              approverOrgId,
+              match: normalizedOrgId === approverOrgId
+            });
+            return normalizedOrgId === approverOrgId;
+          }
+          
+          // Level 6 approvers are procurement team, also included
+          if (approver.permissionLevel === 6) return true;
+          
+          return false;
         });
 
-      console.log(`ApproverService: Found ${approvers.length} approvers:`, approvers);
+      console.log('ApproverService: Filtered approvers:', approvers);
       return approvers;
     } catch (error) {
-      console.error('Error getting approvers:', error);
-      throw error;
+      console.error('ApproverService: Error getting approvers:', error);
+      throw new Error('Failed to get approvers. Please try again.');
     }
   }
 
