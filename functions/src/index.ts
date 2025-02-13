@@ -465,7 +465,7 @@ export const sendSubmissionEmail = functions.https.onRequest(async (req, res) =>
     }
 });
 
-export const sendStatusChangeNotification = functions.https.onRequest(async (req, res) => {
+export const sendStatusChangeEmail = functions.https.onRequest(async (req, res) => {
     // Add CORS headers
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST');
