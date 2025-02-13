@@ -415,13 +415,32 @@ export const prService = {
       
       const prData = prSnapshot.data();
       
+      // Initialize or update approval workflow
+      let approvalWorkflow = prData.approvalWorkflow || {
+        currentApprover: null,
+        approvalHistory: [],
+        lastUpdated: Timestamp.fromDate(new Date())
+      };
+
+      // If approver is being updated, update the workflow
+      if (updates.approver) {
+        approvalWorkflow = {
+          ...approvalWorkflow,
+          currentApprover: updates.approver,
+          lastUpdated: Timestamp.fromDate(new Date())
+        };
+      }
+      
       // Merge updates with current data
       const finalUpdates = {
         ...updates,
+        approvalWorkflow,
+        approvers: updates.approver ? [updates.approver] : prData.approvers, // Update approvers array
         updatedAt: Timestamp.fromDate(new Date()),
-        isUrgent: updates.isUrgent ?? prData.isUrgent ?? false  // Keep existing isUrgent or set to false
+        isUrgent: updates.isUrgent ?? prData.isUrgent ?? false
       };
       
+      console.log('Final updates:', JSON.stringify(finalUpdates, null, 2));
       await updateDoc(prRef, finalUpdates);
     } catch (error) {
       console.error('Error updating PR:', JSON.stringify(error, null, 2));

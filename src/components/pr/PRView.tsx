@@ -464,7 +464,7 @@ export function PRView() {
   const [loadingReference, setLoadingReference] = useState(true);
   const [approvers, setApprovers] = useState<Approver[]>([]);
   const [selectedApprover, setSelectedApprover] = useState<string | undefined>(
-    pr?.approver || pr?.approvalWorkflow?.currentApprover || undefined
+    pr?.approver || pr?.approvers?.[0] || pr?.approvalWorkflow?.currentApprover || undefined
   );
   const [loadingApprovers, setLoadingApprovers] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
@@ -640,6 +640,7 @@ export function PRView() {
     let mounted = true;
     const loadApprovers = async () => {
       try {
+        setLoadingApprovers(true);
         console.log('Loading approvers for organization:', pr.organization);
         const approverList = await approverService.getApprovers(pr.organization);
         
@@ -658,10 +659,11 @@ export function PRView() {
         setApprovers(approverList);
 
         // Set initial selected approver if present
-        if (pr.approvalWorkflow?.currentApprover) {
-          const currentApprover = approverList.find(a => a.id === pr.approvalWorkflow?.currentApprover);
+        const currentApproverId = pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover;
+        if (currentApproverId) {
+          const currentApprover = approverList.find(a => a.id === currentApproverId);
           console.log('Setting current approver:', {
-            workflowApproverId: pr.approvalWorkflow.currentApprover,
+            currentApproverId,
             foundApprover: currentApprover,
             workflow: pr.approvalWorkflow
           });
@@ -674,6 +676,10 @@ export function PRView() {
         if (mounted) {
           setApprovers([]);
         }
+      } finally {
+        if (mounted) {
+          setLoadingApprovers(false);
+        }
       }
     };
 
@@ -681,7 +687,7 @@ export function PRView() {
     return () => {
       mounted = false;
     };
-  }, [pr?.organization]); // Only reload when organization changes
+  }, [pr?.organization, pr?.approver, pr?.approvers, pr?.approvalWorkflow]);
 
   const handleAddLineItem = (): void => {
     const newItem: LineItem = {
@@ -1272,7 +1278,7 @@ export function PRView() {
                 <Typography color="textSecondary">Current Approver</Typography>
                 <div className="flex flex-wrap gap-2 mt-1">
                   {(() => {
-                    const approverId = pr.approvers?.[0];
+                    const approverId = pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover;
                     console.log('Finding current approver:', { 
                       approverId, 
                       approversCount: approvers.length,
