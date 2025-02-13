@@ -173,7 +173,7 @@ export const sendPRNotification = functions.https.onRequest(async (req, res) => 
             from: '"1PWR PR System" <noreply@1pwrafrica.com>',
             to: prData.requestorEmail,
             subject: `PR ${prNumber} Status Update: ${status}`,
-            html: emailContent
+            html: emailContent.html
         });
 
         console.log('Email sent:', info);
@@ -300,48 +300,47 @@ export const sendStatusChangeEmail = functions.https.onRequest(async (req, res) 
         } = notification;
 
         // Create email content
-        const emailContent = {
-            text: `
-                Purchase Request ${prNumber}
+        const text = `
+            Purchase Request ${prNumber}
 
-                Status Changed: ${oldStatus} → ${newStatus}
-                Updated By: ${changedBy.name} (${changedBy.email})
+            Status Changed: ${oldStatus} → ${newStatus}
+            Updated By: ${changedBy.name} (${changedBy.email})
 
-                Department: ${department}
-                Description: ${description}
-                Required Date: ${requiredDate}
-                ${approverName && approverEmail ? `\nAssigned Approver: ${approverName} (${approverEmail})` : ''}
+            Department: ${department}
+            Description: ${description}
+            Required Date: ${requiredDate}
+            ${approverName && approverEmail ? `\nAssigned Approver: ${approverName} (${approverEmail})` : ''}
 
-                Notes: ${notes || ''}
+            Notes: ${notes || ''}
 
-                Please click here to review the purchase request in the system: ${baseUrl}/pr/${prId}
-            `,
-            html: `
-                <h2>Purchase Request ${prNumber}</h2>
+            Please click here to review the purchase request in the system: ${baseUrl}/pr/${prId}
+        `;
 
-                <p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
-                <p><strong>Updated By:</strong> ${changedBy.name} (${changedBy.email})</p>
+        const html = `
+            <h2>Purchase Request ${prNumber}</h2>
 
-                <p><strong>Department:</strong> ${department}</p>
-                <p><strong>Description:</strong> ${description}</p>
-                <p><strong>Required Date:</strong> ${requiredDate}</p>
-                ${approverName && approverEmail ? 
-                    `<p><strong>Assigned Approver:</strong> ${approverName} (${approverEmail})</p>` 
-                    : ''}
+            <p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
+            <p><strong>Updated By:</strong> ${changedBy.name} (${changedBy.email})</p>
 
-                <p><strong>Notes:</strong> ${notes || ''}</p>
+            <p><strong>Department:</strong> ${department}</p>
+            <p><strong>Description:</strong> ${description}</p>
+            <p><strong>Required Date:</strong> ${requiredDate}</p>
+            ${approverName && approverEmail ? 
+                `<p><strong>Assigned Approver:</strong> ${approverName} (${approverEmail})</p>` 
+                : ''}
 
-                <p>Please <a href="${baseUrl}/pr/${prId}">click here</a> to review the purchase request in the system.</p>
-            `
-        };
+            <p><strong>Notes:</strong> ${notes || ''}</p>
+
+            <p>Please <a href="${baseUrl}/pr/${prId}">click here</a> to review the purchase request in the system.</p>
+        `;
 
         // Send email
         const info = await transporter.sendMail({
             from: '"1PWR PR System" <noreply@1pwrafrica.com>',
             to: recipients.join(', '),
             subject: `Purchase Request ${prNumber} - Status Changed: ${oldStatus} → ${newStatus}`,
-            text: emailContent.text,
-            html: emailContent.html
+            text,
+            html
         });
 
         console.log('Status change notification sent:', info.messageId);
