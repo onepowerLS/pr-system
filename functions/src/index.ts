@@ -284,29 +284,53 @@ export const sendStatusChangeEmail = functions.https.onRequest(async (req, res) 
 
     try {
         const { notification, recipients } = req.body;
-        const { prId, prNumber, description, oldStatus, newStatus, changedBy, notes, baseUrl } = notification;
+        const { 
+            prId, 
+            prNumber, 
+            description, 
+            oldStatus, 
+            newStatus, 
+            changedBy, 
+            notes, 
+            baseUrl,
+            approverName,
+            approverEmail,
+            department,
+            requiredDate
+        } = notification;
 
         // Create email content
         const emailContent = {
             text: `
-                PR Status Change Notification - ${prNumber}
-                
-                Description: ${description}
+                Purchase Request ${prNumber}
+
                 Status Changed: ${oldStatus} → ${newStatus}
-                Changed By: ${changedBy.email}
-                Date: ${new Date().toLocaleDateString()}
-                ${notes ? `\nNotes: ${notes}` : ''}
-                
-                Please visit ${baseUrl}/pr/${prId} to review the purchase request in the system.
+                Updated By: ${changedBy.name} (${changedBy.email})
+
+                Department: ${department}
+                Description: ${description}
+                Required Date: ${requiredDate}
+                ${approverName && approverEmail ? `\nAssigned Approver: ${approverName} (${approverEmail})` : ''}
+
+                Notes: ${notes || ''}
+
+                Please click here to review the purchase request in the system: ${baseUrl}/pr/${prId}
             `,
             html: `
-                <h2>PR Status Change Notification - ${prNumber}</h2>
-                <p><strong>Description:</strong> ${description}</p>
+                <h2>Purchase Request ${prNumber}</h2>
+
                 <p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
-                <p><strong>Changed By:</strong> ${changedBy.email}</p>
-                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-                ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-                
+                <p><strong>Updated By:</strong> ${changedBy.name} (${changedBy.email})</p>
+
+                <p><strong>Department:</strong> ${department}</p>
+                <p><strong>Description:</strong> ${description}</p>
+                <p><strong>Required Date:</strong> ${requiredDate}</p>
+                ${approverName && approverEmail ? 
+                    `<p><strong>Assigned Approver:</strong> ${approverName} (${approverEmail})</p>` 
+                    : ''}
+
+                <p><strong>Notes:</strong> ${notes || ''}</p>
+
                 <p>Please <a href="${baseUrl}/pr/${prId}">click here</a> to review the purchase request in the system.</p>
             `
         };
@@ -315,7 +339,7 @@ export const sendStatusChangeEmail = functions.https.onRequest(async (req, res) 
         const info = await transporter.sendMail({
             from: '"1PWR PR System" <noreply@1pwrafrica.com>',
             to: recipients.join(', '),
-            subject: `PR Status Change - ${prNumber}: ${oldStatus} → ${newStatus}`,
+            subject: `Purchase Request ${prNumber} - Status Changed: ${oldStatus} → ${newStatus}`,
             text: emailContent.text,
             html: emailContent.html
         });
