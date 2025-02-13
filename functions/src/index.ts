@@ -265,25 +265,9 @@ export const sendApproverNotification = functions.https.onRequest(async (req, re
 });
 
 // Function to send status change notification
-export const sendStatusChangeEmail = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.status(204).send('');
-        return;
-    }
-
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
-    }
-
+export const sendStatusChangeNotification = functions.https.onCall(async (data, context) => {
     try {
-        const { notification, recipients } = req.body;
+        const { notification, recipients } = data;
         const { 
             prId, 
             prNumber, 
@@ -344,13 +328,14 @@ export const sendStatusChangeEmail = functions.https.onRequest(async (req, res) 
         });
 
         console.log('Status change notification sent:', info.messageId);
-        res.status(200).json({ success: true, messageId: info.messageId });
+        return { success: true, messageId: info.messageId };
     } catch (error) {
         console.error('Error sending status change notification:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-        });
+        throw new functions.https.HttpsError(
+            'internal',
+            'Failed to send status change notification',
+            error instanceof Error ? error.message : 'Unknown error'
+        );
     }
 });
 
