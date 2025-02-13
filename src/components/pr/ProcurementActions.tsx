@@ -67,9 +67,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
       let newStatus: PRStatus;
       switch (selectedAction) {
         case 'approve':
-          // Get the rule for this organization
-          const rule = await prService.getRuleForOrganization(pr.organization, pr.estimatedAmount);
-          if (!rule) {
+          // Get the rules for this organization
+          const rules = await prService.getRuleForOrganization(pr.organization, pr.estimatedAmount);
+          if (!rules || rules.length === 0) {
             setError('No approval rules found for this organization');
             return;
           }
@@ -77,12 +77,12 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           // Validate PR against rules
           const validation = await validatePRForApproval(
             pr,
-            rule,
+            rules,
             currentUser,
             pr.status === PRStatus.PENDING_APPROVAL ? PRStatus.APPROVED : PRStatus.PENDING_APPROVAL
           );
           if (!validation.isValid) {
-            setError(validation.errors.join('\n'));
+            setError(validation.errors.join('\n\n')); // Add double newline for better separation
             return;
           }
 

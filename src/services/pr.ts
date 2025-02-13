@@ -47,7 +47,8 @@ import {
   DocumentSnapshot,
   QuerySnapshot,
   arrayUnion,
-  addDoc
+  addDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
@@ -1020,9 +1021,9 @@ export const prService = {
    * Fetches organization-specific rules
    * @param {string} organizationId - ID of the organization
    * @param {number} amount - Amount to check against rules
-   * @returns {Promise<Rule | null>} Organization rule or null if not found
+   * @returns {Promise<Rule[]>} Organization rules array
    */
-  async getRuleForOrganization(organizationId: string, amount?: number): Promise<Rule | null> {
+  async getRuleForOrganization(organizationId: string, amount?: number): Promise<Rule[]> {
     try {
       const db = getFirestore();
       const rulesRef = collection(db, 'referenceData_rules');
@@ -1036,7 +1037,7 @@ export const prService = {
 
       if (querySnapshot.empty) {
         console.warn(`No rules found for organization: ${organizationId} (normalized: ${normalizedOrgId})`);
-        return null;
+        return [];
       }
 
       // Convert all documents to Rule objects
@@ -1044,6 +1045,7 @@ export const prService = {
         const data = doc.data();
         return {
           id: doc.id,
+          type: data.threshold <= 1000 ? 'RULE_1' : 'RULE_2', // Set type based on threshold
           number: data.number || '1',
           description: data.description || '',
           threshold: Number(data.threshold) || 0,
@@ -1074,19 +1076,44 @@ export const prService = {
       // Sort rules by threshold in ascending order
       rules.sort((a, b) => a.threshold - b.threshold);
 
-      if (!amount) {
-        // If no amount provided, return the rule with the highest threshold
-        return rules[rules.length - 1];
-      }
-
-      // Find the first rule where the amount is below the threshold
-      const applicableRule = rules.find(rule => amount <= rule.threshold);
-      
-      // If no applicable rule found (amount is above all thresholds), use the highest threshold rule
-      return applicableRule || rules[rules.length - 1];
+      // Always return an array of rules
+      return rules;
     } catch (error) {
       console.error('Error fetching organization rules:', error);
       throw new Error('Failed to fetch organization rules');
+    }
+  },
+
+  /**
+   * Gets the appropriate approver for a PR based on rules
+   * @param pr PR to get approver for
+   * @returns Promise<User | null> User object of the approver, or null if none found
+   */
+  async getApproverForPR(pr: PRRequest): Promise<User | null> {
+    try {
+      const db = getFirestore();
+      const usersRef = collection(db, 'users');
+      const usersSnap = await getDocs(usersRef);
+      
+      // Get all users with appropriate permission level
+      const eligibleApprovers = usersSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as User))
+        .filter(user => 
+          user.permissionLevel === PERMISSION_LEVELS.APPROVER ||
+          user.permissionLevel === PERMISSION_LEVELS.APPROVER_2
+        );
+
+      if (eligibleApprovers.length === 0) {
+        console.warn('No eligible approvers found');
+        return null;
+      }
+
+      // For now, just return the first eligible approver
+      // TODO: Implement more sophisticated approver selection logic
+      return eligibleApprovers[0];
+    } catch (error) {
+      console.error('Error getting approver for PR:', error);
+      return null;
     }
   }
 };

@@ -56,6 +56,7 @@ export interface ReferenceDataItem {
 
 export interface Rule {
   id: string;
+  type: 'RULE_1' | 'RULE_2';
   number: string;
   description: string;
   threshold: number;

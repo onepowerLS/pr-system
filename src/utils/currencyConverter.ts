@@ -14,7 +14,18 @@ export async function convertAmount(
   fromCurrency: string,
   toCurrency: string
 ): Promise<number> {
-  if (fromCurrency === toCurrency) {
+  // Normalize currency codes to uppercase
+  const normalizedFromCurrency = fromCurrency.toUpperCase();
+  const normalizedToCurrency = toCurrency.toUpperCase();
+
+  console.log('Converting amount:', {
+    amount,
+    from: normalizedFromCurrency,
+    to: normalizedToCurrency
+  });
+
+  if (normalizedFromCurrency === normalizedToCurrency) {
+    console.log('Same currency, returning original amount:', amount);
     return amount;
   }
 
@@ -25,20 +36,38 @@ export async function convertAmount(
   // Find direct conversion rate
   const directRate = ratesSnap.docs
     .map(doc => doc.data() as ExchangeRate)
-    .find(rate => rate.from === fromCurrency && rate.to === toCurrency);
+    .find(rate => 
+      rate.from.toUpperCase() === normalizedFromCurrency && 
+      rate.to.toUpperCase() === normalizedToCurrency
+    );
 
   if (directRate) {
-    return amount * directRate.rate;
+    const result = amount * directRate.rate;
+    console.log('Using direct rate:', {
+      rate: directRate.rate,
+      result
+    });
+    return result;
   }
 
   // Try reverse rate
   const reverseRate = ratesSnap.docs
     .map(doc => doc.data() as ExchangeRate)
-    .find(rate => rate.from === toCurrency && rate.to === fromCurrency);
+    .find(rate => 
+      rate.from.toUpperCase() === normalizedToCurrency && 
+      rate.to.toUpperCase() === normalizedFromCurrency
+    );
 
   if (reverseRate) {
-    return amount / reverseRate.rate;
+    const result = amount / reverseRate.rate;
+    console.log('Using reverse rate:', {
+      rate: reverseRate.rate,
+      result
+    });
+    return result;
   }
 
-  throw new Error(`No exchange rate found for ${fromCurrency} to ${toCurrency}`);
+  // No conversion rate found, return original amount
+  console.warn('No conversion rate found, returning original amount:', amount);
+  return amount;
 }

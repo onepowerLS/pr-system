@@ -210,6 +210,26 @@ export function QuotesStep({
     }
   };
 
+  const handleDeleteAttachment = (quoteId: string, attachmentId: string) => {
+    if (!readOnly) {
+      const currentQuotes = formState.quotes || [];
+      const updatedQuotes = currentQuotes.map(quote => {
+        if (quote.id === quoteId) {
+          return {
+            ...quote,
+            attachments: (quote.attachments || []).filter(a => a.id !== attachmentId)
+          };
+        }
+        return quote;
+      });
+      
+      setFormState({
+        ...formState,
+        quotes: updatedQuotes
+      });
+    }
+  };
+
   const validateQuote = (quote: Quote): boolean => {
     const newErrors: Record<string, string> = {};
     
@@ -421,6 +441,13 @@ export function QuotesStep({
                                 </Link>
                               }
                             />
+                            <IconButton 
+                              onClick={() => handleDeleteAttachment(quote.id, file.id)} 
+                              color="error"
+                              title="Delete attachment"
+                            >
+                              <DeleteIcon />
+                            </IconButton>
                           </ListItem>
                         ))}
                       </List>

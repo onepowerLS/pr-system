@@ -27,6 +27,7 @@ interface QuoteListProps {
   onDelete: (quoteId: string) => void;
   handleFilePreview: (attachment: { name: string; url: string }) => void;
   handleDownloadQuoteAttachment: (attachment: { name: string; url: string }) => void;
+  handleDeleteAttachment?: (quoteId: string, attachmentId: string) => void;
   isEditing?: boolean;
 }
 
@@ -36,6 +37,7 @@ export function QuoteList({
   onDelete,
   handleFilePreview,
   handleDownloadQuoteAttachment,
+  handleDeleteAttachment,
   isEditing = false,
 }: QuoteListProps) {
   return (
@@ -97,6 +99,15 @@ export function QuoteList({
                     >
                       <DownloadIcon fontSize="small" />
                     </IconButton>
+                    {isEditing && handleDeleteAttachment && (
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDeleteAttachment(quote.id, attachment.id)}
+                        color="error"
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
                   </Box>
                 ))}
               </TableCell>
