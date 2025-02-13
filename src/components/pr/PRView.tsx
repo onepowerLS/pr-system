@@ -65,8 +65,10 @@ import { StorageService } from "@/services/storage";
 import { CircularProgress, Chip } from "@mui/material";
 import { ReferenceDataItem } from '@/types/pr';
 import { db } from "@/config/firebase";
-import { collection, doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, query, where, getDocs, updateDoc } from "firebase/firestore";
 import { QuotesStep } from './steps/QuotesStep';
+import { notificationService } from '@/services/notification';
+import { approverService } from '@/services/approver';
 
 interface EditablePRFields {
   department?: string;
@@ -79,6 +81,7 @@ interface EditablePRFields {
   currency?: string;
   requiredDate?: string;
   description?: string;
+  approver?: string;
 }
 
 interface FileUploadProps {
@@ -459,7 +462,10 @@ export function PRView() {
   const [vendors, setVendors] = useState<ReferenceDataItem[]>([]);
   const [currencies, setCurrencies] = useState<ReferenceDataItem[]>([]);
   const [loadingReference, setLoadingReference] = useState(true);
-  const [approvers, setApprovers] = useState<Array<{id: string; name: string; department: string}>>([]);
+  const [approvers, setApprovers] = useState<Approver[]>([]);
+  const [selectedApprover, setSelectedApprover] = useState<string | undefined>(
+    pr?.approver || undefined
+  );
   const [loadingApprovers, setLoadingApprovers] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
   const [isExitingEditMode, setIsExitingEditMode] = React.useState(false);
@@ -511,20 +517,29 @@ export function PRView() {
           referenceDataService.getItemsByType('projectCategories', organization),
           referenceDataService.getItemsByType('sites', organization),
           referenceDataService.getItemsByType('expenseTypes', organization),
-          referenceDataService.getItemsByType('vehicles', organization),
-          referenceDataService.getItemsByType('vendors'),
-          referenceDataService.getItemsByType('currencies'),
+          referenceDataService.getItemsByType('vehicles', organization),  // Pass organization here
+          referenceDataService.getItemsByType('vendors'),  // This is org-independent
+          referenceDataService.getItemsByType('currencies'),  // This is org-independent
         ]);
+
+        console.log('Loaded reference data:', { 
+          departments: depts, 
+          vendors: vendorList,
+          vehicles: vehicleList,  // Log vehicles
+          organization  // Log organization
+        });
+
+        // Only set active vehicles
+        const activeVehicles = vehicleList.filter(v => v.active !== false);
+        console.log('Active vehicles:', activeVehicles);
 
         setDepartments(depts);
         setProjectCategories(categories);
         setSites(siteList);
         setExpenseTypes(expenses);
-        setVehicles(vehicleList);
+        setVehicles(activeVehicles);  // Set only active vehicles
         setVendors(vendorList);
         setCurrencies(currencyList);
-
-        console.log('Loaded reference data:', { departments: depts, vendors: vendorList });
       } catch (error) {
         console.error('Error loading reference data:', error);
         enqueueSnackbar('Error loading reference data', { variant: 'error' });
@@ -569,52 +584,31 @@ export function PRView() {
   }, [pr?.lineItems]);
 
   useEffect(() => {
-    console.log('PR Approvers:', pr?.approvers);
-    
-    if (pr?.approvers?.length) {
-      setLoadingApprovers(true);
-      const loadApprovers = async () => {
-        try {
-          console.log('Loading approvers for:', pr.approvers);
-          
-          const approverDocs = await Promise.all(
-            pr.approvers.map(async id => {
-              console.log('Fetching approver:', id);
-              const userRef = doc(collection(db, 'users'), id);
-              return getDoc(userRef);
-            })
-          );
-          
-          const loadedApprovers = approverDocs
-            .filter(doc => doc.exists())
-            .map(doc => {
-              const data = doc.data();
-              console.log('Approver data:', doc.id, data);
-              return {
-                id: doc.id,
-                name: `${data?.firstName || ''} ${data?.lastName || ''}`.trim(),
-                department: data?.department || 'N/A'
-              };
-            });
-            
-          console.log('Setting approvers:', loadedApprovers);
-          setApprovers(loadedApprovers);
-        } catch (error) {
-          console.error('Error loading approvers:', error);
-          enqueueSnackbar('Error loading approvers', { variant: 'error' });
-          setApprovers([]); // Reset on error
-        } finally {
-          setLoadingApprovers(false);
+    const loadApprovers = async () => {
+      if (!pr?.organization) {
+        console.log('No organization specified');
+        setApprovers([]);
+        return;
+      }
+
+      try {
+        console.log('Loading approvers for organization:', pr.organization);
+        const approverList = await approverService.getApprovers(pr.organization);
+        console.log('Setting approvers:', approverList);
+        setApprovers(approverList);
+        
+        // Set initial selected approver if present
+        if (pr.approver && !selectedApprover) {
+          setSelectedApprover(pr.approver);
         }
-      };
-      
-      loadApprovers();
-    } else {
-      console.log('No approvers to load');
-      setApprovers([]); // Reset approvers when PR has no approvers
-      setLoadingApprovers(false);
-    }
-  }, [pr?.approvers, enqueueSnackbar]);
+      } catch (error) {
+        console.error('Error loading approvers:', error);
+        setApprovers([]);
+      }
+    };
+
+    loadApprovers();
+  }, [pr?.organization]);
 
   const handleAddLineItem = (): void => {
     const newItem: LineItem = {
@@ -702,6 +696,7 @@ export function PRView() {
         requiredDate: pr.requiredDate,
         preferredVendor: pr.preferredVendor,
         comments: pr.comments,
+        approver: pr.approver,
       });
     } else {
       setEditedPR({});
@@ -759,27 +754,52 @@ export function PRView() {
     }
   };
 
-  const handleFieldChange = (field: keyof EditablePRFields, value: any): void => {
-    setEditedPR(prevEdits => {
-      const newEdits = { ...prevEdits };
+  const handleFieldChange = (field: keyof EditablePRFields, value: string | number) => {
+    console.log('Handling field change:', { field, value, currentEdits: editedPR });
+
+    // Special handling for expense type changes
+    if (field === 'expenseType') {
+      const selectedType = expenseTypes.find(type => type.id === value);
+      const isVehicleExpense = selectedType?.name.toLowerCase() === 'vehicle';
       
-      // Special handling for expense type changes
-      if (field === 'expenseType') {
-        const selectedType = expenseTypes.find(type => type.id === value);
-        const isVehicleExpense = selectedType?.code === '4';
-        
-        // If changing to non-vehicle expense type, remove vehicle field
+      console.log('Expense type change:', {
+        selectedType,
+        isVehicleExpense,
+        value,
+        currentVehicle: editedPR.vehicle
+      });
+
+      setEditedPR(prev => {
         if (!isVehicleExpense) {
-          delete newEdits.vehicle;
+          // Remove vehicle field for non-vehicle expense types
+          const { vehicle, ...rest } = prev;
+          console.log('Removing vehicle field:', { before: prev, after: { ...rest, [field]: value } });
+          return { ...rest, [field]: value };
+        } else {
+          // Keep vehicle field for vehicle expense type
+          const newState = {
+            ...prev,
+            [field]: value,
+            vehicle: prev.vehicle || pr?.vehicle
+          };
+          console.log('Updating with vehicle:', { before: prev, after: newState });
+          return newState;
         }
-        newEdits[field] = value;
-      } else {
-        newEdits[field] = value;
-      }
-      
-      return newEdits;
-    });
+      });
+    } else {
+      setEditedPR(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
+
     setHasUnsavedChanges(true);
+  };
+
+  const handleApproverChange = (approverId: string) => {
+    console.log('Changing approver to:', approverId);
+    setSelectedApprover(approverId || undefined);
+    handleFieldChange('approver', approverId);
   };
 
   const handleCancel = (): void => {
@@ -806,14 +826,14 @@ export function PRView() {
 
       // Clean up updates object
       const cleanUpdates = Object.entries(editedPR).reduce((acc, [key, value]) => {
-        // Skip undefined values
-        if (value === undefined) return acc;
+        // Skip undefined or null values
+        if (value === undefined || value === null) return acc;
         
         // Handle vehicle field
         if (key === 'vehicle') {
           const selectedExpenseType = editedPR.expenseType || pr.expenseType;
-          const expenseTypeObj = expenseTypes.find(type => type.id === selectedExpenseType);
-          const isVehicleExpense = expenseTypeObj?.code === '4';
+          const expenseTypeObj = expenseTypes.find(t => t.id === selectedExpenseType);
+          const isVehicleExpense = expenseTypeObj?.name.toLowerCase() === 'vehicle';
           
           // Only include vehicle if it's a vehicle expense type
           if (isVehicleExpense) {
@@ -826,7 +846,7 @@ export function PRView() {
         return acc;
       }, {} as Partial<PRRequest>);
 
-      // Add line items to updates
+      // Add line items and metadata to updates
       const updates = {
         ...cleanUpdates,
         lineItems: lineItems.map(item => ({
@@ -837,18 +857,19 @@ export function PRView() {
           notes: item.notes || '',
           unitPrice: item.unitPrice || 0,
           attachments: item.attachments || []
-        }))
+        })),
+        quotes: pr.quotes || [], // Preserve existing quotes
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email
       };
 
       console.log('Saving PR updates:', updates);
-      await prService.updatePR(pr.id, updates);
-      
-      // Exit edit mode and refresh the PR
-      setEditedPR({});
-      await fetchPR();
-      navigate(`/pr/${pr.id}`); // Exit edit mode by navigating to view mode
+      const prRef = doc(db, 'prs', id!);
+      await updateDoc(prRef, updates);
+
       enqueueSnackbar('Changes saved successfully', { variant: 'success' });
       setHasUnsavedChanges(false);
+      navigate(`/pr/${pr.id}`); // Exit edit mode by navigating to view mode
     } catch (error) {
       console.error('Error updating PR:', error);
       enqueueSnackbar('Failed to save changes', { variant: 'error' });
@@ -966,17 +987,7 @@ export function PRView() {
                   <InputLabel>Expense Type</InputLabel>
                   <Select
                     value={isEditMode ? (editedPR.expenseType || pr?.expenseType || '') : (pr?.expenseType || '')}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const selectedType = expenseTypes.find(type => type.id === value);
-                      const isVehicleExpense = selectedType?.code === '4';
-                      
-                      setEditedPR(prev => ({
-                        ...prev,
-                        expenseType: value,
-                        vehicle: isVehicleExpense ? prev.vehicle : undefined
-                      }));
-                    }}
+                    onChange={(e) => handleFieldChange('expenseType', e.target.value)}
                     label="Expense Type"
                     renderValue={(value) => {
                       const expenseType = expenseTypes.find(t => t.id === value);
@@ -991,26 +1002,48 @@ export function PRView() {
                   </Select>
                 </FormControl>
               </Grid>
-              {(isEditMode ? editedPR.expenseType || pr?.expenseType : pr?.expenseType) === '4' && (
+              {(isEditMode ? editedPR.expenseType || pr?.expenseType : pr?.expenseType) && (
                 <Grid item xs={6}>
-                  <FormControl fullWidth disabled={!isEditMode}>
-                    <InputLabel>Vehicle</InputLabel>
-                    <Select
-                      value={isEditMode ? (editedPR.vehicle || pr?.vehicle || '') : (pr?.vehicle || '')}
-                      onChange={(e) => handleFieldChange('vehicle', e.target.value)}
-                      label="Vehicle"
-                      renderValue={(value) => {
-                        const vehicle = vehicles.find(v => v.id === value);
-                        return vehicle ? vehicle.name : value;
-                      }}
-                    >
-                      {vehicles.map((vehicle) => (
-                        <MenuItem key={vehicle.id} value={vehicle.id}>
-                          {vehicle.name}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  {(() => {
+                    const currentExpenseType = isEditMode 
+                      ? expenseTypes.find(t => t.id === (editedPR.expenseType || pr?.expenseType))
+                      : expenseTypes.find(t => t.id === pr?.expenseType);
+                    
+                    const isVehicleExpense = currentExpenseType?.name.toLowerCase() === 'vehicle';
+                    
+                    return isVehicleExpense ? (
+                      <FormControl fullWidth disabled={!isEditMode}>
+                        <InputLabel>Vehicle</InputLabel>
+                        <Select
+                          value={isEditMode ? (editedPR.vehicle || pr?.vehicle || '') : (pr?.vehicle || '')}
+                          onChange={(e) => handleFieldChange('vehicle', e.target.value)}
+                          label="Vehicle"
+                          renderValue={(value) => {
+                            console.log('Rendering vehicle value:', {
+                              value,
+                              vehicles,
+                              vehiclesLength: vehicles.length,
+                              allVehicleIds: vehicles.map(v => v.id),
+                              matchingVehicle: vehicles.find(v => v.id === value),
+                              exactMatch: vehicles.find(v => v.id === value)?.id === value
+                            });
+                            const vehicle = vehicles.find(v => v.id === value);
+                            return vehicle ? (vehicle.registrationNumber || vehicle.name || vehicle.code) : value;
+                          }}
+                        >
+                          {vehicles.map((vehicle) => {
+                            console.log('Rendering vehicle option:', vehicle);
+                            const displayName = vehicle.registrationNumber || vehicle.name || vehicle.code;
+                            return (
+                              <MenuItem key={vehicle.id} value={vehicle.id}>
+                                {displayName}
+                              </MenuItem>
+                            );
+                          })}
+                        </Select>
+                      </FormControl>
+                    ) : null;
+                  })()}
                 </Grid>
               )}
               <Grid item xs={6}>
@@ -1086,6 +1119,25 @@ export function PRView() {
                   rows={2}
                 />
               </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth disabled={!isEditMode || !isProcurement}>
+                  <InputLabel>Approver</InputLabel>
+                  <Select
+                    value={selectedApprover || ''}
+                    onChange={(e) => handleApproverChange(e.target.value)}
+                    label="Approver"
+                  >
+                    {!selectedApprover && <MenuItem value="">Select Approver</MenuItem>}
+                    {approvers
+                      .filter(approver => !selectedApprover || approver.id === selectedApprover)
+                      .map((approver) => (
+                        <MenuItem key={approver.id} value={approver.id}>
+                          {approver.name}{approver.department ? ` (${approver.department})` : ''}
+                        </MenuItem>
+                      ))}
+                  </Select>
+                </FormControl>
+              </Grid>
             </Grid>
           </Paper>
         </Grid>
@@ -1143,20 +1195,21 @@ export function PRView() {
               <Grid item xs={12}>
                 <Typography color="textSecondary">Approvers</Typography>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  {loadingApprovers ? (
-                    <CircularProgress size={20} />
-                  ) : approvers.length > 0 ? (
-                    approvers.map((approver) => (
-                      <Chip
-                        key={approver.id}
-                        label={`${approver.name} (${approver.department})`}
-                        size="small"
-                      />
-                    ))
-                  ) : (
-                    <Typography variant="body2" color="textSecondary">
-                      No approvers assigned
-                    </Typography>
+                  {selectedApprover && (
+                    <Box>
+                      <Typography variant="body2" color="textSecondary">
+                        Approver
+                      </Typography>
+                      {approvers
+                        .filter(approver => approver.id === selectedApprover)
+                        .map((approver) => (
+                          <Chip
+                            key={approver.id}
+                            label={`${approver.name}${approver.department ? ` (${approver.department})` : ''}`}
+                            size="small"
+                          />
+                        ))}
+                    </Box>
                   )}
                 </div>
               </Grid>
@@ -1332,8 +1385,7 @@ export function PRView() {
 
     // Allow procurement team to edit quotes in IN_QUEUE status
     const canEditQuotes = currentUser?.permissionLevel >= 2 && 
-      pr.status === PRStatus.IN_QUEUE && 
-      isEditMode;
+      pr.status === PRStatus.IN_QUEUE;
 
     return (
       <Grid container spacing={2}>
@@ -1406,6 +1458,41 @@ export function PRView() {
     }
   };
 
+  // Load approvers
+  const loadApprovers = async () => {
+    try {
+      console.log('Loading approvers for organization:', pr?.organization);
+      
+      if (!pr?.organization) {
+        console.log('No organization set, skipping approver load');
+        return;
+      }
+
+      const loadedApprovers = await approverService.getApprovers(pr.organization);
+      
+      // Map to the format expected by the component
+      const mappedApprovers = loadedApprovers.map(a => ({
+        id: a.id,
+        name: a.name,
+        department: a.department || 'N/A',
+        permissionLevel: a.permissionLevel
+      }));
+      
+      console.log('Setting approvers:', mappedApprovers);
+      setApprovers(mappedApprovers);
+    } catch (error) {
+      console.error('Error loading approvers:', error);
+      enqueueSnackbar('Error loading approvers', { variant: 'error' });
+    }
+  };
+
+  // Load approvers when PR is loaded
+  useEffect(() => {
+    if (pr?.organization) {
+      loadApprovers();
+    }
+  }, [pr?.organization]);
+
   // Load reference data
   useEffect(() => {
     if (!pr?.organization) return;
@@ -1420,9 +1507,9 @@ export function PRView() {
       referenceDataService.getItemsByType('projectCategories', pr.organization),
       referenceDataService.getItemsByType('sites', pr.organization),
       referenceDataService.getItemsByType('expenseTypes', pr.organization),
-      referenceDataService.getItemsByType('vehicles', pr.organization),
-      referenceDataService.getItemsByType('vendors'),
-      referenceDataService.getItemsByType('currencies'),
+      referenceDataService.getItemsByType('vehicles', pr.organization),  // Pass organization here
+      referenceDataService.getItemsByType('vendors'),  // This is org-independent
+      referenceDataService.getItemsByType('currencies'),  // This is org-independent
     ]).then(([depts, projCats, sites, expTypes, vehs, vends, currList]) => {
       console.log('Reference data loaded:', {
         departments: depts.map(d => ({ id: d.id, name: d.name })),
