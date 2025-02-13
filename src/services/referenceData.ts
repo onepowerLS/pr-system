@@ -158,16 +158,16 @@ class ReferenceDataService {
       const normalizedOrgId = this.normalizeOrganizationId(organization);
       console.log('Using normalized org ID:', normalizedOrgId);
       
-      // Query for departments where organization.id matches
+      // Query for departments where organizationId matches
       const q = query(
         collectionRef,
-        where('organization.id', '==', normalizedOrgId)
+        where('organizationId', '==', normalizedOrgId)
       );
       
       console.log('Executing departments query:', {
         collection: this.getCollectionName('departments'),
         normalizedOrgId,
-        query: 'organization.id == ' + normalizedOrgId
+        query: 'organizationId == ' + normalizedOrgId
       });
       
       const querySnapshot = await getDocs(q);

@@ -1612,7 +1612,11 @@ export function PRView() {
 
       {/* Main Content */}
       <Box sx={{ mb: 4 }}>
-        {isEditMode ? renderStepContent() : (
+        {isEditMode ? (
+          <>
+            {renderStepContent()}
+          </>
+        ) : (
           <>
             {renderBasicInformation()}
             {renderLineItems()}

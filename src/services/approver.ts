@@ -54,10 +54,10 @@ class ApproverService {
       console.log('ApproverService: Getting approvers for organization:', organizationId);
       const usersRef = collection(this.db, 'users');
       
-      // Query users with permission level 1 or 2 and isActive=true
+      // Query users with permission level 1, 2, or 6 and isActive=true
       const q = query(
         usersRef,
-        where('permissionLevel', 'in', [1, 2]),
+        where('permissionLevel', 'in', [1, 2, 6]),
         where('isActive', '==', true)
       );
       
@@ -103,7 +103,9 @@ class ApproverService {
           const isGlobal = approver.permissionLevel === 1;
           const normalizedApproverOrg = this.normalizeOrganizationId(approver.organization || '');
           const normalizedTargetOrg = this.normalizeOrganizationId(organizationId);
-          const isOrgMatch = approver.permissionLevel === 2 && normalizedApproverOrg === normalizedTargetOrg;
+          const isOrgMatch = (approver.permissionLevel === 2 || approver.permissionLevel === 6) && 
+                           normalizedApproverOrg === normalizedTargetOrg;
+          
           console.log('ApproverService: Filtering approver:', {
             approver,
             isGlobal,
