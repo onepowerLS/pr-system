@@ -108,6 +108,25 @@ export class NotificationService {
         ? `${user.firstName} ${user.lastName}`
         : user.email.split('@')[0];
 
+      // Get approver details if present
+      let approverName: string | undefined;
+      let approverEmail: string | undefined;
+      
+      if (pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover) {
+        const approverId = pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover;
+        if (approverId) {
+          const approverRef = doc(db, 'users', approverId);
+          const approverDoc = await getDoc(approverRef);
+          if (approverDoc.exists()) {
+            const approverData = approverDoc.data();
+            approverName = approverData.firstName && approverData.lastName 
+              ? `${approverData.firstName} ${approverData.lastName}`
+              : approverData.email.split('@')[0];
+            approverEmail = approverData.email;
+          }
+        }
+      }
+
       // Prepare notification data
       const notificationData = {
         prId,
@@ -122,17 +141,24 @@ export class NotificationService {
         department: pr.department,
         requiredDate: pr.requiredDate,
         baseUrl: window.location.origin,
-        prUrl: `${window.location.origin}/pr/${prId}`
+        prUrl: `${window.location.origin}/pr/${prId}`,
+        approverName,
+        approverEmail
       };
 
       // Send notification using callable function
       await sendStatusChangeNotification(notificationData);
 
       // Log the notification
+      const recipients = [pr.requestorEmail, 'procurement@1pwrafrica.com'];
+      if (approverEmail && newStatus === 'PENDING_APPROVAL') {
+        recipients.push(approverEmail);
+      }
+      
       await this.logNotification(
         'STATUS_CHANGE',
         prId,
-        [pr.requestorEmail, 'procurement@1pwrafrica.com'],
+        recipients,
         'sent'
       );
     } catch (error) {
