@@ -45,7 +45,7 @@ export class NotificationService {
   /**
    * Collection name for notification logs in Firestore
    */
-  private readonly notificationsCollection = 'notifications';
+  private readonly notificationsCollection = 'purchaseRequestsNotifications';
 
   /**
    * Logs a notification in Firestore and returns the notification ID.
@@ -120,30 +120,64 @@ export class NotificationService {
         notes: notes || '',
         description: pr.description,
         department: pr.department,
-        requiredDate: pr.requiredDate
+        requiredDate: pr.requiredDate,
+        baseUrl: window.location.origin,
+        prUrl: `${window.location.origin}/pr/${prId}`
       };
 
       // Send notification using callable function
       await sendStatusChangeNotification(notificationData);
 
-      // Get recipients list
-      const recipients = [pr.requestorEmail, 'procurement@1pwrafrica.com'];
-
-      // If status is changing to PENDING_APPROVAL, add current approver
-      if (newStatus === 'PENDING_APPROVAL' && pr.approvalWorkflow?.currentApprover) {
-        recipients.push(pr.approvalWorkflow.currentApprover);
-      }
-
       // Log the notification
       await this.logNotification(
         'STATUS_CHANGE',
         prId,
-        recipients,
+        [pr.requestorEmail, 'procurement@1pwrafrica.com'],
         'sent'
       );
     } catch (error) {
       console.error('Error sending status change notification:', error);
       throw new Error('Failed to send status change notification');
+    }
+  }
+
+  /**
+   * Sends a notification to an approver.
+   */
+  async sendApproverNotification(
+    prId: string,
+    prNumber: string,
+    approverId: string
+  ): Promise<void> {
+    try {
+      // Log notification
+      await this.logNotification('APPROVAL_REQUESTED', prId, [approverId]);
+
+      // Send notification via cloud function
+      const response = await fetch(
+        'https://us-central1-pr-system-4ea55.cloudfunctions.net/sendApproverNotification',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            prId,
+            prNumber,
+            approverId
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(`Failed to send approver notification: ${error.error || 'Unknown error'}`);
+      }
+
+      console.log('Approver notification sent successfully');
+    } catch (error) {
+      console.error('Error sending approver notification:', error);
+      throw new Error('Failed to send approver notification');
     }
   }
 
