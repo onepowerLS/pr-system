@@ -49,6 +49,73 @@
 - Inactive items are still stored but not available for selection
 - This allows "soft deletion" of items that may be referenced by historical records
 
+### Vendor Management
+- Vendors are globally available across all organizations
+- Vendors can be marked as "approved" which affects quote requirements
+- Vendor approval status is managed by procurement officers
+- Vendor details include:
+  - Contact information
+  - Approval status
+  - Product/service categories
+  - Historical performance
+
+## PR Processing Rules
+
+### Quote Requirements and Thresholds
+1. Rule 1 (Lower Threshold):
+   - Below threshold:
+     - Requires 1 quote
+     - Can be approved by Level 6 or Level 2 approvers
+     - If using approved vendor, quote attachment optional
+     - If using non-approved vendor, quote must have attachment
+   - Above threshold:
+     - Requires 3 quotes with attachments
+     - Only Level 2 approvers can approve
+     - Exception: If using approved vendor, only 1 quote with attachment required
+
+2. Rule 2 (Higher Threshold):
+   - Below threshold: Rule 1 applies
+   - Above threshold:
+     - Always requires 3 quotes with attachments
+     - Only Level 2 approvers can approve
+     - No exceptions for approved vendors
+
+### Quote Validation
+- Quote amount used for threshold comparison is the lowest valid quote amount
+- Each quote must include:
+  - Valid amount
+  - Currency
+  - Vendor details
+  - Attachment (except for approved vendors below Rule 1 threshold)
+- Invalid quotes are not counted towards quote requirements
+
+### Currency Handling
+- Each organization's rules specify the base currency
+- All quote amounts are converted to the rule's currency for comparison
+- Currency conversion uses current exchange rates
+- Threshold comparisons are made after currency conversion
+
+### Attachment Requirements
+- Quote attachments must be present for:
+  - All quotes above Rule 2 threshold
+  - All quotes above Rule 1 threshold (except approved vendors)
+  - All quotes below Rule 1 threshold from non-approved vendors
+- Attachments must be valid files with:
+  - Readable format
+  - Clear quote details
+  - Vendor information
+
+### Approver Levels
+- Level 2 Approvers:
+  - Can approve PRs of any value
+  - Required for PRs above Rule 1 threshold
+  - Required for all PRs above Rule 2 threshold
+  
+- Level 6 Approvers:
+  - Can only approve PRs below Rule 1 threshold
+  - Cannot approve PRs above Rule 1 threshold
+  - Must follow standard quote requirements
+
 ## User Management
 
 ### User Status and Activation
@@ -70,12 +137,10 @@
   - Access to all organizations and features
   - Can edit Admin Dashboard
 
-- Level 2: Approver (APPROVER)
-  - Can approve requests within their assigned organizations
-  - Can view (but not edit) Admin Dashboard
+- Level 2: Senior Approver
+  - Can approve PRs of any value
+  - Required for high-value approvals
   - Organization assignment determines approval scope
-  - Example: An approver assigned to "1PWR LESOTHO" can approve PRs for organization ID "1pwr_lesotho"
-
 - Level 3: Procurement Officer (PROC)
   - Can manage the procurement process
   - Can view Admin Dashboard
@@ -93,6 +158,11 @@
   - Can view their own PR history
   - Basic access level for regular users
   - No administrative access
+
+- Level 6: Junior Approver
+  - Can approve PRs below Rule 1 threshold
+  - Organization assignment determines approval scope
+  - Cannot approve high-value PRs
 
 ### Organization Assignment
 - Users can be assigned to one primary organization
