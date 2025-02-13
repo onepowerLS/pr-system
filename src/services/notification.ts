@@ -126,11 +126,19 @@ export class NotificationService {
       // Send notification using callable function
       await sendStatusChangeNotification(notificationData);
 
+      // Get recipients list
+      const recipients = [pr.requestorEmail, 'procurement@1pwrafrica.com'];
+
+      // If status is changing to PENDING_APPROVAL, add current approver
+      if (newStatus === 'PENDING_APPROVAL' && pr.approvalWorkflow?.currentApprover) {
+        recipients.push(pr.approvalWorkflow.currentApprover);
+      }
+
       // Log the notification
       await this.logNotification(
         'STATUS_CHANGE',
         prId,
-        [pr.requestorEmail, 'procurement@1pwrafrica.com'],
+        recipients,
         'sent'
       );
     } catch (error) {
