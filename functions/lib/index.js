@@ -33,10 +33,10 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateUserEmail = exports.createUser = exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.sendStatusChangeEmail = exports.sendSubmissionEmail = exports.testEmailNotification = exports.sendStatusChangeNotification = exports.sendApproverNotification = exports.sendPRNotification = void 0;
-const admin = __importStar(require("firebase-admin"));
+exports.updateUserEmail = exports.createUser = exports.syncUserEmails = exports.setupInitialAdmin = exports.setUserClaims = exports.updateUserPassword = exports.sendSubmissionEmail = exports.sendStatusChangeNotification = exports.sendPRNotification = void 0;
 const functions = __importStar(require("firebase-functions"));
 const nodemailer = __importStar(require("nodemailer"));
+const firebase_1 = require("./config/firebase");
 const updateUserPassword_1 = require("./updateUserPassword");
 Object.defineProperty(exports, "updateUserPassword", { enumerable: true, get: function () { return updateUserPassword_1.updateUserPassword; } });
 const setUserClaims_1 = require("./setUserClaims");
@@ -49,8 +49,6 @@ const createUser_1 = require("./createUser");
 Object.defineProperty(exports, "createUser", { enumerable: true, get: function () { return createUser_1.createUser; } });
 const updateUserEmail_1 = require("./updateUserEmail");
 Object.defineProperty(exports, "updateUserEmail", { enumerable: true, get: function () { return updateUserEmail_1.updateUserEmail; } });
-// Initialize Firebase Admin
-admin.initializeApp();
 // Create transporter
 const transporter = nodemailer.createTransport({
     host: 'mail.1pwrafrica.com',
@@ -75,7 +73,7 @@ const formatFileSize = (bytes) => {
 // Helper function to generate PR email content
 const generatePREmailContent = (prData) => {
     const items = prData.items.map((item, index) => {
-        var _a;
+        var _a, _b;
         const attachmentsList = ((_a = item.attachments) === null || _a === void 0 ? void 0 : _a.length) > 0
             ? `<ul style="margin: 0; padding-left: 20px;">
                 ${item.attachments.map((att) => `<li style="margin-bottom: 4px;">
@@ -92,413 +90,202 @@ const generatePREmailContent = (prData) => {
                                           border: 1px solid #ddd;
                                           border-radius: 4px;
                                           text-decoration: none;
-                                          color: #333;
-                                          font-size: 12px;">
-                                    <svg xmlns="http://www.w3.org/2000/svg" 
-                                         width="12" 
-                                         height="12" 
-                                         viewBox="0 0 24 24" 
-                                         fill="none" 
-                                         stroke="currentColor" 
-                                         stroke-width="2" 
-                                         stroke-linecap="round" 
-                                         stroke-linejoin="round"
-                                         style="margin-right: 4px;">
-                                        <path d="M21 15l-9 9h-12v-12l9-9h12v12z"/>
-                                    </svg>
+                                          color: #333;">
                                     View
-                                </a>`
-                : ''}
+                                </a>
+                            ` : ''}
                         </span>
                     </li>`).join('')}
-               </ul>`
-            : 'None';
+            </ul>`
+            : '';
         return `
-        <tr>
-            <td>${index + 1}</td>
-            <td>${item.description}</td>
-            <td>${item.quantity}</td>
-            <td>${item.uom}</td>
-            <td>${item.notes || '-'}</td>
-            <td>${attachmentsList}</td>
-        </tr>
-    `;
+            <div style="margin-bottom: 20px;">
+                <h3 style="margin: 0 0 10px 0;">Item ${index + 1}</h3>
+                <table style="border-collapse: collapse; width: 100%;">
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>Description</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">${item.description}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Quantity</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Unit Price</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">${item.unitPrice}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Total</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity * item.unitPrice}</td>
+                    </tr>
+                    ${((_b = item.attachments) === null || _b === void 0 ? void 0 : _b.length) > 0 ? `
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;"><strong>Attachments</strong></td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">${attachmentsList}</td>
+                        </tr>
+                    ` : ''}
+                </table>
+            </div>
+        `;
     }).join('');
-    return {
-        text: `
-            Purchase Request ${prData.prNumber}
-            
-            Department: ${prData.department}
-            Requestor: ${prData.requestorName} (${prData.requestorEmail})
-            Description: ${prData.description}
-            Required Date: ${prData.requiredDate}
-            Urgency: ${prData.isUrgent ? 'URGENT' : 'Normal'}
-            Date: ${new Date().toLocaleDateString()}
-            
-            Please review the purchase request in the system.
-        `,
-        html: `
-            <h2>Purchase Request ${prData.prNumber}</h2>
-            <p><strong>Department:</strong> ${prData.department}</p>
-            <p><strong>Requestor:</strong> ${prData.requestorName} (${prData.requestorEmail})</p>
-            <p><strong>Description:</strong> ${prData.description}</p>
-            <p><strong>Required Date:</strong> ${prData.requiredDate}</p>
-            <p><strong>Urgency:</strong> ${prData.isUrgent ? '<span style="color: red; font-weight: bold;">URGENT</span>' : 'Normal'}</p>
-            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-            
-            <h3>Items:</h3>
-            <table border="1" cellpadding="5" style="border-collapse: collapse; width: 100%;">
+    return `
+        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
+            <h2 style="color: #333;">Purchase Request Details</h2>
+            <table style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">
                 <tr>
-                    <th>#</th>
-                    <th>Description</th>
-                    <th>Quantity</th>
-                    <th>UOM</th>
-                    <th>Notes</th>
-                    <th>Attachments</th>
+                    <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>PR Number</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.prNumber}</td>
                 </tr>
-                ${items}
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Department</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.department}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Required Date</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.requiredDate}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Total Amount</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.currency} ${prData.totalAmount}</td>
+                </tr>
             </table>
-            
-            <p>Please <a href="${process.env.VITE_APP_URL || 'http://localhost:5173'}/pr/${prData.prNumber}">click here</a> to review the purchase request in the system.</p>
-        `
-    };
+            <h3 style="color: #333;">Items</h3>
+            ${items}
+        </div>
+    `;
 };
 // Function to send PR notification
 exports.sendPRNotification = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Access-Control-Allow-Methods', 'GET, POST');
+        res.set('Access-Control-Allow-Headers', 'Content-Type');
         res.status(204).send('');
         return;
     }
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
-    }
-    try {
-        const { prId, prNumber, status, notes } = req.body;
-        // Get PR data from Firestore
-        const prDoc = await admin.firestore().collection('purchaseRequests').doc(prId).get();
-        if (!prDoc.exists) {
-            res.status(404).send('PR not found');
-            return;
-        }
-        const prData = prDoc.data();
-        if (!prData) {
-            res.status(404).send('PR data not found');
-            return;
-        }
-        // Generate email content
-        const emailContent = generatePREmailContent(Object.assign(Object.assign({}, prData), { prNumber,
-            status,
-            notes }));
-        // Send email notification
-        const info = await transporter.sendMail({
-            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
-            to: prData.requestorEmail,
-            subject: `PR ${prNumber} Status Update: ${status}`,
-            html: emailContent.html
-        });
-        console.log('Email sent:', info);
-        res.status(200).json({ success: true, messageId: info.messageId });
-    }
-    catch (error) {
-        console.error('Error sending notification:', error);
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
-// Function to send approver notification
-exports.sendApproverNotification = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
+    // Set CORS headers for the main request
     res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.status(204).send('');
-        return;
-    }
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
-    }
     try {
-        const { prId, prNumber, approverId } = req.body;
-        // Get approver data
-        const approverDoc = await admin.firestore().collection('users').doc(approverId).get();
-        if (!approverDoc.exists) {
-            res.status(404).send('Approver not found');
+        const { prData, recipients } = req.body;
+        if (!prData || !recipients || !Array.isArray(recipients)) {
+            res.status(400).json({ error: 'Invalid request data' });
             return;
         }
-        const approverData = approverDoc.data();
-        if (!(approverData === null || approverData === void 0 ? void 0 : approverData.email)) {
-            res.status(400).send('Approver email not found');
-            return;
-        }
-        // Get PR data
-        const prDoc = await admin.firestore().collection('purchaseRequests').doc(prId).get();
-        if (!prDoc.exists) {
-            res.status(404).send('PR not found');
-            return;
-        }
-        const prData = prDoc.data();
-        if (!prData) {
-            res.status(404).send('PR data not found');
-            return;
-        }
-        // Send email notification
-        const info = await transporter.sendMail({
-            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
-            to: approverData.email,
-            subject: `PR ${prNumber} Requires Your Approval`,
-            html: `
-                <h2>Purchase Request Approval Required</h2>
-                <p>A new purchase request requires your approval:</p>
-                <ul>
-                    <li>PR Number: ${prNumber}</li>
-                    <li>Requestor: ${prData.requestorEmail}</li>
-                    <li>Department: ${prData.department}</li>
-                    <li>Amount: ${prData.estimatedAmount} ${prData.currency}</li>
-                    <li>Required Date: ${new Date(prData.requiredDate).toLocaleDateString()}</li>
-                </ul>
-                <p>Please <a href="${process.env.VITE_APP_URL}/pr/${prId}">click here</a> to review the purchase request.</p>
-            `
+        const emailContent = generatePREmailContent(prData);
+        // Send email to each recipient
+        const emailPromises = recipients.map(recipient => transporter.sendMail({
+            from: '"1PWR System" <noreply@1pwrafrica.com>',
+            to: recipient,
+            subject: `New Purchase Request: PR #${prData.prNumber}`,
+            html: emailContent
+        }));
+        await Promise.all(emailPromises);
+        // Log successful notification
+        await firebase_1.db.collection('notificationLogs').add({
+            type: 'PR_SUBMISSION',
+            status: 'sent',
+            timestamp: firebase_1.FieldValue.serverTimestamp(),
+            prId: prData.id,
+            prNumber: prData.prNumber,
+            recipients
         });
-        console.log('Approver notification sent:', info);
-        res.status(200).json({ success: true, messageId: info.messageId });
+        res.status(200).json({ success: true });
     }
     catch (error) {
-        console.error('Error sending approver notification:', error);
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
+        console.error('Error sending PR notification:', error);
+        res.status(500).json({ error: 'Failed to send notification' });
     }
 });
 // Function to send status change notification
 exports.sendStatusChangeNotification = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to send notifications');
+    }
+    const { notification, recipients } = data;
     try {
-        const { notification, recipients } = data;
-        const { prId, prNumber, description, oldStatus, newStatus, changedBy, notes, baseUrl, approverName, approverEmail, department, requiredDate } = notification;
-        // Create email content
-        const text = `
-            Purchase Request ${prNumber}
-
-            Status Changed: ${oldStatus} → ${newStatus}
-            Updated By: ${changedBy.name} (${changedBy.email})
-
-            Department: ${department}
-            Description: ${description}
-            Required Date: ${requiredDate}
-            ${approverName && approverEmail ? `\nAssigned Approver: ${approverName} (${approverEmail})` : ''}
-
-            Notes: ${notes || ''}
-
-            Please click here to review the purchase request in the system: ${baseUrl}/pr/${prId}
-        `;
-        const html = `
-            <h2>Purchase Request ${prNumber}</h2>
-
-            <p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
-            <p><strong>Updated By:</strong> ${changedBy.name} (${changedBy.email})</p>
-
-            <p><strong>Department:</strong> ${department}</p>
-            <p><strong>Description:</strong> ${description}</p>
-            <p><strong>Required Date:</strong> ${requiredDate}</p>
-            ${approverName && approverEmail ?
-            `<p><strong>Assigned Approver:</strong> ${approverName} (${approverEmail})</p>`
-            : ''}
-
-            <p><strong>Notes:</strong> ${notes || ''}</p>
-
-            <p>Please <a href="${baseUrl}/pr/${prId}">click here</a> to review the purchase request in the system.</p>
-        `;
-        // Send email
-        const info = await transporter.sendMail({
-            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
-            to: recipients.join(', '),
-            subject: `Purchase Request ${prNumber} - Status Changed: ${oldStatus} → ${newStatus}`,
-            text,
-            html
-        });
-        console.log('Status change notification sent:', info.messageId);
-        return { success: true, messageId: info.messageId };
-    }
-    catch (error) {
-        console.error('Error sending status change notification:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to send status change notification', error instanceof Error ? error.message : 'Unknown error');
-    }
-});
-// Test email function
-exports.testEmailNotification = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.status(204).send('');
-        return;
-    }
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
-    }
-    try {
-        const testInfo = await transporter.sendMail({
-            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
-            to: req.body.email,
-            subject: 'Test Email from PR System',
-            text: `This is a test email sent at ${new Date().toISOString()}`,
-            html: `<p>This is a test email sent at ${new Date().toISOString()}</p>`
-        });
-        console.log('Test email sent:', testInfo.messageId);
-        res.status(200).json({ success: true, messageId: testInfo.messageId });
-    }
-    catch (error) {
-        console.error('Error sending test email:', error);
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
-    }
-});
-// Function to send PR submission notification
-exports.sendSubmissionEmail = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.status(204).send('');
-        return;
-    }
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
-        return;
-    }
-    try {
-        const { prNumber, description, submittedBy, requestor, category, expenseType, site, amount, currency, requiredDate } = req.body;
-        // Create email content
-        const emailContent = {
-            text: `
-                New PR Submission - ${prNumber}
-                
-                Description: ${description}
-                Submitted By: ${submittedBy}
-                Requestor: ${requestor.name} (${requestor.email})
-                Department: ${requestor.department}
-                Category: ${category}
-                Expense Type: ${expenseType}
-                Site: ${site}
-                Amount: ${amount} ${currency}
-                Required Date: ${requiredDate}
-                Date: ${new Date().toLocaleDateString()}
-                
-                Please review the purchase request in the system.
-            `,
+        // Get email template based on status change
+        const template = {
+            subject: `PR ${notification.prNumber} Status Updated to ${notification.newStatus}`,
             html: `
-                <h2>New PR Submission - ${prNumber}</h2>
-                <p><strong>Description:</strong> ${description}</p>
-                <p><strong>Submitted By:</strong> ${submittedBy}</p>
-                <p><strong>Requestor:</strong> ${requestor.name} (${requestor.email})</p>
-                <p><strong>Department:</strong> ${requestor.department}</p>
-                <p><strong>Category:</strong> ${category}</p>
-                <p><strong>Expense Type:</strong> ${expenseType}</p>
-                <p><strong>Site:</strong> ${site}</p>
-                <p><strong>Amount:</strong> ${amount} ${currency}</p>
-                <p><strong>Required Date:</strong> ${requiredDate}</p>
-                <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-                
-                <p>Please <a href="${process.env.VITE_APP_URL}/pr/${prNumber}">click here</a> to review the purchase request in the system.</p>
+                <h2>PR Status Change Notification</h2>
+                <p>PR #${notification.prNumber} has been updated:</p>
+                <ul>
+                    <li>From: ${notification.oldStatus}</li>
+                    <li>To: ${notification.newStatus}</li>
+                    <li>By: ${notification.user.name} (${notification.user.email})</li>
+                    <li>Notes: ${notification.notes || 'No notes provided'}</li>
+                </ul>
+                <h3>PR Details:</h3>
+                <ul>
+                    <li>Description: ${notification.metadata.description}</li>
+                    <li>Amount: ${notification.metadata.currency} ${notification.metadata.amount}</li>
+                    <li>Department: ${notification.metadata.department}</li>
+                    <li>Required Date: ${notification.metadata.requiredDate}</li>
+                </ul>
+                <p>Please log in to the system to view more details.</p>
             `
         };
-        // Send email to procurement team and cc the requestor
-        const info = await transporter.sendMail({
-            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
-            to: 'procurement@1pwrafrica.com',
-            cc: requestor.email,
-            subject: `New PR Submission - ${prNumber}`,
-            text: emailContent.text,
-            html: emailContent.html
+        // Send email to each recipient
+        const emailPromises = recipients.map((recipient) => transporter.sendMail({
+            from: '"1PWR System" <noreply@1pwrafrica.com>',
+            to: recipient,
+            subject: template.subject,
+            html: template.html
+        }));
+        await Promise.all(emailPromises);
+        // Log successful notification
+        await firebase_1.db.collection('notificationLogs').add({
+            type: 'STATUS_CHANGE',
+            status: 'sent',
+            timestamp: firebase_1.FieldValue.serverTimestamp(),
+            notification,
+            recipients
         });
-        console.log('Submission notification sent:', info.messageId);
-        res.status(200).json({ success: true, messageId: info.messageId });
+        return { success: true };
     }
     catch (error) {
-        console.error('Error sending submission notification:', error);
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
+        console.error('Error sending notification:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to send notification');
     }
 });
-exports.sendStatusChangeEmail = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
+exports.sendSubmissionEmail = functions.https.onRequest(async (req, res) => {
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
         return;
     }
-    if (req.method !== 'POST') {
-        res.status(405).send('Method Not Allowed');
+    const { email, name, prNumber, oldStatus, newStatus, notes } = req.body;
+    if (!email || !name || !prNumber || !oldStatus || !newStatus) {
+        res.status(400).json({ error: 'Missing required fields' });
         return;
     }
-    const { prNumber, description, oldStatus, newStatus, updaterName, updaterEmail, requestorEmail, notes, department, requiredDate, baseUrl } = req.body;
     try {
         const info = await transporter.sendMail({
-            from: '"1PWR PR System" <noreply@1pwrafrica.com>',
-            to: 'procurement@1pwrafrica.com',
-            cc: requestorEmail,
-            subject: `PR Status Change - ${prNumber}`,
-            text: `
-Purchase Request ${prNumber}
-
-Status Changed: ${oldStatus} → ${newStatus}
-Updated By: ${updaterName} (${updaterEmail})
-
-Department: ${department}
-Description: ${description}
-Required Date: ${requiredDate}
-
-Notes: ${notes}
-
-Please visit ${baseUrl}/pr/${prNumber} to review the purchase request in the system.
-`,
+            from: '"1PWR System" <noreply@1pwrafrica.com>',
+            to: email,
+            subject: `PR ${prNumber} Status Changed to ${newStatus}`,
             html: `
-<h2>Purchase Request ${prNumber}</h2>
-
-<p><strong>Status Changed:</strong> ${oldStatus} → ${newStatus}</p>
-<p><strong>Updated By:</strong> ${updaterName} (${updaterEmail})</p>
-
-<p><strong>Department:</strong> ${department}</p>
-<p><strong>Description:</strong> ${description}</p>
-<p><strong>Required Date:</strong> ${requiredDate}</p>
-
-<p><strong>Notes:</strong> ${notes}</p>
-
-<p>Please <a href="${baseUrl}/pr/${prNumber}">click here</a> to review the purchase request in the system.</p>
-`
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2>Purchase Request Status Change</h2>
+                    <p>Dear ${name},</p>
+                    <p>The status of PR #${prNumber} has been changed:</p>
+                    <ul>
+                        <li>From: ${oldStatus}</li>
+                        <li>To: ${newStatus}</li>
+                    </ul>
+                    ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+                    <p>Please log in to the system to view more details.</p>
+                    <p>Best regards,<br>1PWR System</p>
+                </div>
+            `
         });
         console.log('Status change email sent:', info.messageId);
         res.status(200).json({ success: true });
     }
     catch (error) {
-        console.error('Error sending status change email:', error);
-        res.status(500).json({
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-        });
+        console.error('Error sending email:', error);
+        res.status(500).json({ error: 'Failed to send email' });
     }
 });
 //# sourceMappingURL=index.js.map

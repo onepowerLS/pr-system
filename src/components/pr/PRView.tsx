@@ -69,6 +69,7 @@ import { collection, doc, getDoc, query, where, getDocs, updateDoc } from "fireb
 import { QuotesStep } from './steps/QuotesStep';
 import { notificationService } from '@/services/notification';
 import { approverService } from '@/services/approver';
+import { ApproverActions } from './ApproverActions';
 
 interface EditablePRFields {
   department?: string;
@@ -467,6 +468,7 @@ export function PRView() {
     pr?.approver || pr?.approvers?.[0] || pr?.approvalWorkflow?.currentApprover || undefined
   );
   const [loadingApprovers, setLoadingApprovers] = useState(false);
+  const [currentApprover, setCurrentApprover] = useState<User | null>(null);
   const { enqueueSnackbar } = useSnackbar();
   const [isExitingEditMode, setIsExitingEditMode] = React.useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
@@ -659,11 +661,10 @@ export function PRView() {
         setApprovers(approverList);
 
         // Set initial selected approver if present
-        const currentApproverId = pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover;
-        if (currentApproverId) {
-          const currentApprover = approverList.find(a => a.id === currentApproverId);
+        if (pr.approvalWorkflow?.currentApprover) {
+          const currentApprover = approverList.find(a => a.id === pr.approvalWorkflow?.currentApprover);
           console.log('Setting current approver:', {
-            currentApproverId,
+            workflowApproverId: pr.approvalWorkflow.currentApprover,
             foundApprover: currentApprover,
             workflow: pr.approvalWorkflow
           });
@@ -688,6 +689,21 @@ export function PRView() {
       mounted = false;
     };
   }, [pr?.organization, pr?.approver, pr?.approvers, pr?.approvalWorkflow]);
+
+  useEffect(() => {
+    const loadCurrentApprover = async () => {
+      if (!pr?.approvalWorkflow?.currentApprover) return;
+      
+      try {
+        const approverDoc = await userService.getUserById(pr.approvalWorkflow.currentApprover);
+        setCurrentApprover(approverDoc);
+      } catch (error) {
+        console.error('Error loading current approver:', error);
+      }
+    };
+
+    loadCurrentApprover();
+  }, [pr?.approvalWorkflow?.currentApprover]);
 
   const handleAddLineItem = (): void => {
     const newItem: LineItem = {
@@ -1769,6 +1785,18 @@ export function PRView() {
             currentStatus={pr.status}
             requestorEmail={pr.requestorEmail}
             currentUser={currentUser}
+            onStatusChange={refreshPR}
+          />
+        </Box>
+      )}
+
+      {/* Approver Actions */}
+      {pr.status === PRStatus.PENDING_APPROVAL && (
+        <Box sx={{ mb: 3 }}>
+          <ApproverActions
+            pr={pr}
+            currentUser={currentUser}
+            assignedApprover={currentApprover}
             onStatusChange={refreshPR}
           />
         </Box>

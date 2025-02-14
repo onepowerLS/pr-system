@@ -666,30 +666,68 @@ export const prService = {
    * @param {User} updatedBy - User who updated the status
    * @returns {Promise<void>}
    */
-  async updateStatus(prId: string, status: PRStatus, updatedBy: User): Promise<void> {
+  async updatePRStatus(
+    prId: string, 
+    newStatus: PRStatus,
+    notes?: string,
+    user?: User
+  ): Promise<void> {
     try {
-      console.log('Updating PR status:', JSON.stringify({ prId, status, updatedBy }, null, 2));
-      
       const prRef = doc(db, PR_COLLECTION, prId);
-      
-      // Get the current PR data
-      const prSnapshot = await getDoc(prRef);
-      if (!prSnapshot.exists()) {
+      const prDoc = await getDoc(prRef);
+
+      if (!prDoc.exists()) {
         throw new Error('PR not found');
       }
-      
-      const prData = prSnapshot.data();
+
+      const prData = prDoc.data();
       const oldStatus = prData.status;
-      
-      // Update the PR status
+      const isPO = prData.type === 'PO' || oldStatus === PRStatus.ORDERED || oldStatus === PRStatus.PARTIALLY_RECEIVED;
+
+      // Create workflow history entry
+      const workflowEntry = {
+        type: 'STATUS_CHANGE',
+        fromStatus: oldStatus,
+        toStatus: newStatus,
+        timestamp: Timestamp.now(),
+        user: {
+          id: user?.id || 'system',
+          email: user?.email || 'system@1pwrafrica.com',
+          name: user?.firstName && user?.lastName 
+            ? `${user.firstName} ${user.lastName}`
+            : user?.email?.split('@')[0] || 'System'
+        },
+        notes: notes || ''
+      };
+
+      // Update PR document with both status and workflow history
       await updateDoc(prRef, {
-        status,
-        updatedAt: Timestamp.fromDate(new Date()),
-        isUrgent: prData.isUrgent ?? false  // Ensure isUrgent is always a boolean
+        status: newStatus,
+        type: isPO ? 'PO' : 'PR',
+        lastUpdated: serverTimestamp(),
+        workflowHistory: arrayUnion(workflowEntry)
       });
+
+      console.log('PR status updated:', {
+        prId,
+        oldStatus,
+        newStatus,
+        workflowEntry,
+        user: user?.email
+      });
+
+      // Send notification
+      await notificationService.handleStatusChange(
+        prId,
+        oldStatus,
+        newStatus,
+        user || { email: 'system@1pwrafrica.com' },
+        notes
+      );
+
     } catch (error) {
-      console.error('Error updating PR status:', JSON.stringify(error, null, 2));
-      throw error;
+      console.error('Error updating PR status:', error);
+      throw new Error(`Failed to update PR status: ${error.message}`);
     }
   },
 
@@ -835,126 +873,6 @@ export const prService = {
     } catch (error) {
       console.error('Error getting PR:', JSON.stringify(error, null, 2));
       throw error;
-    }
-  },
-
-  /**
-   * Updates the status of a PR
-   * @param prId PR ID
-   * @param newStatus New status to set
-   * @param notes Optional notes about the status change
-   * @param user User making the change
-   * @returns Promise that resolves when the update is complete
-   */
-  async updatePRStatus(
-    prId: string, 
-    newStatus: PRStatus,
-    notes?: string,
-    user?: User
-  ): Promise<void> {
-    try {
-      const db = getFirestore();
-      const prRef = doc(db, PR_COLLECTION, prId);
-      const prDoc = await getDoc(prRef);
-      
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
-      }
-
-      const pr = prDoc.data() as PRRequest;
-      const timestamp = Timestamp.now();
-
-      // Prepare workflow history entry
-      const historyEntry = {
-        step: newStatus,
-        timestamp,
-        user: user || null,
-        notes: notes || ''
-      };
-
-      // Prepare base update object
-      const updateData: any = {
-        status: newStatus,
-        [`workflowHistory`]: arrayUnion(historyEntry),
-        lastModifiedAt: timestamp,
-        lastModifiedBy: user?.email || 'system'
-      };
-
-      // Special handling for PENDING_APPROVAL status
-      if (newStatus === PRStatus.PENDING_APPROVAL) {
-        // Get approver details
-        const approver = await this.getApproverForPR(pr);
-        if (!approver) {
-          throw new Error('No eligible approver found for PR');
-        }
-
-        updateData.approvalWorkflow = {
-          currentApprover: approver.id,
-          approvalChain: [approver.id],
-          approvalHistory: [],
-          submittedForApprovalAt: timestamp
-        };
-
-        // Send notifications to all relevant parties
-        await this.sendStatusChangeNotifications(prId, newStatus, {
-          requestor: pr.requestorEmail,
-          procurement: user?.email,
-          approver: approver.email,
-          prNumber: pr.prNumber,
-          amount: pr.estimatedAmount,
-          currency: pr.currency,
-          description: pr.description
-        });
-      }
-
-      // Update the PR
-      await updateDoc(prRef, updateData);
-
-      console.log('PR status updated successfully:', { prId, newStatus });
-    } catch (error) {
-      console.error('Error updating PR status:', error);
-      throw new Error('Failed to update PR status');
-    }
-  },
-
-  async sendStatusChangeNotifications(
-    prId: string,
-    status: PRStatus,
-    details: {
-      requestor: string;
-      procurement?: string;
-      approver?: string;
-      prNumber: string;
-      amount: number;
-      currency: string;
-      description: string;
-    }
-  ): Promise<void> {
-    try {
-      const sendStatusChangeNotification = httpsCallable(functions, 'sendStatusChangeNotification');
-      await sendStatusChangeNotification({
-        notification: {
-          prId,
-          prNumber: details.prNumber,
-          oldStatus: status,
-          newStatus: status,
-          changedBy: {
-            name: details.requestor,
-            email: details.requestor
-          },
-          notes: '',
-          description: details.description,
-          department: '',
-          requiredDate: '',
-          baseUrl: window.location.origin,
-          approverName: details.approver,
-          approverEmail: details.approver
-        },
-        recipients: [details.requestor, details.procurement, details.approver].filter(Boolean)
-      });
-    } catch (error) {
-      console.error('Error sending notifications:', error);
-      // Don't throw error to prevent blocking PR status update
     }
   },
 

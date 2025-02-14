@@ -30,7 +30,7 @@
  * - Dead letter queue for undeliverable notifications
  */
 
-import { collection, addDoc, Timestamp, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
 import { NotificationLog, NotificationType, StatusChangeNotification } from '../types/notification';
@@ -91,7 +91,7 @@ export class NotificationService {
     notes?: string
   ): Promise<void> {
     try {
-      // Get PR data
+      // Get PR details
       const prRef = doc(db, 'purchaseRequests', prId);
       const prDoc = await getDoc(prRef);
       
@@ -99,74 +99,81 @@ export class NotificationService {
         throw new Error('PR not found');
       }
 
-      const pr = prDoc.data();
-      const functions = getFunctions();
-      const sendStatusChangeNotification = httpsCallable(functions, 'sendStatusChangeNotification');
-
-      // Get user's name, falling back to email username if firstName/lastName not available
-      const updaterName = user.firstName && user.lastName 
-        ? `${user.firstName} ${user.lastName}`
-        : user.email.split('@')[0];
-
-      // Get approver details if present
-      let approverName: string | undefined;
-      let approverEmail: string | undefined;
+      const pr = prDoc.data() as any;
       
-      if (pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover) {
-        const approverId = pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover;
-        if (approverId) {
-          const approverRef = doc(db, 'users', approverId);
-          const approverDoc = await getDoc(approverRef);
+      // Determine recipients
+      const recipients = new Set<string>();
+      
+      // Always notify requestor
+      if (pr.requestorEmail) {
+        recipients.add(pr.requestorEmail);
+      }
+      
+      // Always notify procurement team
+      const procurementTeam = await this.getProcurementTeamEmails(pr.organization);
+      procurementTeam.forEach(email => recipients.add(email));
+      
+      // If status is changing to or from PENDING_APPROVAL, notify approver
+      if (newStatus === 'PENDING_APPROVAL' || oldStatus === 'PENDING_APPROVAL') {
+        if (pr.approvalWorkflow?.currentApprover) {
+          const approverDoc = await getDoc(doc(db, 'users', pr.approvalWorkflow.currentApprover));
           if (approverDoc.exists()) {
-            const approverData = approverDoc.data();
-            approverName = approverData.firstName && approverData.lastName 
-              ? `${approverData.firstName} ${approverData.lastName}`
-              : approverData.email.split('@')[0];
-            approverEmail = approverData.email;
+            const approver = approverDoc.data();
+            if (approver.email) {
+              recipients.add(approver.email);
+            }
           }
         }
       }
 
-      // Prepare notification data
-      const notificationData = {
-        notification: {
-          prId,
-          prNumber: pr.prNumber,
-          oldStatus,
-          newStatus,
-          changedBy: {
-            name: updaterName,
-            email: user.email
-          },
-          notes: notes || '',
-          description: pr.description,
-          department: pr.department,
-          requiredDate: pr.requiredDate,
-          baseUrl: window.location.origin,
-          approverName,
-          approverEmail
+      // Create notification
+      const notification = {
+        type: 'STATUS_CHANGE',
+        prId,
+        prNumber: pr.prNumber,
+        oldStatus,
+        newStatus,
+        timestamp: new Date().toISOString(),
+        user: {
+          email: user.email,
+          name: user.firstName && user.lastName 
+            ? `${user.firstName} ${user.lastName}`
+            : user.email.split('@')[0]
         },
-        recipients: [pr.requestorEmail, 'procurement@1pwrafrica.com']
+        notes: notes || '',
+        metadata: {
+          description: pr.description,
+          amount: pr.estimatedAmount,
+          currency: pr.currency,
+          department: pr.department,
+          requiredDate: pr.requiredDate
+        }
       };
 
-      // Add approver to recipients if status is PENDING_APPROVAL
-      if (approverEmail && newStatus === 'PENDING_APPROVAL') {
-        notificationData.recipients.push(approverEmail);
-      }
+      console.log('Sending status change notification:', {
+        notification,
+        recipients: Array.from(recipients)
+      });
 
-      // Send notification using callable function
-      await sendStatusChangeNotification(notificationData);
+      // Send notification via Cloud Function
+      const functions = getFunctions();
+      const sendNotification = httpsCallable(functions, 'sendStatusChangeNotification');
+      await sendNotification({
+        notification,
+        recipients: Array.from(recipients)
+      });
 
-      // Log the notification
-      await this.logNotification(
-        'STATUS_CHANGE',
-        prId,
-        notificationData.recipients,
-        'sent'
-      );
+      // Store notification in Firestore
+      const notificationRef = doc(collection(db, 'notifications'));
+      await setDoc(notificationRef, {
+        ...notification,
+        recipients: Array.from(recipients),
+        createdAt: serverTimestamp()
+      });
+
     } catch (error) {
       console.error('Error sending status change notification:', error);
-      throw new Error('Failed to send status change notification');
+      throw new Error(`Failed to send notification: ${error.message}`);
     }
   }
 
@@ -331,6 +338,11 @@ export class NotificationService {
       id: doc.id,
       ...doc.data()
     })) as NotificationLog[];
+  }
+
+  async getProcurementTeamEmails(organization: string): Promise<string[]> {
+    // TO DO: implement logic to retrieve procurement team emails
+    return [];
   }
 }
 
