@@ -931,22 +931,26 @@ export const prService = {
     }
   ): Promise<void> {
     try {
-      const notifyFunction = httpsCallable(functions, 'notifyStatusChange');
-      await notifyFunction({
-        prId,
-        status,
-        baseUrl: window.location.origin,
-        recipients: {
-          requestor: details.requestor,
-          procurement: details.procurement,
-          approver: details.approver
-        },
-        prDetails: {
+      const sendStatusChangeNotification = httpsCallable(functions, 'sendStatusChangeNotification');
+      await sendStatusChangeNotification({
+        notification: {
+          prId,
           prNumber: details.prNumber,
-          amount: details.amount,
-          currency: details.currency,
-          description: details.description
-        }
+          oldStatus: status,
+          newStatus: status,
+          changedBy: {
+            name: details.requestor,
+            email: details.requestor
+          },
+          notes: '',
+          description: details.description,
+          department: '',
+          requiredDate: '',
+          baseUrl: window.location.origin,
+          approverName: details.approver,
+          approverEmail: details.approver
+        },
+        recipients: [details.requestor, details.procurement, details.approver].filter(Boolean)
       });
     } catch (error) {
       console.error('Error sending notifications:', error);

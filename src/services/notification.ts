@@ -129,36 +129,39 @@ export class NotificationService {
 
       // Prepare notification data
       const notificationData = {
-        prId,
-        prNumber: pr.prNumber,
-        oldStatus,
-        newStatus,
-        updaterName,
-        updaterEmail: user.email,
-        requestorEmail: pr.requestorEmail,
-        notes: notes || '',
-        description: pr.description,
-        department: pr.department,
-        requiredDate: pr.requiredDate,
-        baseUrl: window.location.origin,
-        prUrl: `${window.location.origin}/pr/${prId}`,
-        approverName,
-        approverEmail
+        notification: {
+          prId,
+          prNumber: pr.prNumber,
+          oldStatus,
+          newStatus,
+          changedBy: {
+            name: updaterName,
+            email: user.email
+          },
+          notes: notes || '',
+          description: pr.description,
+          department: pr.department,
+          requiredDate: pr.requiredDate,
+          baseUrl: window.location.origin,
+          approverName,
+          approverEmail
+        },
+        recipients: [pr.requestorEmail, 'procurement@1pwrafrica.com']
       };
+
+      // Add approver to recipients if status is PENDING_APPROVAL
+      if (approverEmail && newStatus === 'PENDING_APPROVAL') {
+        notificationData.recipients.push(approverEmail);
+      }
 
       // Send notification using callable function
       await sendStatusChangeNotification(notificationData);
 
       // Log the notification
-      const recipients = [pr.requestorEmail, 'procurement@1pwrafrica.com'];
-      if (approverEmail && newStatus === 'PENDING_APPROVAL') {
-        recipients.push(approverEmail);
-      }
-      
       await this.logNotification(
         'STATUS_CHANGE',
         prId,
-        recipients,
+        notificationData.recipients,
         'sent'
       );
     } catch (error) {

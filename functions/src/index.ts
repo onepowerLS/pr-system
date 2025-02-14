@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import * as nodemailer from 'nodemailer';
+import cors from 'cors';
 import { updateUserPassword } from './updateUserPassword';
 import { setUserClaims } from './setUserClaims';
 import { setupInitialAdmin } from './setupInitialAdmin';
@@ -128,11 +129,6 @@ const generatePREmailContent = (prData: any) => {
 
 // Function to send PR notification
 export const sendPRNotification = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
@@ -189,11 +185,6 @@ export const sendPRNotification = functions.https.onRequest(async (req, res) => 
 
 // Function to send approver notification
 export const sendApproverNotification = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
@@ -267,7 +258,6 @@ export const sendApproverNotification = functions.https.onRequest(async (req, re
 // Function to send status change notification
 export const sendStatusChangeNotification = functions.https.onCall(async (data, context) => {
     try {
-        const { notification, recipients } = data;
         const { 
             prId, 
             prNumber, 
@@ -281,7 +271,7 @@ export const sendStatusChangeNotification = functions.https.onCall(async (data, 
             approverEmail,
             department,
             requiredDate
-        } = notification;
+        } = data.notification;
 
         // Create email content
         const text = `
@@ -321,7 +311,7 @@ export const sendStatusChangeNotification = functions.https.onCall(async (data, 
         // Send email
         const info = await transporter.sendMail({
             from: '"1PWR PR System" <noreply@1pwrafrica.com>',
-            to: recipients.join(', '),
+            to: data.recipients.join(', '),
             subject: `Purchase Request ${prNumber} - Status Changed: ${oldStatus} → ${newStatus}`,
             text,
             html
@@ -341,11 +331,6 @@ export const sendStatusChangeNotification = functions.https.onCall(async (data, 
 
 // Test email function
 export const testEmailNotification = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
@@ -379,11 +364,6 @@ export const testEmailNotification = functions.https.onRequest(async (req, res) 
 
 // Function to send PR submission notification
 export const sendSubmissionEmail = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
@@ -466,11 +446,6 @@ export const sendSubmissionEmail = functions.https.onRequest(async (req, res) =>
 });
 
 export const sendStatusChangeEmail = functions.https.onRequest(async (req, res) => {
-    // Add CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
