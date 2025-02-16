@@ -336,6 +336,7 @@ Please log in to the system to view more details: ${prUrl}`,
           currency: pr.currency,
           estimatedAmount: pr.estimatedAmount || 0,
           requestor: requestorName,
+          urgencyLevel: pr.isUrgent ? 'HIGH' : 'NORMAL',
           items: pr.lineItems ? pr.lineItems.map(item => ({
             description: item.description || '',
             quantity: item.quantity || 0,

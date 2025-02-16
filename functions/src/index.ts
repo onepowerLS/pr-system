@@ -98,18 +98,19 @@ const generatePREmailContent = (prData: any) => {
             <h2 style="color: #333;">Purchase Request Details</h2>
             ${prData.urgencyLevel ? `
                 <div style="display: inline-block; 
-                            padding: 4px 8px; 
+                            padding: 8px 16px; 
                             border-radius: 4px; 
                             font-weight: bold;
-                            margin-bottom: 15px;
+                            margin-bottom: 20px;
                             background-color: ${
                                 prData.urgencyLevel === 'HIGH' ? '#ff4444' :
                                 prData.urgencyLevel === 'MEDIUM' ? '#ffbb33' :
                                 '#00C851'
                             };
-                            color: ${prData.urgencyLevel === 'LOW' ? '#000' : '#fff'}">
-                    ${prData.urgencyLevel} Priority
-                </div>` : ''}
+                            color: ${prData.urgencyLevel === 'NORMAL' ? '#000' : '#fff'}">
+                    ${prData.urgencyLevel} PRIORITY
+                </div>
+            ` : ''}
             <table style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">
                 <tr>
                     <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>PR Number</strong></td>
@@ -190,12 +191,17 @@ export const sendPRNotification = functions.https.onCall(async (data, context) =
 
         const emailContent = generatePREmailContent(prData);
 
+        // Prepare email subject with urgency if HIGH
+        const emailSubject = prData.urgencyLevel === 'HIGH' 
+            ? `URGENT: Purchase Request #${prData.prNumber}`
+            : `Purchase Request #${prData.prNumber}`;
+
         // Send email to recipients with CC
         const mailOptions = {
             from: '"1PWR System" <noreply@1pwrafrica.com>',
             to: recipients.join(', '),
             cc: cc.join(', '),
-            subject: `New Purchase Request: PR #${prData.prNumber}`,
+            subject: emailSubject,
             html: emailContent
         };
 
