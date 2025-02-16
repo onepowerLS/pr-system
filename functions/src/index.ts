@@ -77,8 +77,8 @@ export const sendPRNotification = functions.https.onCall(async (data: Notificati
             transporter.sendMail({
                 from: '"1PWR System" <noreply@1pwrafrica.com>',
                 to: recipient,
-                cc: cc,
-                subject: `PR ${notification.prNumber} Status Updated to ${notification.newStatus}`,
+                cc: cc.filter(email => email !== recipient), // Exclude recipient from CC list
+                subject: `New Purchase Request: PR #${notification.prNumber}`,
                 text: emailBody.text,
                 html: emailBody.html
             })

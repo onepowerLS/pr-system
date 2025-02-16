@@ -200,7 +200,20 @@ export const prService = {
 
       // Send notification for PR submission
       try {
-        await notificationService.handleSubmission(docRef.id, pr.description || '', user);
+        // Get the complete PR data with ID
+        const prDoc = await getDoc(docRef);
+        if (!prDoc.exists()) {
+          throw new Error('PR document not found after creation');
+        }
+
+        const prWithId = {
+          ...prDoc.data(),
+          id: docRef.id,
+          requestor: user.displayName || user.email || user.uid
+        };
+
+        console.log('Sending notification with PR data:', prWithId);
+        await notificationService.handleSubmission(prWithId, 'create');
       } catch (notificationError) {
         console.error('Error sending PR submission notification:', notificationError);
         // Don't throw the error since PR was created successfully

@@ -245,94 +245,164 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Handles a PR submission notification.
-   * 
-   * @param prId PR ID associated with the notification
-   * @param description PR description
-   * @param user User who submitted the PR
-   */
-  async handleSubmission(prId: string, description: string, user: User): Promise<void> {
+  async handleSubmission(pr: PR, action: string): Promise<void> {
     try {
-      // Get PR data
-      const prRef = doc(db, 'purchaseRequests', prId);
-      const prDoc = await getDoc(prRef);
-      
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
+      console.log('Starting handleSubmission with:', {
+        prId: pr.id,
+        prNumber: pr.prNumber,
+        action
+      });
+
+      const recipients = await this.getNotificationRecipients(pr);
+      console.log('Retrieved recipients:', recipients);
+
+      // Validate core fields
+      if (!pr.id || typeof pr.id !== 'string') {
+        throw new Error(`Invalid prId: ${pr.id}`);
+      }
+      if (!pr.prNumber || typeof pr.prNumber !== 'string') {
+        throw new Error(`Invalid prNumber: ${pr.prNumber}`);
+      }
+      if (!Array.isArray(recipients) || recipients.length === 0) {
+        throw new Error(`Invalid recipients: ${JSON.stringify(recipients)}`);
       }
 
-      const pr = prDoc.data();
-      const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
+      // Ensure all recipients are valid email addresses
+      const validatedRecipients = recipients.map(recipient => {
+        if (typeof recipient !== 'string' || !recipient.includes('@')) {
+          throw new Error(`Invalid recipient: ${recipient}`);
+        }
+        return recipient.toLowerCase();
+      });
 
-      // Get user's name, falling back to email username if firstName/lastName not available
-      const requestorName = user.firstName && user.lastName 
-        ? `${user.firstName} ${user.lastName}`
-        : user.email.split('@')[0];
+      // Get priority display info
+      const priorityStyle = pr.isUrgent 
+        ? 'background-color: #ff4444; color: white;' 
+        : 'background-color: #00C851; color: #000';
+      const priorityText = pr.isUrgent ? 'URGENT' : 'NORMAL PRIORITY';
 
-      // Calculate total amount
-      const totalAmount = pr.lineItems ? pr.lineItems.reduce((sum: number, item: any) => sum + (item.total || 0), 0) : 0;
+      // Format line items HTML
+      const lineItemsHtml = pr.lineItems?.map((item, index) => `
+        <div style="margin-bottom: 20px;">
+          <h3 style="margin: 0 0 10px 0;">Item ${index + 1}</h3>
+          <table style="border-collapse: collapse; width: 100%;">
+            <tr>
+              <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>Description</strong></td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${item.description}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #ddd;"><strong>Quantity</strong></td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #ddd;"><strong>UOM</strong></td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${item.uom}</td>
+            </tr>
+            ${item.notes ? `
+            <tr>
+              <td style="padding: 8px; border: 1px solid #ddd;"><strong>Notes</strong></td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${item.notes}</td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+      `).join('\n') || '';
 
-      // Prepare notification data
+      // Construct notification data matching cloud function's expected structure
       const notificationData = {
-        prData: {
-          id: prId,
+        notification: {
+          prId: pr.id,
           prNumber: pr.prNumber,
-          description,
-          department: pr.department || 'Not specified',
-          requiredDate: pr.requiredDate || 'Not specified',
-          currency: pr.currency,
-          estimatedAmount: pr.estimatedAmount || 0,
-          requestor: requestorName,
-          urgencyLevel: pr.isUrgent ? 'HIGH' : 'NORMAL',
-          items: pr.lineItems ? pr.lineItems.map(item => ({
-            description: item.description || '',
-            quantity: item.quantity || 0,
-            uom: item.uom || '',
-            notes: item.notes || 'N/A',
-            attachments: item.attachments || []
-          })) : []
+          oldStatus: '',  // New PR, no old status
+          newStatus: 'SUBMITTED',
+          user: {
+            email: pr.requestorEmail || '',
+            name: pr.requestor || ''
+          },
+          notes: '',  // No notes for initial submission
+          metadata: {
+            description: pr.description || '',
+            amount: pr.estimatedAmount || pr.amount || 0,  // Use estimatedAmount or amount
+            currency: pr.currency || 'LSL',
+            department: pr.department || '',
+            requiredDate: pr.requiredDate || ''
+          }
         },
-        recipients: [this.PROCUREMENT_EMAIL, user.email]
+        recipients: validatedRecipients,
+        cc: [pr.requestorEmail], // Include requestor in CC
+        emailBody: {
+          text: `${pr.isUrgent ? 'URGENT: ' : ''}New Purchase Request: PR #${pr.prNumber}`,
+          html: `
+        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
+            <h2 style="color: #333;">Purchase Request Details</h2>
+           
+            <div style="display: inline-block; 
+                        padding: 8px 16px; 
+                        border-radius: 4px; 
+                        font-weight: bold;
+                        margin-bottom: 20px;
+                        ${priorityStyle}">
+                ${priorityText}
+            </div>
+           
+            <table style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>PR Number</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.prNumber}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Description</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.description || 'N/A'}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Department</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.department || 'N/A'}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Required Date</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.requiredDate || 'N/A'}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Estimated Amount</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.currency || 'LSL'} ${pr.estimatedAmount || pr.amount || 0}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Requestor</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.requestor || 'N/A'}</td>
+                </tr>
+            </table>
+
+            <div style="margin-bottom: 20px;">
+                <a href="https://pr.1pwrafrica.com/pr/${pr.id}" 
+                   target="_blank"
+                   style="display: inline-block;
+                          padding: 10px 20px;
+                          background-color: #4CAF50;
+                          color: white;
+                          text-decoration: none;
+                          border-radius: 4px;
+                          margin-bottom: 20px;">
+                    View Purchase Request
+                </a>
+            </div>
+
+            <h3 style="color: #333;">Items</h3>
+            ${lineItemsHtml}
+        </div>
+          `
+        },
+        metadata: {
+          prUrl: `https://pr.1pwrafrica.com/pr/${pr.id}`,
+          requestorEmail: pr.requestorEmail || ''
+        }
       };
 
-      console.log('Sending PR submission notification:', notificationData);
+      console.log('Sending notification with data:', notificationData);
 
-      try {
-        // Send notification using callable function
-        const result = await sendPRNotification(notificationData);
-        console.log('PR notification sent successfully:', result);
-
-        // Log the notification
-        await this.logNotification(
-          'PR_CREATED',
-          prId,
-          [this.PROCUREMENT_EMAIL],
-          'sent'
-        );
-      } catch (error: any) {
-        console.error('Error sending PR notification:', error);
-        const errorMessage = error.message || 'Failed to send notification';
-        
-        // Log failed notification
-        await this.logNotification(
-          'PR_CREATED',
-          prId,
-          [this.PROCUREMENT_EMAIL],
-          'failed'
-        );
-        
-        throw new Error(errorMessage);
-      }
+      const result = await sendPRNotification(notificationData);
+      console.log('Cloud function response:', result);
     } catch (error) {
-      console.error('Error sending submission notification:', error);
-      // Log failed notification
-      await this.logNotification(
-        'PR_CREATED',
-        prId,
-        [this.PROCUREMENT_EMAIL],
-        'failed'
-      );
+      console.error('Error in handleSubmission:', error);
       throw error;
     }
   }
@@ -496,6 +566,18 @@ export class NotificationService {
     console.log('Notification object:', notification);
 
     return notification;
+  }
+
+  private async getNotificationRecipients(pr: PR): Promise<string[]> {
+    // Always include procurement team
+    const recipients = [this.PROCUREMENT_EMAIL];
+
+    // Add requestor to recipients
+    if (pr.requestor?.email) {
+      recipients.push(pr.requestor.email);
+    }
+
+    return recipients;
   }
 }
 
