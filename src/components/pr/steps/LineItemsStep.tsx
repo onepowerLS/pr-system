@@ -42,27 +42,13 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import { FormState } from '../NewPRForm';
 import { StorageService } from '../../../services/storage';
 import { Attachment } from '../../../types/pr';
+import { referenceDataService } from '../../../services/referenceData';
 
 interface LineItemsStepProps {
   formState: FormState;
   setFormState: React.Dispatch<React.SetStateAction<FormState>>;
   loading: boolean;
 }
-
-const UOM_OPTIONS = [
-  'EA',   // Each
-  'PCS',  // Pieces
-  'KG',   // Kilograms
-  'L',    // Liters
-  'M',    // Meters
-  'M2',   // Square Meters
-  'M3',   // Cubic Meters
-  'HR',   // Hours
-  'DAY',  // Days
-  'MTH',  // Months
-  'LOT',  // Lot
-  'SET',  // Set
-];
 
 const emptyLineItem = {
   description: '',
@@ -78,6 +64,23 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
   loading
 }) => {
   const [deleteIndex, setDeleteIndex] = React.useState<number | null>(null);
+  const [uomOptions, setUomOptions] = React.useState<string[]>([]);
+
+  // Load UOM options from reference data
+  React.useEffect(() => {
+    const loadUomOptions = async () => {
+      try {
+        const uomData = await referenceDataService.getItemsByType('uom');
+        const options = uomData
+          .filter(item => item.active)
+          .map(item => item.code || '');
+        setUomOptions(options);
+      } catch (error) {
+        console.error('Error loading UOM options:', error);
+      }
+    };
+    loadUomOptions();
+  }, []);
 
   // Add new line item
   const handleAddLineItem = () => {
@@ -251,7 +254,10 @@ export const LineItemsStep: React.FC<LineItemsStepProps> = ({
                           label="UOM"
                           required
                         >
-                          {UOM_OPTIONS.map((option) => (
+                          <MenuItem value="">
+                            <em>Select UOM</em>
+                          </MenuItem>
+                          {uomOptions.map((option) => (
                             <MenuItem key={option} value={option}>
                               {option}
                             </MenuItem>

@@ -192,6 +192,20 @@ interface StatusChangeNotification {
 interface NotificationPayload {
     notification: StatusChangeNotification;
     recipients: string[];
+    cc?: string[];
+    emailBody: {
+        text: string;
+        html: string;
+    };
+    metadata?: {
+        prUrl: string;
+        requestorEmail: string;
+        approverInfo?: {
+            id: string;
+            email: string;
+            name: string;
+        };
+    };
 }
 
 // Function to send status change notification
@@ -203,39 +217,18 @@ export const sendStatusChangeNotification = functions.https.onCall(async (data: 
         );
     }
 
-    const { notification, recipients } = data;
+    const { notification, recipients, cc = [], emailBody } = data;
 
     try {
-        // Get email template based on status change
-        const template = {
-            subject: `PR ${notification.prNumber} Status Updated to ${notification.newStatus}`,
-            html: `
-                <h2>PR Status Change Notification</h2>
-                <p>PR #${notification.prNumber} has been updated:</p>
-                <ul>
-                    <li>From: ${notification.oldStatus}</li>
-                    <li>To: ${notification.newStatus}</li>
-                    <li>By: ${notification.user.name} (${notification.user.email})</li>
-                    <li>Notes: ${notification.notes || 'No notes provided'}</li>
-                </ul>
-                <h3>PR Details:</h3>
-                <ul>
-                    <li>Description: ${notification.metadata.description}</li>
-                    <li>Amount: ${notification.metadata.currency} ${notification.metadata.amount}</li>
-                    <li>Department: ${notification.metadata.department}</li>
-                    <li>Required Date: ${notification.metadata.requiredDate}</li>
-                </ul>
-                <p>Please log in to the system to view more details.</p>
-            `
-        };
-
         // Send email to each recipient
         const emailPromises = recipients.map((recipient: string) =>
             transporter.sendMail({
                 from: '"1PWR System" <noreply@1pwrafrica.com>',
                 to: recipient,
-                subject: template.subject,
-                html: template.html
+                cc: cc,
+                subject: `PR ${notification.prNumber} Status Updated to ${notification.newStatus}`,
+                text: emailBody.text,
+                html: emailBody.html
             })
         );
 
@@ -247,7 +240,8 @@ export const sendStatusChangeNotification = functions.https.onCall(async (data: 
             status: 'sent',
             timestamp: FieldValue.serverTimestamp(),
             notification,
-            recipients
+            recipients,
+            cc
         });
 
         return { success: true };

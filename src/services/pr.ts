@@ -682,13 +682,59 @@ export const prService = {
 
       const prData = prDoc.data();
       const oldStatus = prData.status;
+
+      // Check permissions for status change
+      if (!user) {
+        throw new Error('User is required to update PR status');
+      }
+
+      // Only procurement (level 2,3) can move POs between statuses
+      const isProcurement = user.permissionLevel === 2 || user.permissionLevel === 3;
       const isPO = prData.type === 'PO' || oldStatus === PRStatus.ORDERED || oldStatus === PRStatus.PARTIALLY_RECEIVED;
+      
+      if (isPO && !isProcurement) {
+        throw new Error('Only procurement team members can update PO status');
+      }
+
+      // Only requestor can cancel their own PR
+      if (newStatus === PRStatus.CANCELED) {
+        const isRequestor = user.id === prData.requestor?.id;
+        if (!isRequestor && !isProcurement) {
+          throw new Error('Only the requestor or procurement team can cancel a PR');
+        }
+      }
+
+      // Only procurement can push to approval
+      if (newStatus === PRStatus.PENDING_APPROVAL && !isProcurement) {
+        throw new Error('Only procurement team members can push PRs to approval');
+      }
+
+      // Only approver or procurement can move from PENDING_APPROVAL to IN_QUEUE
+      if (oldStatus === PRStatus.PENDING_APPROVAL && newStatus === PRStatus.IN_QUEUE) {
+        const isApprover = user.id === prData.approvalWorkflow?.currentApprover?.id ||
+          prData.approvers?.includes(user.id);
+        if (!isApprover && !isProcurement) {
+          throw new Error('Only the current approver or procurement team can return a PR to queue');
+        }
+      }
+
+      let updates: any = {
+        status: newStatus,
+        lastModifiedBy: user?.email || 'system@1pwrafrica.com',
+        lastModifiedAt: serverTimestamp(),
+      };
+
+      if (oldStatus === PRStatus.IN_QUEUE && newStatus === PRStatus.PENDING_APPROVAL && prData.type === 'PR') {
+        updates.type = 'PO';
+        console.log('Converting PR to PO:', { prId, oldStatus, newStatus });
+      }
 
       // Create workflow history entry
       const workflowEntry = {
         type: 'STATUS_CHANGE',
         fromStatus: oldStatus,
         toStatus: newStatus,
+        step: newStatus,
         timestamp: Timestamp.now(),
         user: {
           id: user?.id || 'system',
@@ -697,34 +743,30 @@ export const prService = {
             ? `${user.firstName} ${user.lastName}`
             : user?.email?.split('@')[0] || 'System'
         },
-        notes: notes || ''
+        notes: `${updates.type || prData.type} ${notes ? `- ${notes}` : ''}`
       };
-
-      // Update PR document with both status and workflow history
-      await updateDoc(prRef, {
-        status: newStatus,
-        type: isPO ? 'PO' : 'PR',
-        lastUpdated: serverTimestamp(),
-        workflowHistory: arrayUnion(workflowEntry)
-      });
 
       console.log('PR status updated:', {
         prId,
         oldStatus,
         newStatus,
         workflowEntry,
-        user: user?.email
+        user: user?.email,
+        type: updates.type || prData.type
       });
+
+      // Update PR status and add to workflow history
+      updates.workflowHistory = arrayUnion(workflowEntry);
+      await updateDoc(prRef, updates);
 
       // Send notification
       await notificationService.handleStatusChange(
         prId,
         oldStatus,
         newStatus,
-        user || { email: 'system@1pwrafrica.com' },
+        user,
         notes
       );
-
     } catch (error) {
       console.error('Error updating PR status:', error);
       throw new Error(`Failed to update PR status: ${error.message}`);
@@ -998,7 +1040,7 @@ export const prService = {
 
       if (querySnapshot.empty) {
         console.warn(`No rules found for organization: ${organizationId} (normalized: ${normalizedOrgId})`);
-        return [];
+        return []; // Return empty array to indicate no rules
       }
 
       // Convert all documents to Rule objects
@@ -1037,7 +1079,19 @@ export const prService = {
       // Sort rules by threshold in ascending order
       rules.sort((a, b) => a.threshold - b.threshold);
 
-      // Always return an array of rules
+      // Log the rules we're returning
+      console.log('Returning rules:', {
+        organizationId,
+        normalizedOrgId,
+        rulesCount: rules.length,
+        rules: rules.map(r => ({
+          id: r.id,
+          type: r.type,
+          threshold: r.threshold,
+          currency: r.currency
+        }))
+      });
+
       return rules;
     } catch (error) {
       console.error('Error fetching organization rules:', error);

@@ -30,11 +30,13 @@
  * - Dead letter queue for undeliverable notifications
  */
 
-import { collection, addDoc, Timestamp, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, serverTimestamp, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
-import { NotificationLog, NotificationType, StatusChangeNotification } from '../types/notification';
+import { prService } from './pr';
 import { User } from '../types/user';
+import { PRStatus } from '../types/pr';
+import { Notification } from '../types/notification';
 
 /**
  * Notification Service class
@@ -46,6 +48,8 @@ export class NotificationService {
    * Collection name for notification logs in Firestore
    */
   private readonly notificationsCollection = 'purchaseRequestsNotifications';
+
+  private readonly PROCUREMENT_EMAIL = 'procurement@1pwrafrica.com';
 
   /**
    * Logs a notification in Firestore and returns the notification ID.
@@ -85,96 +89,168 @@ export class NotificationService {
    */
   async handleStatusChange(
     prId: string,
-    oldStatus: string,
-    newStatus: string,
-    user: User,
+    oldStatus: PRStatus,
+    newStatus: PRStatus,
+    user: User | null,
     notes?: string
   ): Promise<void> {
-    try {
-      // Get PR details
-      const prRef = doc(db, 'purchaseRequests', prId);
-      const prDoc = await getDoc(prRef);
-      
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
-      }
+    console.log('Attempt 1 to send status change notification for PR', prId);
 
-      const pr = prDoc.data() as any;
-      
-      // Determine recipients
-      const recipients = new Set<string>();
-      
-      // Always notify requestor
-      if (pr.requestorEmail) {
-        recipients.add(pr.requestorEmail);
-      }
-      
-      // Always notify procurement team
-      const procurementTeam = await this.getProcurementTeamEmails(pr.organization);
-      procurementTeam.forEach(email => recipients.add(email));
-      
-      // If status is changing to or from PENDING_APPROVAL, notify approver
-      if (newStatus === 'PENDING_APPROVAL' || oldStatus === 'PENDING_APPROVAL') {
+    let attempts = 0;
+    const maxAttempts = 3;
+    const retryDelay = 1000; // 1 second
+    let lastError: Error | null = null;
+
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+        const pr = await prService.getPR(prId);
+        if (!pr) {
+          throw new Error(`PR not found: ${prId}`);
+        }
+
+        // Get requestor email
+        let requestorEmail = '';
+        let requestorName = '';
+        if (pr.requestor?.id) {
+          const requestorDoc = await getDoc(doc(db, 'users', pr.requestor.id));
+          if (requestorDoc.exists()) {
+            const requestorData = requestorDoc.data();
+            requestorEmail = requestorData.email?.toLowerCase() || '';
+            requestorName = `${requestorData.firstName || ''} ${requestorData.lastName || ''}`.trim() || requestorData.email;
+          }
+        }
+
+        // Get current approver info
+        let approverInfo = null;
         if (pr.approvalWorkflow?.currentApprover) {
           const approverDoc = await getDoc(doc(db, 'users', pr.approvalWorkflow.currentApprover));
           if (approverDoc.exists()) {
-            const approver = approverDoc.data();
-            if (approver.email) {
-              recipients.add(approver.email);
-            }
+            const approverData = approverDoc.data();
+            approverInfo = {
+              id: pr.approvalWorkflow.currentApprover,
+              email: approverData.email?.toLowerCase() || '',
+              name: `${approverData.firstName || ''} ${approverData.lastName || ''}`.trim() || approverData.email
+            };
           }
         }
-      }
 
-      // Create notification
-      const notification = {
-        type: 'STATUS_CHANGE',
-        prId,
-        prNumber: pr.prNumber,
-        oldStatus,
-        newStatus,
-        timestamp: new Date().toISOString(),
-        user: {
-          email: user.email,
-          name: user.firstName && user.lastName 
-            ? `${user.firstName} ${user.lastName}`
-            : user.email.split('@')[0]
-        },
-        notes: notes || '',
-        metadata: {
-          description: pr.description,
-          amount: pr.estimatedAmount,
-          currency: pr.currency,
-          department: pr.department,
-          requiredDate: pr.requiredDate
+        const notification = await this.createNotification(
+          pr,
+          oldStatus,
+          newStatus,
+          user,
+          notes
+        );
+
+        // Format email content
+        const baseUrl = window.location.origin;
+        const prUrl = `${baseUrl}/pr/${prId}`;
+        const emailBody = {
+          text: `PR Status Change Notification
+
+PR #${pr.prNumber || 'Unknown'} has been updated:
+
+From: ${oldStatus || 'Unknown'}
+To: ${newStatus || 'Unknown'}
+By: ${notification.user.name} (${notification.user.email})
+Notes: ${notes || 'No notes provided'}
+
+PR Details:
+Description: ${pr.description || 'No description provided'}
+Amount: ${pr.currency || 'Unknown'} ${pr.estimatedAmount || 0}
+Department: ${pr.department || 'No department specified'}
+Required Date: ${pr.requiredDate || 'No date specified'}
+${approverInfo ? `Current Approver: ${approverInfo.name} (${approverInfo.email})\n` : ''}
+Requestor: ${requestorName} (${requestorEmail})
+
+Please log in to the system to view more details: ${prUrl}`,
+          html: `<h2>PR Status Change Notification</h2>
+
+<p>PR #${pr.prNumber || 'Unknown'} has been updated:</p>
+
+<ul style="list-style-type: none; padding-left: 20px;">
+    <li>From: ${oldStatus || 'Unknown'}</li>
+    <li>To: ${newStatus || 'Unknown'}</li>
+    <li>By: ${notification.user.name} (${notification.user.email})</li>
+    <li>Notes: ${notes || 'No notes provided'}</li>
+</ul>
+
+<h3>PR Details:</h3>
+
+<ul style="list-style-type: none; padding-left: 20px;">
+    <li>Description: ${pr.description || 'No description provided'}</li>
+    <li>Amount: ${pr.currency || 'Unknown'} ${pr.estimatedAmount || 0}</li>
+    <li>Department: ${pr.department || 'No department specified'}</li>
+    <li>Required Date: ${pr.requiredDate || 'No date specified'}</li>
+    ${approverInfo ? `<li>Current Approver: ${approverInfo.name} (${approverInfo.email})</li>` : ''}
+    <li>Requestor: ${requestorName} (${requestorEmail})</li>
+</ul>
+
+<p>Please <a href="${prUrl}">click here</a> to view the PR details in the system.</p>`
+        };
+
+        // Build recipient list
+        const recipients = new Set<string>();
+        const ccList = new Set<string>();
+
+        // Add procurement team
+        recipients.add(this.PROCUREMENT_EMAIL);
+
+        // Add requestor to CC
+        if (requestorEmail) {
+          ccList.add(requestorEmail);
         }
-      };
 
-      console.log('Sending status change notification:', {
-        notification,
-        recipients: Array.from(recipients)
-      });
+        // Add approver to CC
+        if (approverInfo?.email) {
+          ccList.add(approverInfo.email);
+        }
 
-      // Send notification via Cloud Function
-      const functions = getFunctions();
-      const sendNotification = httpsCallable(functions, 'sendStatusChangeNotification');
-      await sendNotification({
-        notification,
-        recipients: Array.from(recipients)
-      });
+        // Send email via Cloud Function
+        const functions = getFunctions();
+        const sendNotification = httpsCallable(functions, 'sendStatusChangeNotification');
+        await sendNotification({
+          notification,
+          recipients: Array.from(recipients),
+          cc: Array.from(ccList),
+          emailBody,
+          metadata: {
+            prUrl,
+            requestorEmail,
+            approverInfo
+          }
+        });
 
-      // Store notification in Firestore
-      const notificationRef = doc(collection(db, 'notifications'));
-      await setDoc(notificationRef, {
-        ...notification,
-        recipients: Array.from(recipients),
-        createdAt: serverTimestamp()
-      });
+        // Save notification to Firestore
+        const notificationsRef = collection(db, 'notifications');
+        await addDoc(notificationsRef, {
+          ...notification,
+          recipients: Array.from(recipients),
+          cc: Array.from(ccList),
+          emailBody,
+          metadata: {
+            prUrl,
+            requestorEmail,
+            ...(approverInfo ? { approverInfo } : {})
+          },
+          createdAt: serverTimestamp()
+        });
 
-    } catch (error) {
-      console.error('Error sending status change notification:', error);
-      throw new Error(`Failed to send notification: ${error.message}`);
+        return;
+
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Error sending status change notification (attempt ${attempts}/${maxAttempts}):`, error);
+        if (attempts < maxAttempts) {
+          console.log(`Retrying in ${retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
     }
+
+    console.log('All attempts to send notification failed');
+    throw new Error(`Failed to send notification after ${maxAttempts} attempts: ${lastError?.message || 'Unknown error'}`);
   }
 
   /**
@@ -186,29 +262,33 @@ export class NotificationService {
     approverId: string
   ): Promise<void> {
     try {
-      // Log notification
-      await this.logNotification('APPROVAL_REQUESTED', prId, [approverId]);
+      // Get approver's email
+      const approverRef = doc(db, 'users', approverId);
+      const approverDoc = await getDoc(approverRef);
+      
+      if (!approverDoc.exists()) {
+        throw new Error('Approver not found');
+      }
 
-      // Send notification via cloud function
-      const response = await fetch(
-        'https://us-central1-pr-system-4ea55.cloudfunctions.net/sendApproverNotification',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            prId,
-            prNumber,
-            approverId
-          })
-        }
+      const approverEmail = approverDoc.data().email;
+
+      // Log notification with both approver and procurement
+      await this.logNotification(
+        'APPROVAL_REQUESTED', 
+        prId, 
+        [approverEmail, this.PROCUREMENT_EMAIL]
       );
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(`Failed to send approver notification: ${error.error || 'Unknown error'}`);
-      }
+      // Send notification via cloud function
+      const functions = getFunctions();
+      const sendApproverNotification = httpsCallable(functions, 'sendApproverNotification');
+      await sendApproverNotification({
+        prId,
+        prNumber,
+        approverId,
+        recipients: [approverEmail],
+        cc: [this.PROCUREMENT_EMAIL] // Always CC procurement
+      });
 
       console.log('Approver notification sent successfully');
     } catch (error) {
@@ -226,7 +306,7 @@ export class NotificationService {
    */
   async handleSubmission(prId: string, description: string, user: User): Promise<void> {
     try {
-      // Get PR data to get PR number and requestor email
+      // Get PR data
       const prRef = doc(db, 'purchaseRequests', prId);
       const prDoc = await getDoc(prRef);
       
@@ -253,21 +333,35 @@ export class NotificationService {
         department: pr.department,
         requiredDate: pr.requiredDate,
         isUrgent: pr.isUrgent,
-        items: pr.lineItems
+        items: pr.lineItems,
+        recipients: [
+          this.PROCUREMENT_EMAIL, // Hardcoded procurement email
+          user.email // Also notify the requestor
+        ]
       };
 
+      console.log('Sending PR submission notification:', notificationData);
+
       // Send notification using callable function
-      await sendPRNotification(notificationData);
+      const result = await sendPRNotification(notificationData);
+      console.log('PR notification sent successfully:', result);
 
       // Log the notification
       await this.logNotification(
         'PR_CREATED',
         prId,
-        ['procurement@1pwrafrica.com', user.email],
+        notificationData.recipients,
         'sent'
       );
     } catch (error) {
       console.error('Error sending submission notification:', error);
+      // Log failed notification
+      await this.logNotification(
+        'PR_CREATED',
+        prId,
+        [this.PROCUREMENT_EMAIL, user.email],
+        'failed'
+      );
       throw error;
     }
   }
@@ -311,7 +405,7 @@ export class NotificationService {
           type: 'CUSTOM',
           prId,
           message,
-          timestamp: Timestamp.now()
+          timestamp: serverTimestamp()
         }
       });
 
@@ -341,8 +435,97 @@ export class NotificationService {
   }
 
   async getProcurementTeamEmails(organization: string): Promise<string[]> {
-    // TO DO: implement logic to retrieve procurement team emails
-    return [];
+    try {
+      console.log('Getting procurement team emails:', {
+        rawOrg: organization,
+        normalizedOrgId: organization
+      });
+
+      // Query users with procurement team permissions (level 2 or 3)
+      const q = query(
+        collection(db, 'users'),
+        where('organization', '==', organization),
+        where('permissionLevel', 'in', [2, 3])
+      );
+
+      const querySnapshot = await getDocs(q);
+      console.log('Procurement team query results:', {
+        totalResults: querySnapshot.size,
+        docs: querySnapshot.docs
+      });
+
+      const emails = querySnapshot.docs
+        .map(doc => doc.data().email?.toLowerCase())
+        .filter(email => email) as string[];
+
+      console.log('Found procurement team emails:', {
+        organization,
+        count: emails.length,
+        emails
+      });
+
+      // Always include backup procurement email
+      if (!emails.includes(this.PROCUREMENT_EMAIL)) {
+        emails.push(this.PROCUREMENT_EMAIL);
+      }
+
+      return emails;
+    } catch (error) {
+      console.error('Error getting procurement team emails:', error);
+      // Return backup email if query fails
+      return [this.PROCUREMENT_EMAIL];
+    }
+  }
+
+  private async createNotification(
+    pr: any,
+    oldStatus: PRStatus,
+    newStatus: PRStatus,
+    user: User | null,
+    notes?: string
+  ): Promise<Notification> {
+    // Log input data
+    console.log('Creating notification with:', {
+      pr: {
+        id: pr.id,
+        prNumber: pr.prNumber,
+        status: pr.status
+      },
+      oldStatus,
+      newStatus,
+      user: user?.email,
+      notes
+    });
+
+    const notification: Notification = {
+      id: '', // Will be set by Firestore
+      type: 'STATUS_CHANGE',
+      prId: pr.id,
+      prNumber: pr.prNumber || '',
+      oldStatus,
+      newStatus,
+      timestamp: new Date().toISOString(),
+      user: {
+        email: user?.email || 'system@1pwrafrica.com',
+        name: user?.firstName && user?.lastName 
+          ? `${user.firstName} ${user.lastName}`
+          : user?.email 
+            ? user.email.split('@')[0]
+            : 'System'
+      },
+      notes: notes || '',
+      metadata: {
+        organization: pr.organization || '',
+        department: pr.department || '',
+        amount: pr.estimatedAmount || 0,
+        currency: pr.currency || '',
+      }
+    };
+
+    // Log notification before saving
+    console.log('Notification object:', notification);
+
+    return notification;
   }
 }
 

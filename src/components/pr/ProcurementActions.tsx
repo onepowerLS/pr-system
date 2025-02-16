@@ -69,20 +69,46 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         case 'approve':
           // Get the rules for this organization
           const rules = await prService.getRuleForOrganization(pr.organization, pr.estimatedAmount);
-          if (!rules || rules.length === 0) {
-            setError('No approval rules found for this organization');
-            return;
+          console.log('Retrieved rules:', {
+            organization: pr.organization,
+            estimatedAmount: pr.estimatedAmount,
+            rules
+          });
+
+          // Only validate if we have rules
+          if (rules && rules.length > 0) {
+            // Only validate for PENDING_APPROVAL when pushing from IN_QUEUE
+            console.log('Starting validation with:', {
+              pr,
+              rules,
+              currentUser,
+              targetStatus: PRStatus.PENDING_APPROVAL
+            });
+
+            const validation = await validatePRForApproval(
+              pr,
+              rules,
+              currentUser,
+              PRStatus.PENDING_APPROVAL
+            );
+
+            console.log('Validation result:', validation);
+
+            if (!validation.isValid) {
+              setError(validation.errors.join('\n\n')); // Add double newline for better separation
+              return;
+            }
+          } else {
+            console.log('No rules found for organization, skipping validation');
           }
 
-          // Validate PR against rules
-          const validation = await validatePRForApproval(
-            pr,
-            rules,
-            currentUser,
-            pr.status === PRStatus.PENDING_APPROVAL ? PRStatus.APPROVED : PRStatus.PENDING_APPROVAL
-          );
-          if (!validation.isValid) {
-            setError(validation.errors.join('\n\n')); // Add double newline for better separation
+          // Only allow pushing to approver from IN_QUEUE
+          if (pr.status !== PRStatus.IN_QUEUE) {
+            console.log('Invalid status transition:', {
+              currentStatus: pr.status,
+              expectedStatus: PRStatus.IN_QUEUE
+            });
+            setError('Can only push to approver from IN_QUEUE status');
             return;
           }
 
@@ -90,6 +116,13 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           const poNumber = pr.prNumber.replace('PR', 'PO');
           newStatus = PRStatus.PENDING_APPROVAL;
           
+          console.log('Updating PR with:', {
+            poNumber,
+            newStatus,
+            currentUser,
+            prId: pr.id
+          });
+
           // Update PR with PO number and approver information
           await prService.updatePR(prId, {
             prNumber: poNumber,
@@ -97,8 +130,8 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
             lastModifiedBy: currentUser.email,
             lastModifiedAt: new Date().toISOString(),
             approvalWorkflow: {
-              currentApprover: pr.approvers[0], // Start with first approver
-              approvalChain: pr.approvers,
+              currentApprover: pr.approvers?.[0],
+              approvalChain: pr.approvers || [],
               approvalHistory: [],
               submittedForApprovalAt: new Date().toISOString()
             }
@@ -106,9 +139,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
 
           // Send notification to first approver
           await notificationService.handleStatusChange(
-            prId,
-            String(currentStatus),
-            String(newStatus),
+            pr.id || prId,
+            pr.status,
+            newStatus,
             currentUser,
             `PR ${pr.prNumber} has been converted to PO ${poNumber} and is pending your approval.`
           );
@@ -117,9 +150,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         case 'reject':
           newStatus = PRStatus.REJECTED;
           await notificationService.handleStatusChange(
-            prId,
-            String(currentStatus),
-            String(newStatus),
+            pr.id || prId,
+            pr.status,
+            newStatus,
             currentUser,
             notes || 'PR rejected'
           );
@@ -128,9 +161,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         case 'revise':
           newStatus = PRStatus.REVISION_REQUIRED;
           await notificationService.handleStatusChange(
-            prId,
-            String(currentStatus),
-            String(newStatus),
+            pr.id || prId,
+            pr.status,
+            newStatus,
             currentUser,
             notes || 'PR requires revision'
           );
@@ -139,9 +172,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         case 'cancel':
           newStatus = PRStatus.CANCELED;
           await notificationService.handleStatusChange(
-            prId,
-            String(currentStatus),
-            String(newStatus),
+            pr.id || prId,
+            pr.status,
+            newStatus,
             currentUser,
             notes || 'PR canceled by requestor'
           );
@@ -150,9 +183,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         case 'queue':
           newStatus = PRStatus.IN_QUEUE;
           await notificationService.handleStatusChange(
-            prId,
-            String(currentStatus),
-            String(newStatus),
+            pr.id || prId,
+            pr.status,
+            newStatus,
             currentUser,
             notes || 'PR moved to queue'
           );
@@ -171,7 +204,7 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
       // Update PR status
       await prService.updatePRStatus(prId, newStatus, notes, currentUser);
 
-      enqueueSnackbar('PR status updated successfully', { variant: 'success' });
+      enqueueSnackbar(`PR status successfully updated to ${newStatus}`, { variant: 'success' });
       handleClose();
       onStatusChange(); // Trigger parent refresh
 

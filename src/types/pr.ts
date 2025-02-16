@@ -339,6 +339,10 @@ export interface AdjudicationInfo {
 export interface WorkflowHistory {
   /** Step in the workflow */
   step: WorkflowStep;
+  /** From status */
+  fromStatus?: string;
+  /** To status */
+  toStatus?: string;
   /** Timestamp when the step was taken */
   timestamp: any; // Firestore Timestamp
   /** User who took the step */

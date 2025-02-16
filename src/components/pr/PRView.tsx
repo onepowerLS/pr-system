@@ -1358,6 +1358,9 @@ export function PRView() {
                         <Typography variant="caption" color="textSecondary">
                           {new Date(history.timestamp).toLocaleString()}
                         </Typography>
+                        <Typography variant="body2">
+                          {history.toStatus || history.step}
+                        </Typography>
                       </div>
                     ))
                   ) : (
@@ -1836,7 +1839,7 @@ export function PRView() {
                     if (typeof timestamp === 'string') return new Date(timestamp).toLocaleString();
                     if (typeof timestamp.toDate === 'function') return timestamp.toDate().toLocaleString();
                     return 'Invalid Date';
-                  })()} - {PRStatus[history.step]}
+                  })()} - {history.toStatus || PRStatus.IN_QUEUE}
                 </Typography>
                 {history.notes && (
                   <Typography variant="body2" sx={{ mt: 0.5, ml: 2 }}>
