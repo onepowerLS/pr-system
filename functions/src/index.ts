@@ -72,12 +72,12 @@ const generatePREmailContent = (prData: any) => {
                         <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity}</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Unit Price</strong></td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">${item.unitPrice}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>UOM</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">${item.uom}</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Total</strong></td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity * item.unitPrice}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd;"><strong>Notes</strong></td>
+                        <td style="padding: 8px; border: 1px solid #ddd;">${item.notes || 'N/A'}</td>
                     </tr>
                     ${item.attachments?.length > 0 ? `
                         <tr>
@@ -90,13 +90,34 @@ const generatePREmailContent = (prData: any) => {
         `;
     }).join('');
 
+    const baseUrl = process.env.BASE_URL || 'https://pr.1pwrafrica.com';
+    const prUrl = `${baseUrl}/pr/${prData.id}`;
+
     return `
         <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
             <h2 style="color: #333;">Purchase Request Details</h2>
+            ${prData.urgencyLevel ? `
+                <div style="display: inline-block; 
+                            padding: 4px 8px; 
+                            border-radius: 4px; 
+                            font-weight: bold;
+                            margin-bottom: 15px;
+                            background-color: ${
+                                prData.urgencyLevel === 'HIGH' ? '#ff4444' :
+                                prData.urgencyLevel === 'MEDIUM' ? '#ffbb33' :
+                                '#00C851'
+                            };
+                            color: ${prData.urgencyLevel === 'LOW' ? '#000' : '#fff'}">
+                    ${prData.urgencyLevel} Priority
+                </div>` : ''}
             <table style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">
                 <tr>
                     <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>PR Number</strong></td>
                     <td style="padding: 8px; border: 1px solid #ddd;">${prData.prNumber}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Description</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.description || 'N/A'}</td>
                 </tr>
                 <tr>
                     <td style="padding: 8px; border: 1px solid #ddd;"><strong>Department</strong></td>
@@ -107,10 +128,27 @@ const generatePREmailContent = (prData: any) => {
                     <td style="padding: 8px; border: 1px solid #ddd;">${prData.requiredDate}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Total Amount</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.currency} ${prData.totalAmount}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Estimated Amount</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.currency} ${prData.estimatedAmount || 0}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Requestor</strong></td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${prData.requestor || prData.requestorEmail || 'N/A'}</td>
                 </tr>
             </table>
+            <div style="margin-bottom: 20px;">
+                <a href="${prUrl}" 
+                   target="_blank"
+                   style="display: inline-block;
+                          padding: 10px 20px;
+                          background-color: #4CAF50;
+                          color: white;
+                          text-decoration: none;
+                          border-radius: 4px;
+                          margin-bottom: 20px;">
+                    View Purchase Request
+                </a>
+            </div>
             <h3 style="color: #333;">Items</h3>
             ${items}
         </div>
@@ -118,55 +156,70 @@ const generatePREmailContent = (prData: any) => {
 };
 
 // Function to send PR notification
-export const sendPRNotification = functions.https.onRequest(async (req, res) => {
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.set('Access-Control-Allow-Origin', '*');
-        res.set('Access-Control-Allow-Methods', 'GET, POST');
-        res.set('Access-Control-Allow-Headers', 'Content-Type');
-        res.status(204).send('');
-        return;
+export const sendPRNotification = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError(
+            'unauthenticated',
+            'The function must be called while authenticated.'
+        );
     }
 
-    // Set CORS headers for the main request
-    res.set('Access-Control-Allow-Origin', '*');
-
     try {
-        const { prData, recipients } = req.body;
+        const { prData, recipients, cc = [] } = data;
 
-        if (!prData || !recipients || !Array.isArray(recipients)) {
-            res.status(400).json({ error: 'Invalid request data' });
-            return;
+        if (!prData?.id || !prData?.prNumber || !Array.isArray(recipients) || recipients.length === 0) {
+            throw new functions.https.HttpsError(
+                'invalid-argument',
+                'The function must be called with valid prId, prNumber, and recipients array.'
+            );
         }
+
+        // Add requestor to CC if not already included
+        if (prData.requestor?.email && !cc.includes(prData.requestor.email)) {
+            cc.push(prData.requestor.email);
+        }
+
+        // Log the incoming data for debugging
+        console.log('Received PR notification request:', {
+            prId: prData.id,
+            prNumber: prData.prNumber,
+            recipientCount: recipients.length,
+            ccCount: cc.length,
+            userId: context.auth.uid
+        });
 
         const emailContent = generatePREmailContent(prData);
 
-        // Send email to each recipient
-        const emailPromises = recipients.map(recipient =>
-            transporter.sendMail({
-                from: '"1PWR System" <noreply@1pwrafrica.com>',
-                to: recipient,
-                subject: `New Purchase Request: PR #${prData.prNumber}`,
-                html: emailContent
-            })
+        // Send email to recipients with CC
+        const mailOptions = {
+            from: '"1PWR System" <noreply@1pwrafrica.com>',
+            to: recipients.join(', '),
+            cc: cc.join(', '),
+            subject: `New Purchase Request: PR #${prData.prNumber}`,
+            html: emailContent
+        };
+
+        try {
+            const result = await transporter.sendMail(mailOptions);
+            console.log('Email sent successfully', result.messageId);
+            return { success: true, messageId: result.messageId };
+        } catch (err) {
+            const error = err as Error;
+            console.error('Failed to send email:', error);
+            throw new functions.https.HttpsError(
+                'internal',
+                'Failed to send email notification',
+                { error: error.message }
+            );
+        }
+    } catch (err) {
+        const error = err as Error;
+        console.error('Error in sendPRNotification:', error);
+        throw new functions.https.HttpsError(
+            'internal',
+            error.message || 'An unexpected error occurred while sending notifications',
+            { originalError: error }
         );
-
-        await Promise.all(emailPromises);
-
-        // Log successful notification
-        await db.collection('notificationLogs').add({
-            type: 'PR_SUBMISSION',
-            status: 'sent',
-            timestamp: FieldValue.serverTimestamp(),
-            prId: prData.id,
-            prNumber: prData.prNumber,
-            recipients
-        });
-
-        res.status(200).json({ success: true });
-    } catch (error) {
-        console.error('Error sending PR notification:', error);
-        res.status(500).json({ error: 'Failed to send notification' });
     }
 });
 

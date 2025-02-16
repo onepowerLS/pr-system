@@ -38,6 +38,9 @@ import { User } from '../types/user';
 import { PRStatus } from '../types/pr';
 import { Notification } from '../types/notification';
 
+const functions = getFunctions();
+const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
+
 /**
  * Notification Service class
  * 
@@ -208,9 +211,7 @@ Please log in to the system to view more details: ${prUrl}`,
         }
 
         // Send email via Cloud Function
-        const functions = getFunctions();
-        const sendNotification = httpsCallable(functions, 'sendStatusChangeNotification');
-        await sendNotification({
+        await sendPRNotification({
           notification,
           recipients: Array.from(recipients),
           cc: Array.from(ccList),
@@ -280,7 +281,6 @@ Please log in to the system to view more details: ${prUrl}`,
       );
 
       // Send notification via cloud function
-      const functions = getFunctions();
       const sendApproverNotification = httpsCallable(functions, 'sendApproverNotification');
       await sendApproverNotification({
         prId,
@@ -315,7 +315,6 @@ Please log in to the system to view more details: ${prUrl}`,
       }
 
       const pr = prDoc.data();
-      const functions = getFunctions();
       const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
 
       // Get user's name, falling back to email username if firstName/lastName not available
@@ -323,43 +322,66 @@ Please log in to the system to view more details: ${prUrl}`,
         ? `${user.firstName} ${user.lastName}`
         : user.email.split('@')[0];
 
+      // Calculate total amount
+      const totalAmount = pr.lineItems ? pr.lineItems.reduce((sum: number, item: any) => sum + (item.total || 0), 0) : 0;
+
       // Prepare notification data
       const notificationData = {
-        prId,
-        prNumber: pr.prNumber,
-        description,
-        requestorName,
-        requestorEmail: user.email,
-        department: pr.department,
-        requiredDate: pr.requiredDate,
-        isUrgent: pr.isUrgent,
-        items: pr.lineItems,
-        recipients: [
-          this.PROCUREMENT_EMAIL, // Hardcoded procurement email
-          user.email // Also notify the requestor
-        ]
+        prData: {
+          id: prId,
+          prNumber: pr.prNumber,
+          description,
+          department: pr.department || 'Not specified',
+          requiredDate: pr.requiredDate || 'Not specified',
+          currency: pr.currency,
+          estimatedAmount: pr.estimatedAmount || 0,
+          requestor: requestorName,
+          items: pr.lineItems ? pr.lineItems.map(item => ({
+            description: item.description || '',
+            quantity: item.quantity || 0,
+            uom: item.uom || '',
+            notes: item.notes || 'N/A',
+            attachments: item.attachments || []
+          })) : []
+        },
+        recipients: [this.PROCUREMENT_EMAIL, user.email]
       };
 
       console.log('Sending PR submission notification:', notificationData);
 
-      // Send notification using callable function
-      const result = await sendPRNotification(notificationData);
-      console.log('PR notification sent successfully:', result);
+      try {
+        // Send notification using callable function
+        const result = await sendPRNotification(notificationData);
+        console.log('PR notification sent successfully:', result);
 
-      // Log the notification
-      await this.logNotification(
-        'PR_CREATED',
-        prId,
-        notificationData.recipients,
-        'sent'
-      );
+        // Log the notification
+        await this.logNotification(
+          'PR_CREATED',
+          prId,
+          [this.PROCUREMENT_EMAIL],
+          'sent'
+        );
+      } catch (error: any) {
+        console.error('Error sending PR notification:', error);
+        const errorMessage = error.message || 'Failed to send notification';
+        
+        // Log failed notification
+        await this.logNotification(
+          'PR_CREATED',
+          prId,
+          [this.PROCUREMENT_EMAIL],
+          'failed'
+        );
+        
+        throw new Error(errorMessage);
+      }
     } catch (error) {
       console.error('Error sending submission notification:', error);
       // Log failed notification
       await this.logNotification(
         'PR_CREATED',
         prId,
-        [this.PROCUREMENT_EMAIL, user.email],
+        [this.PROCUREMENT_EMAIL],
         'failed'
       );
       throw error;
@@ -398,7 +420,6 @@ Please log in to the system to view more details: ${prUrl}`,
       );
 
       // Send email via Cloud Function
-      const functions = getFunctions();
       const sendEmailNotification = httpsCallable(functions, 'sendEmailNotification');
       await sendEmailNotification({ 
         notification: {
