@@ -97,120 +97,68 @@ export class NotificationService {
     user: User | null,
     notes?: string
   ): Promise<void> {
-    console.log('Attempt 1 to send status change notification for PR', prId);
-
-    let attempts = 0;
     const maxAttempts = 3;
     const retryDelay = 1000; // 1 second
     let lastError: Error | null = null;
 
-    while (attempts < maxAttempts) {
+    // Get PR data
+    const prRef = doc(db, 'purchaseRequests', prId);
+    const prDoc = await getDoc(prRef);
+    
+    if (!prDoc.exists()) {
+      throw new Error('PR not found');
+    }
+
+    const pr = { id: prDoc.id, ...prDoc.data() };
+    const notification = await this.createNotification(pr, oldStatus, newStatus, user, notes);
+
+    // Get requestor email from PR data
+    const requestorEmail = pr.requestor?.email;
+    
+    // Get approver info if it exists
+    const approverInfo = pr.approver ? {
+      id: pr.approver.id,
+      email: pr.approver.email,
+      name: pr.approver.name
+    } : undefined;
+
+    // Initialize recipients and CC lists
+    const recipients = new Set<string>();
+    const ccList = new Set<string>();
+
+    // Always include procurement team
+    recipients.add(this.PROCUREMENT_EMAIL);
+
+    // Add requestor to recipients for cancellation
+    if (newStatus === 'CANCELED' && requestorEmail) {
+      recipients.add(requestorEmail);
+    } else if (requestorEmail) {
+      // For other status changes, add requestor to CC
+      ccList.add(requestorEmail);
+    }
+
+    // Add approver to CC if exists
+    if (approverInfo?.email) {
+      ccList.add(approverInfo.email);
+    }
+
+    // Get base URL from window location
+    const baseUrl = window.location.origin;
+    const prUrl = `${baseUrl}/pr/${prId}`;
+
+    // Generate email body
+    const emailBody = {
+      text: `PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}`,
+      html: `
+        <p>PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
+        <p><strong>Notes:</strong> ${notes || 'No notes provided'}</p>
+        <p><a href="${prUrl}">View PR Details</a></p>
+      `
+    };
+
+    for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       try {
-        attempts++;
-        const pr = await prService.getPR(prId);
-        if (!pr) {
-          throw new Error(`PR not found: ${prId}`);
-        }
-
-        // Get requestor email
-        let requestorEmail = '';
-        let requestorName = '';
-        if (pr.requestor?.id) {
-          const requestorDoc = await getDoc(doc(db, 'users', pr.requestor.id));
-          if (requestorDoc.exists()) {
-            const requestorData = requestorDoc.data();
-            requestorEmail = requestorData.email?.toLowerCase() || '';
-            requestorName = `${requestorData.firstName || ''} ${requestorData.lastName || ''}`.trim() || requestorData.email;
-          }
-        }
-
-        // Get current approver info
-        let approverInfo = null;
-        if (pr.approvalWorkflow?.currentApprover) {
-          const approverDoc = await getDoc(doc(db, 'users', pr.approvalWorkflow.currentApprover));
-          if (approverDoc.exists()) {
-            const approverData = approverDoc.data();
-            approverInfo = {
-              id: pr.approvalWorkflow.currentApprover,
-              email: approverData.email?.toLowerCase() || '',
-              name: `${approverData.firstName || ''} ${approverData.lastName || ''}`.trim() || approverData.email
-            };
-          }
-        }
-
-        const notification = await this.createNotification(
-          pr,
-          oldStatus,
-          newStatus,
-          user,
-          notes
-        );
-
-        // Format email content
-        const baseUrl = window.location.origin;
-        const prUrl = `${baseUrl}/pr/${prId}`;
-        const emailBody = {
-          text: `PR Status Change Notification
-
-PR #${pr.prNumber || 'Unknown'} has been updated:
-
-From: ${oldStatus || 'Unknown'}
-To: ${newStatus || 'Unknown'}
-By: ${notification.user.name} (${notification.user.email})
-Notes: ${notes || 'No notes provided'}
-
-PR Details:
-Description: ${pr.description || 'No description provided'}
-Amount: ${pr.currency || 'Unknown'} ${pr.estimatedAmount || 0}
-Department: ${pr.department || 'No department specified'}
-Required Date: ${pr.requiredDate || 'No date specified'}
-${approverInfo ? `Current Approver: ${approverInfo.name} (${approverInfo.email})\n` : ''}
-Requestor: ${requestorName} (${requestorEmail})
-
-Please log in to the system to view more details: ${prUrl}`,
-          html: `<h2>PR Status Change Notification</h2>
-
-<p>PR #${pr.prNumber || 'Unknown'} has been updated:</p>
-
-<ul style="list-style-type: none; padding-left: 20px;">
-    <li>From: ${oldStatus || 'Unknown'}</li>
-    <li>To: ${newStatus || 'Unknown'}</li>
-    <li>By: ${notification.user.name} (${notification.user.email})</li>
-    <li>Notes: ${notes || 'No notes provided'}</li>
-</ul>
-
-<h3>PR Details:</h3>
-
-<ul style="list-style-type: none; padding-left: 20px;">
-    <li>Description: ${pr.description || 'No description provided'}</li>
-    <li>Amount: ${pr.currency || 'Unknown'} ${pr.estimatedAmount || 0}</li>
-    <li>Department: ${pr.department || 'No department specified'}</li>
-    <li>Required Date: ${pr.requiredDate || 'No date specified'}</li>
-    ${approverInfo ? `<li>Current Approver: ${approverInfo.name} (${approverInfo.email})</li>` : ''}
-    <li>Requestor: ${requestorName} (${requestorEmail})</li>
-</ul>
-
-<p>Please <a href="${prUrl}">click here</a> to view the PR details in the system.</p>`
-        };
-
-        // Build recipient list
-        const recipients = new Set<string>();
-        const ccList = new Set<string>();
-
-        // Add procurement team
-        recipients.add(this.PROCUREMENT_EMAIL);
-
-        // Add requestor to CC
-        if (requestorEmail) {
-          ccList.add(requestorEmail);
-        }
-
-        // Add approver to CC
-        if (approverInfo?.email) {
-          ccList.add(approverInfo.email);
-        }
-
-        // Send email via Cloud Function
+        const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
         await sendPRNotification({
           notification,
           recipients: Array.from(recipients),
@@ -219,7 +167,7 @@ Please log in to the system to view more details: ${prUrl}`,
           metadata: {
             prUrl,
             requestorEmail,
-            approverInfo
+            ...(approverInfo ? { approverInfo } : {})
           }
         });
 
