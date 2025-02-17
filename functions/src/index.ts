@@ -52,6 +52,34 @@ interface NotificationPayload {
     };
 }
 
+// Helper function to generate appropriate email subject
+function getEmailSubject(notification: NotificationPayload['notification']): string {
+    const { prNumber, oldStatus, newStatus } = notification;
+    
+    if (oldStatus === 'SUBMITTED' && newStatus === 'CANCELED') {
+        return `PR #${prNumber} Canceled`;
+    }
+    
+    if (newStatus === 'PENDING_APPROVAL') {
+        return `PR #${prNumber} Pending Approval`;
+    }
+    
+    if (newStatus === 'APPROVED') {
+        return `PR #${prNumber} Approved`;
+    }
+    
+    if (newStatus === 'REJECTED') {
+        return `PR #${prNumber} Rejected`;
+    }
+    
+    if (newStatus === 'REVISION_REQUIRED') {
+        return `PR #${prNumber} Revision Required`;
+    }
+    
+    // Default case for new PRs or other status changes
+    return `PR #${prNumber} Status Changed to ${newStatus}`;
+}
+
 // Function to send PR notification
 export const sendPRNotification = functions.https.onCall(async (data: NotificationPayload, context) => {
     if (!context.auth) {
@@ -69,7 +97,7 @@ export const sendPRNotification = functions.https.onCall(async (data: Notificati
         );
     }
 
-    const { notification, recipients, cc = [], emailBody, metadata = {} } = data;
+    const { notification, recipients, cc = [], emailBody, metadata = { requestorEmail: '' } } = data;
 
     try {
         // Send email to each recipient
@@ -77,8 +105,8 @@ export const sendPRNotification = functions.https.onCall(async (data: Notificati
             transporter.sendMail({
                 from: '"1PWR System" <noreply@1pwrafrica.com>',
                 to: recipient,
-                cc: cc.filter(email => email !== recipient), // Exclude recipient from CC list
-                subject: `New Purchase Request: PR #${notification.prNumber}`,
+                cc: [...cc.filter(email => email !== recipient), metadata.requestorEmail || ''].filter(Boolean), // Include requestor and filter empty strings
+                subject: getEmailSubject(notification),
                 text: emailBody.text,
                 html: emailBody.html
             })

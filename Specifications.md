@@ -212,6 +212,50 @@
 
 ## Email Notifications
 
+### General Rules
+- All system notifications are sent from noreply@1pwrafrica.com
+- Email subjects reflect the specific PR action or status change
+- The requestor is always CC'd on all PR-related notifications
+- Notifications include a link to view the PR details
+
+### Status Change Notifications
+1. PR Cancellation:
+   - Subject: "PR #[number] Canceled"
+   - Recipients: Procurement team
+   - CC: PR requestor
+   - Content includes:
+     - Status change (from SUBMITTED to CANCELED)
+     - Notes (if provided)
+     - Link to PR details
+
+2. Other Status Changes:
+   - Subject format varies by status:
+     - "PR #[number] Pending Approval"
+     - "PR #[number] Approved"
+     - "PR #[number] Rejected"
+     - "PR #[number] Revision Required"
+     - Default: "PR #[number] Status Changed to [STATUS]"
+   - Recipients determined by status change type
+   - CC: PR requestor
+   - Content includes:
+     - Old and new status
+     - User who made the change
+     - Notes (if provided)
+     - PR metadata (amount, currency, department, etc.)
+     - Link to PR details
+
+### Notification Logging
+- All notifications are logged in the 'notificationLogs' collection
+- Log entries include:
+  - Type (e.g., 'STATUS_CHANGE')
+  - Status ('sent' or 'failed')
+  - Timestamp
+  - Notification details
+  - Recipients and CC list
+  - Error details (if failed)
+
+## Email Notifications
+
 ### Subject Line Format
 - New PR Submission:
   - Normal Priority: "New Purchase Request: PR #[PR-NUMBER]"
