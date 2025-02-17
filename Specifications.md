@@ -209,3 +209,84 @@
   - Special characters replaced with underscores
   - Example: "1PWR LESOTHO" becomes "1pwr_lesotho"
 - Organization matching uses normalized IDs for comparison
+
+## Email Notifications
+
+### Subject Line Format
+- New PR Submission:
+  - Normal Priority: "New Purchase Request: PR #[PR-NUMBER]"
+  - Urgent Priority: "URGENT: New Purchase Request: PR #[PR-NUMBER]"
+- Status Change:
+  - Normal Priority: "[NEW_STATUS]: PR #[PR-NUMBER]"
+  - Urgent Priority: "URGENT: [NEW_STATUS]: PR #[PR-NUMBER]"
+
+### Email Content Structure
+1. Header Section:
+   - Priority indicator (if urgent)
+   - PR Details heading
+   - View PR button/link
+
+2. Core Information Table:
+   - PR Number
+   - Description
+   - Department
+   - Required Date
+   - Estimated Amount (with currency)
+   - Requestor
+
+3. Line Items Section:
+   - Item-by-item breakdown
+   - Each item includes:
+     - Description
+     - Quantity
+     - Unit of Measure (UOM)
+     - Notes (if any)
+
+### Notification Recipients
+1. Primary Recipients:
+   - Procurement team
+   - Current approver (if in approval stage)
+   - Department head
+
+2. CC List:
+   - PR requestor
+   - Previous approvers in the chain
+   - Additional stakeholders based on PR type
+
+### Email Styling
+1. Priority Styling:
+   - Urgent: Red background (#ff4444) with white text
+   - Normal: Green background (#00C851) with black text
+
+2. Table Styling:
+   - Bordered cells (1px solid #ddd)
+   - Consistent padding (8px)
+   - Column width optimization
+   - Alternating row colors for readability
+
+3. Action Button Styling:
+   - Green background (#4CAF50)
+   - White text
+   - Rounded corners (4px)
+   - Hover effect for better UX
+
+### Notification Triggers
+1. Automatic Notifications:
+   - New PR submission
+   - Status changes
+   - Approval requests
+   - Quote additions/updates
+   - Approaching deadlines
+
+2. Manual Notifications:
+   - Comments/notes added
+   - Document attachments
+   - Special instructions
+   - Urgent updates
+
+### Email Template Maintenance
+- Templates stored in version-controlled repository
+- Consistent branding across all notifications
+- Mobile-responsive design
+- Accessibility considerations
+- Regular template review and updates
