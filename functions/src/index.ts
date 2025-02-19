@@ -33,6 +33,7 @@ interface NotificationPayload {
             currency: string;
             department: string;
             requiredDate: string;
+            isUrgent?: boolean;
         };
     };
     recipients: string[];
@@ -54,30 +55,17 @@ interface NotificationPayload {
 
 // Helper function to generate appropriate email subject
 function getEmailSubject(notification: NotificationPayload['notification']): string {
-    const { prNumber, oldStatus, newStatus } = notification;
+    const { prNumber, oldStatus, newStatus, metadata } = notification;
+    const isUrgent = metadata?.isUrgent || false;
+    const urgentPrefix = isUrgent ? 'URGENT: ' : '';
     
-    if (oldStatus === 'SUBMITTED' && newStatus === 'CANCELED') {
-        return `PR #${prNumber} Canceled`;
+    // New PR submission
+    if (oldStatus === '' && newStatus === 'SUBMITTED') {
+        return `${urgentPrefix}New Purchase Request: PR #${prNumber}`;
     }
     
-    if (newStatus === 'PENDING_APPROVAL') {
-        return `PR #${prNumber} Pending Approval`;
-    }
-    
-    if (newStatus === 'APPROVED') {
-        return `PR #${prNumber} Approved`;
-    }
-    
-    if (newStatus === 'REJECTED') {
-        return `PR #${prNumber} Rejected`;
-    }
-    
-    if (newStatus === 'REVISION_REQUIRED') {
-        return `PR #${prNumber} Revision Required`;
-    }
-    
-    // Default case for new PRs or other status changes
-    return `PR #${prNumber} Status Changed to ${newStatus}`;
+    // Status changes
+    return `${urgentPrefix}${newStatus}: PR #${prNumber}`;
 }
 
 // Function to send PR notification
@@ -105,7 +93,7 @@ export const sendPRNotification = functions.https.onCall(async (data: Notificati
             transporter.sendMail({
                 from: '"1PWR System" <noreply@1pwrafrica.com>',
                 to: recipient,
-                cc: [...cc.filter(email => email !== recipient), metadata.requestorEmail || ''].filter(Boolean), // Include requestor and filter empty strings
+                cc: cc.filter(email => email !== recipient).filter(Boolean), // Only use the cc list, requestor should already be included if needed
                 subject: getEmailSubject(notification),
                 text: emailBody.text,
                 html: emailBody.html

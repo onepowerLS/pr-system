@@ -775,10 +775,12 @@ export const prService = {
       // Send notification
       await notificationService.handleStatusChange(
         prId,
+        prData.prNumber,
         oldStatus,
         newStatus,
         user,
-        notes
+        notes,
+        { approverInfo: prData.approvalWorkflow?.currentApprover || null }
       );
     } catch (error) {
       console.error('Error updating PR status:', error);
@@ -817,6 +819,8 @@ export const prService = {
     } catch (error) {
       console.error('Error deleting PR:', JSON.stringify(error, null, 2));
       throw error;
+    } finally {
+      // Added finally block to ensure proper closure of try-catch block
     }
   },
 

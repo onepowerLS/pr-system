@@ -453,7 +453,9 @@ export function PRView() {
     pr?.status === PRStatus.RESUBMITTED ||
     pr?.status === PRStatus.REVISION_REQUIRED
   ));
-  const canEditInCurrentStatus = pr?.status === PRStatus.SUBMITTED || pr?.status === PRStatus.RESUBMITTED;
+  const canEditInCurrentStatus = pr?.status === PRStatus.SUBMITTED || 
+    pr?.status === PRStatus.RESUBMITTED ||
+    (isRequestor && pr?.status === PRStatus.REVISION_REQUIRED);
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: string } | null>(null);
   const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
   const [projectCategories, setProjectCategories] = useState<ReferenceDataItem[]>([]);
@@ -465,7 +467,7 @@ export function PRView() {
   const [loadingReference, setLoadingReference] = useState(true);
   const [approvers, setApprovers] = useState<Approver[]>([]);
   const [selectedApprover, setSelectedApprover] = useState<string | undefined>(
-    pr?.approver || pr?.approvers?.[0] || pr?.approvalWorkflow?.currentApprover || undefined
+    pr?.approvalWorkflow?.currentApprover || undefined
   );
   const [loadingApprovers, setLoadingApprovers] = useState(false);
   const [currentApprover, setCurrentApprover] = useState<User | null>(null);
@@ -497,7 +499,7 @@ export function PRView() {
       if (!prData.approvalWorkflow) {
         console.log('Initializing missing approval workflow');
         prData.approvalWorkflow = {
-          currentApprover: undefined,
+          currentApprover: prData.approver || prData.approvers?.[0] || undefined,
           approvalHistory: [],
           lastUpdated: new Date().toISOString()
         };
@@ -955,7 +957,12 @@ export function PRView() {
         })),
         quotes: pr.quotes || [], // Preserve existing quotes
         updatedAt: new Date().toISOString(),
-        updatedBy: currentUser?.email
+        updatedBy: currentUser?.email,
+        approvalWorkflow: {
+          ...pr.approvalWorkflow,
+          currentApprover: selectedApprover,
+          lastUpdated: new Date().toISOString()
+        }
       };
 
       console.log('Saving PR updates:', updates);
@@ -1218,7 +1225,7 @@ export function PRView() {
                 />
               </Grid>
               <Grid item xs={6}>
-                <FormControl fullWidth disabled={!isEditMode || !isProcurement}>
+                <FormControl fullWidth disabled={!isEditMode || (!isProcurement && !isRequestor)}>
                   <InputLabel>Approver</InputLabel>
                   <Select
                     value={selectedApprover || ''}
@@ -1294,7 +1301,7 @@ export function PRView() {
                 <Typography color="textSecondary">Current Approver</Typography>
                 <div className="flex flex-wrap gap-2 mt-1">
                   {(() => {
-                    const approverId = pr.approver || pr.approvers?.[0] || pr.approvalWorkflow?.currentApprover;
+                    const approverId = pr.approvalWorkflow?.currentApprover;
                     console.log('Finding current approver:', { 
                       approverId, 
                       approversCount: approvers.length,

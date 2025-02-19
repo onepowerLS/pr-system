@@ -5,6 +5,7 @@ import { User } from '../../types/user';
 import { PRStatus } from '../../types/pr';
 import { NotificationContext, StatusTransitionHandler } from './types';
 import { InQueueToPendingApprovalHandler } from './transitions/inQueueToPendingApproval';
+import { SubmittedToRevisionRequiredHandler } from './transitions/submittedToRevisionRequired';
 
 export class NotificationService {
   private readonly notificationsCollection = 'purchaseRequestsNotifications';
@@ -21,7 +22,12 @@ export class NotificationService {
       this.getTransitionKey('IN_QUEUE', 'PENDING_APPROVAL'),
       new InQueueToPendingApprovalHandler()
     );
-    // Add more handlers here...
+    
+    // Register SUBMITTED to REVISION_REQUIRED handler
+    this.transitionHandlers.set(
+      this.getTransitionKey('SUBMITTED', 'REVISION_REQUIRED'),
+      new SubmittedToRevisionRequiredHandler()
+    );
   }
 
   private getTransitionKey(oldStatus: PRStatus, newStatus: PRStatus): string {
