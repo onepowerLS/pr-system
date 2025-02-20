@@ -39,6 +39,7 @@ interface NotificationPayload {
     recipients: string[];
     cc?: string[];
     emailBody: {
+        subject?: string;
         text: string;
         html: string;
     };
@@ -54,7 +55,12 @@ interface NotificationPayload {
 }
 
 // Helper function to generate appropriate email subject
-function getEmailSubject(notification: NotificationPayload['notification']): string {
+function getEmailSubject(notification: NotificationPayload['notification'], emailBody: NotificationPayload['emailBody']): string {
+    // If a subject is provided in the emailBody, use that
+    if (emailBody.subject) {
+        return emailBody.subject;
+    }
+
     const { prNumber, oldStatus, newStatus, metadata } = notification;
     const isUrgent = metadata?.isUrgent || false;
     const urgentPrefix = isUrgent ? 'URGENT: ' : '';
@@ -70,7 +76,10 @@ function getEmailSubject(notification: NotificationPayload['notification']): str
 
 // Function to send PR notification
 export const sendPRNotification = functions.https.onCall(async (data: NotificationPayload, context) => {
+    console.log('Starting sendPRNotification with data:', JSON.stringify(data, null, 2));
+
     if (!context.auth) {
+        console.error('Authentication missing');
         throw new functions.https.HttpsError(
             'unauthenticated',
             'User must be authenticated to send notifications'
@@ -79,6 +88,11 @@ export const sendPRNotification = functions.https.onCall(async (data: Notificati
 
     // Validate required fields
     if (!data.notification?.prId || !data.notification?.prNumber || !Array.isArray(data.recipients) || data.recipients.length === 0) {
+        console.error('Invalid arguments:', { 
+            prId: data.notification?.prId,
+            prNumber: data.notification?.prNumber,
+            recipients: data.recipients
+        });
         throw new functions.https.HttpsError(
             'invalid-argument',
             'The function must be called with valid prId, prNumber, and recipients array.'
@@ -86,51 +100,59 @@ export const sendPRNotification = functions.https.onCall(async (data: Notificati
     }
 
     const { notification, recipients, cc = [], emailBody, metadata = { requestorEmail: '' } } = data;
+    console.log('Preparing to send emails to:', { recipients, cc });
 
     try {
         // Send email to each recipient
-        const emailPromises = recipients.map(recipient =>
-            transporter.sendMail({
+        const emailPromises = recipients.map(async recipient => {
+            console.log('Sending email to:', recipient);
+            const mailOptions = {
                 from: '"1PWR System" <noreply@1pwrafrica.com>',
                 to: recipient,
-                cc: cc.filter(email => email !== recipient).filter(Boolean), // Only use the cc list, requestor should already be included if needed
-                subject: getEmailSubject(notification),
+                cc: cc.filter(email => email !== recipient).filter(Boolean),
+                subject: getEmailSubject(notification, emailBody),
                 text: emailBody.text,
                 html: emailBody.html
-            })
-        );
+            };
+            console.log('Mail options:', JSON.stringify(mailOptions, null, 2));
+            
+            try {
+                const result = await transporter.sendMail(mailOptions);
+                console.log('Email sent successfully to:', recipient, 'Result:', result);
+                return result;
+            } catch (error) {
+                console.error('Failed to send email to:', recipient, 'Error:', error);
+                throw error;
+            }
+        });
 
-        await Promise.all(emailPromises);
+        // Wait for all emails to be sent
+        const results = await Promise.all(emailPromises);
+        console.log('All emails sent successfully:', results);
 
         // Log successful notification
-        await db.collection('notificationLogs').add({
+        const logData = {
             type: 'STATUS_CHANGE',
             status: 'sent',
             timestamp: FieldValue.serverTimestamp(),
             notification,
             recipients,
             cc,
+            emailBody,
             metadata
-        });
+        };
+        console.log('Logging notification:', logData);
+        
+        await db.collection('notificationLogs').add(logData);
+        console.log('Notification logged successfully');
 
         return { success: true };
-    } catch (err) {
-        console.error('Error sending notification:', err);
-        
-        // Log failed notification
-        await db.collection('notificationLogs').add({
-            type: 'STATUS_CHANGE',
-            status: 'failed',
-            timestamp: FieldValue.serverTimestamp(),
-            notification,
-            recipients,
-            cc,
-            metadata,
-            error: err instanceof Error ? err.message : 'Unknown error'
-        });
-
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-        throw new functions.https.HttpsError('internal', 'Failed to send notification: ' + errorMessage);
+    } catch (error) {
+        console.error('Error in sendPRNotification:', error);
+        throw new functions.https.HttpsError(
+            'internal',
+            'Failed to send notification: ' + (error instanceof Error ? error.message : String(error))
+        );
     }
 });
 

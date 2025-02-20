@@ -112,62 +112,22 @@ export class NotificationService {
     const pr = { id: prDoc.id, ...prDoc.data() };
     const notification = await this.createNotification(pr, oldStatus, newStatus, user, notes);
 
-    // Get requestor email from PR data
-    const requestorEmail = pr.requestor?.email;
-    
-    // Get approver info if it exists
-    const approverInfo = pr.approver ? {
-      id: pr.approver.id,
-      email: pr.approver.email,
-      name: pr.approver.name
-    } : undefined;
-
-    // Initialize recipients and CC lists
-    const recipients = new Set<string>();
-    const ccList = new Set<string>();
-
-    // Always include procurement team
-    recipients.add(this.PROCUREMENT_EMAIL);
-
-    // Add requestor to recipients for cancellation
-    if (newStatus === 'CANCELED' && requestorEmail) {
-      recipients.add(requestorEmail);
-    } else if (requestorEmail) {
-      // For other status changes, add requestor to CC
-      ccList.add(requestorEmail);
-    }
-
-    // Add approver to CC if exists
-    if (approverInfo?.email) {
-      ccList.add(approverInfo.email);
-    }
-
     // Get base URL from window location
     const baseUrl = window.location.origin;
     const prUrl = `${baseUrl}/pr/${prId}`;
-
-    // Generate email body
-    const emailBody = {
-      text: `PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}`,
-      html: `
-        <p>PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
-        <p><strong>Notes:</strong> ${notes || 'No notes provided'}</p>
-        <p><a href="${prUrl}">View PR Details</a></p>
-      `
-    };
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       try {
         const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
         await sendPRNotification({
           notification,
-          recipients: Array.from(recipients),
-          cc: Array.from(ccList),
-          emailBody,
+          recipients: notification.recipients,
+          cc: notification.cc || [],
+          emailBody: notification.emailBody,
           metadata: {
             prUrl,
-            requestorEmail,
-            ...(approverInfo ? { approverInfo } : {})
+            requestorEmail: pr.requestor?.email,
+            ...(pr.approvalWorkflow?.currentApprover ? { approverInfo: pr.approvalWorkflow.currentApprover } : {})
           }
         });
 
@@ -175,14 +135,6 @@ export class NotificationService {
         const notificationsRef = collection(db, 'notifications');
         await addDoc(notificationsRef, {
           ...notification,
-          recipients: Array.from(recipients),
-          cc: Array.from(ccList),
-          emailBody,
-          metadata: {
-            prUrl,
-            requestorEmail,
-            ...(approverInfo ? { approverInfo } : {})
-          },
           createdAt: serverTimestamp()
         });
 
@@ -198,8 +150,9 @@ export class NotificationService {
       }
     }
 
-    console.log('All attempts to send notification failed');
-    throw new Error(`Failed to send notification after ${maxAttempts} attempts: ${lastError?.message || 'Unknown error'}`);
+    if (lastError) {
+      throw lastError;
+    }
   }
 
   /**

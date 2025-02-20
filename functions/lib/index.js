@@ -51,75 +51,85 @@ const transporter = nodemailer.createTransport({
     }
 });
 // Helper function to generate appropriate email subject
-function getEmailSubject(notification) {
-    const { prNumber, oldStatus, newStatus } = notification;
-    if (oldStatus === 'SUBMITTED' && newStatus === 'CANCELED') {
-        return `PR #${prNumber} Canceled`;
+function getEmailSubject(notification, emailBody) {
+    // If a subject is provided in the emailBody, use that
+    if (emailBody.subject) {
+        return emailBody.subject;
     }
-    if (newStatus === 'PENDING_APPROVAL') {
-        return `PR #${prNumber} Pending Approval`;
+    const { prNumber, oldStatus, newStatus, metadata } = notification;
+    const isUrgent = (metadata === null || metadata === void 0 ? void 0 : metadata.isUrgent) || false;
+    const urgentPrefix = isUrgent ? 'URGENT: ' : '';
+    // New PR submission
+    if (oldStatus === '' && newStatus === 'SUBMITTED') {
+        return `${urgentPrefix}New Purchase Request: PR #${prNumber}`;
     }
-    if (newStatus === 'APPROVED') {
-        return `PR #${prNumber} Approved`;
-    }
-    if (newStatus === 'REJECTED') {
-        return `PR #${prNumber} Rejected`;
-    }
-    if (newStatus === 'REVISION_REQUIRED') {
-        return `PR #${prNumber} Revision Required`;
-    }
-    // Default case for new PRs or other status changes
-    return `PR #${prNumber} Status Changed to ${newStatus}`;
+    // Status changes
+    return `${urgentPrefix}${newStatus}: PR #${prNumber}`;
 }
 // Function to send PR notification
 exports.sendPRNotification = functions.https.onCall(async (data, context) => {
-    var _a, _b;
+    var _a, _b, _c, _d;
+    console.log('Starting sendPRNotification with data:', JSON.stringify(data, null, 2));
     if (!context.auth) {
+        console.error('Authentication missing');
         throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to send notifications');
     }
     // Validate required fields
     if (!((_a = data.notification) === null || _a === void 0 ? void 0 : _a.prId) || !((_b = data.notification) === null || _b === void 0 ? void 0 : _b.prNumber) || !Array.isArray(data.recipients) || data.recipients.length === 0) {
+        console.error('Invalid arguments:', {
+            prId: (_c = data.notification) === null || _c === void 0 ? void 0 : _c.prId,
+            prNumber: (_d = data.notification) === null || _d === void 0 ? void 0 : _d.prNumber,
+            recipients: data.recipients
+        });
         throw new functions.https.HttpsError('invalid-argument', 'The function must be called with valid prId, prNumber, and recipients array.');
     }
     const { notification, recipients, cc = [], emailBody, metadata = { requestorEmail: '' } } = data;
+    console.log('Preparing to send emails to:', { recipients, cc });
     try {
         // Send email to each recipient
-        const emailPromises = recipients.map(recipient => transporter.sendMail({
-            from: '"1PWR System" <noreply@1pwrafrica.com>',
-            to: recipient,
-            cc: [...cc.filter(email => email !== recipient), metadata.requestorEmail || ''].filter(Boolean), // Include requestor and filter empty strings
-            subject: getEmailSubject(notification),
-            text: emailBody.text,
-            html: emailBody.html
-        }));
-        await Promise.all(emailPromises);
+        const emailPromises = recipients.map(async (recipient) => {
+            console.log('Sending email to:', recipient);
+            const mailOptions = {
+                from: '"1PWR System" <noreply@1pwrafrica.com>',
+                to: recipient,
+                cc: cc.filter(email => email !== recipient).filter(Boolean),
+                subject: getEmailSubject(notification, emailBody),
+                text: emailBody.text,
+                html: emailBody.html
+            };
+            console.log('Mail options:', JSON.stringify(mailOptions, null, 2));
+            try {
+                const result = await transporter.sendMail(mailOptions);
+                console.log('Email sent successfully to:', recipient, 'Result:', result);
+                return result;
+            }
+            catch (error) {
+                console.error('Failed to send email to:', recipient, 'Error:', error);
+                throw error;
+            }
+        });
+        // Wait for all emails to be sent
+        const results = await Promise.all(emailPromises);
+        console.log('All emails sent successfully:', results);
         // Log successful notification
-        await firebase_1.db.collection('notificationLogs').add({
+        const logData = {
             type: 'STATUS_CHANGE',
             status: 'sent',
             timestamp: firebase_1.FieldValue.serverTimestamp(),
             notification,
             recipients,
             cc,
+            emailBody,
             metadata
-        });
+        };
+        console.log('Logging notification:', logData);
+        await firebase_1.db.collection('notificationLogs').add(logData);
+        console.log('Notification logged successfully');
         return { success: true };
     }
-    catch (err) {
-        console.error('Error sending notification:', err);
-        // Log failed notification
-        await firebase_1.db.collection('notificationLogs').add({
-            type: 'STATUS_CHANGE',
-            status: 'failed',
-            timestamp: firebase_1.FieldValue.serverTimestamp(),
-            notification,
-            recipients,
-            cc,
-            metadata,
-            error: err instanceof Error ? err.message : 'Unknown error'
-        });
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-        throw new functions.https.HttpsError('internal', 'Failed to send notification: ' + errorMessage);
+    catch (error) {
+        console.error('Error in sendPRNotification:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to send notification: ' + (error instanceof Error ? error.message : String(error)));
     }
 });
 exports.sendSubmissionEmail = functions.https.onRequest(async (req, res) => {

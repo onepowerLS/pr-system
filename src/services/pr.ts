@@ -756,7 +756,7 @@ export const prService = {
             ? `${user.firstName} ${user.lastName}`
             : user?.email?.split('@')[0] || 'System'
         },
-        notes: `${updates.type || prData.type} ${notes ? `- ${notes}` : ''}`
+        notes: notes || ''
       };
 
       console.log('PR status updated:', {
@@ -773,14 +773,16 @@ export const prService = {
       await updateDoc(prRef, updates);
 
       // Send notification
-      await notificationService.handleStatusChange(
-        prId,
-        prData.prNumber,
+      await notificationService.createNotification(
+        {
+          id: prId,
+          ...prData,
+          prNumber: prData.prNumber
+        },
         oldStatus,
         newStatus,
         user,
-        notes,
-        { approverInfo: prData.approvalWorkflow?.currentApprover || null }
+        notes || ''
       );
     } catch (error) {
       console.error('Error updating PR status:', error);

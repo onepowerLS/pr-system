@@ -6,8 +6,8 @@ export class SubmittedToRevisionRequiredHandler implements StatusTransitionHandl
   async getRecipients(context: NotificationContext): Promise<NotificationRecipients> {
     const { prId } = context;
     const recipients: NotificationRecipients = {
-      to: ['procurement@1pwrafrica.com'], // Procurement team is primary recipient
-      cc: []
+      to: [], // Requestor is primary recipient
+      cc: ['procurement@1pwrafrica.com'] // Procurement team in CC
     };
 
     // Get PR data to find requestor
@@ -20,27 +20,32 @@ export class SubmittedToRevisionRequiredHandler implements StatusTransitionHandl
 
     const pr = prDoc.data();
 
-    // Add requestor to CC list
+    // Add requestor as primary recipient
     if (pr.requestor?.email) {
-      recipients.cc.push(pr.requestor.email);
+      recipients.to.push(pr.requestor.email);
     }
 
     return recipients;
   }
 
   async getEmailContent(context: NotificationContext): Promise<EmailContent> {
-    const { prNumber, oldStatus, newStatus, notes } = context;
+    const { prNumber, user, notes } = context;
+    const userName = user ? `${user.firstName} ${user.lastName}`.trim() : 'System';
 
-    const text = `PR ${prNumber} status has changed from ${oldStatus} to ${newStatus}\n` +
+    const subject = `PR #${prNumber} Requires Revision`;
+    const text = `Your PR #${prNumber} requires revision.\n` +
+      `Requested by: ${userName}\n` +
       (notes ? `Notes: ${notes}\n` : '');
 
     const html = `
-        <p>PR ${prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
+        <p>Your PR #${prNumber} requires revision.</p>
+        <p><strong>Requested by:</strong> ${userName}</p>
         ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
         <p><a href="http://localhost:5173/pr/${context.prId}">View PR Details</a></p>
      `;
 
     return {
+      subject,
       text,
       html
     };
