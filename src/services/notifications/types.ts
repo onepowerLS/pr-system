@@ -1,5 +1,6 @@
 import { User } from '../../types/user';
-import { PRStatus } from '../../types/pr';
+import { PR, PRStatus } from '../../types/pr';
+import { EmailHeaders } from './types/emailHeaders';
 
 export interface Recipients {
   to: string[];
@@ -7,16 +8,20 @@ export interface Recipients {
 }
 
 export interface EmailContent {
+  headers: EmailHeaders;
   subject: string;
   text: string;
   html: string;
+  boundary?: string;
 }
 
 export interface NotificationContext {
   prId: string;
+  pr: PR;
   prNumber: string;
   oldStatus: PRStatus;
   newStatus: PRStatus;
+  isUrgent?: boolean;
   user?: {
     email: string;
     firstName?: string;
@@ -24,6 +29,7 @@ export interface NotificationContext {
   };
   notes?: string;
   metadata?: Record<string, any>;
+  baseUrl: string;
 }
 
 export interface StatusTransitionHandler {

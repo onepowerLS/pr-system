@@ -209,7 +209,13 @@ export const prService = {
         const prWithId = {
           ...prDoc.data(),
           id: docRef.id,
-          requestor: user.displayName || user.email || user.uid
+          // Ensure we maintain the requestor object structure
+          requestor: {
+            firstName: user.displayName?.split(' ')[0] || '',
+            lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
+            email: user.email || '',
+            department: prData.department || ''
+          }
         };
 
         console.log('Sending notification with PR data:', prWithId);
