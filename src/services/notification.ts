@@ -39,7 +39,6 @@ import { PRStatus } from '../types/pr';
 import { Notification } from '../types/notification';
 
 const functions = getFunctions();
-const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
 
 /**
  * Notification Service class
@@ -118,18 +117,41 @@ export class NotificationService {
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       try {
-        const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
-        await sendPRNotification({
-          notification,
+        // Get the appropriate cloud function based on the status transition
+        const transitionKey = `${oldStatus || 'NEW'}->${newStatus}`;
+        const functionMap: Record<string, Function> = {
+          'NEW->SUBMITTED': httpsCallable(functions, 'sendNewPRNotification'),
+          'SUBMITTED->REVISION_REQUIRED': httpsCallable(functions, 'sendRevisionRequiredNotification'),
+          'REVISION_REQUIRED->SUBMITTED': httpsCallable(functions, 'sendResubmittedNotification'),
+          'SUBMITTED->PENDING_APPROVAL': httpsCallable(functions, 'sendPendingApprovalNotification'),
+          'PENDING_APPROVAL->APPROVED': httpsCallable(functions, 'sendApprovedNotification'),
+          'PENDING_APPROVAL->REJECTED': httpsCallable(functions, 'sendRejectedNotification')
+        };
+
+        const cloudFunction = functionMap[transitionKey];
+        if (!cloudFunction) {
+          throw new Error(`No notification handler found for transition: ${transitionKey}`);
+        }
+
+        const result = await cloudFunction({
+          prId: pr.id,
+          prNumber: pr.prNumber,
+          user: user ? {
+            email: user.email,
+            name: `${user.firstName} ${user.lastName}`
+          } : null,
+          notes,
           recipients: notification.recipients,
           cc: notification.cc || [],
-          emailBody: notification.emailBody,
+          emailContent: notification.emailBody,
           metadata: {
             prUrl,
             requestorEmail: pr.requestor?.email,
             ...(pr.approvalWorkflow?.currentApprover ? { approverInfo: pr.approvalWorkflow.currentApprover } : {})
           }
         });
+
+        console.log('Cloud function response:', result);
 
         // Save notification to Firestore
         const notificationsRef = collection(db, 'notifications');
@@ -150,9 +172,8 @@ export class NotificationService {
       }
     }
 
-    if (lastError) {
-      throw lastError;
-    }
+    // If we get here, all attempts failed
+    throw lastError || new Error('Failed to send notification after multiple attempts');
   }
 
   /**
@@ -206,154 +227,20 @@ export class NotificationService {
         action
       });
 
-      const recipients = await this.getNotificationRecipients(pr);
-      console.log('Retrieved recipients:', recipients);
-
-      // Validate core fields
-      if (!pr.id || typeof pr.id !== 'string') {
-        throw new Error(`Invalid prId: ${pr.id}`);
-      }
-      if (!pr.prNumber || typeof pr.prNumber !== 'string') {
-        throw new Error(`Invalid prNumber: ${pr.prNumber}`);
-      }
-      if (!Array.isArray(recipients) || recipients.length === 0) {
-        throw new Error(`Invalid recipients: ${JSON.stringify(recipients)}`);
-      }
-
-      // Ensure all recipients are valid email addresses
-      const validatedRecipients = recipients.map(recipient => {
-        if (typeof recipient !== 'string' || !recipient.includes('@')) {
-          throw new Error(`Invalid recipient: ${recipient}`);
-        }
-        return recipient.toLowerCase();
-      });
-
-      // Get priority display info
-      const priorityStyle = pr.isUrgent 
-        ? 'background-color: #ff4444; color: white;' 
-        : 'background-color: #00C851; color: #000';
-      const priorityText = pr.isUrgent ? 'URGENT' : 'NORMAL PRIORITY';
-
-      // Format line items HTML
-      const lineItemsHtml = pr.lineItems?.map((item, index) => `
-        <div style="margin-bottom: 20px;">
-          <h3 style="margin: 0 0 10px 0;">Item ${index + 1}</h3>
-          <table style="border-collapse: collapse; width: 100%;">
-            <tr>
-              <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>Description</strong></td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${item.description}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px; border: 1px solid #ddd;"><strong>Quantity</strong></td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px; border: 1px solid #ddd;"><strong>UOM</strong></td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${item.uom}</td>
-            </tr>
-            ${item.notes ? `
-            <tr>
-              <td style="padding: 8px; border: 1px solid #ddd;"><strong>Notes</strong></td>
-              <td style="padding: 8px; border: 1px solid #ddd;">${item.notes}</td>
-            </tr>
-            ` : ''}
-          </table>
-        </div>
-      `).join('\n') || '';
-
-      // Construct notification data matching cloud function's expected structure
-      const notificationData = {
-        notification: {
-          prId: pr.id,
-          prNumber: pr.prNumber,
-          oldStatus: '',  // New PR, no old status
-          newStatus: 'SUBMITTED',
-          user: {
-            email: pr.requestorEmail || '',
-            name: pr.requestor || ''
-          },
-          notes: '',  // No notes for initial submission
-          metadata: {
-            description: pr.description || '',
-            amount: pr.estimatedAmount || pr.amount || 0,  // Use estimatedAmount or amount
-            currency: pr.currency || 'LSL',
-            department: pr.department || '',
-            requiredDate: pr.requiredDate || ''
-          }
+      // Use handleStatusChange which now uses the modular notification system
+      await this.handleStatusChange(
+        pr.id,
+        null, // oldStatus is null for new PR
+        PRStatus.SUBMITTED, // newStatus is SUBMITTED for new PR
+        {
+          email: pr.requestorEmail || '',
+          firstName: pr.requestor?.firstName || '',
+          lastName: pr.requestor?.lastName || '',
+          id: pr.requestorId || ''
         },
-        recipients: validatedRecipients,
-        cc: [pr.requestorEmail], // Include requestor in CC
-        emailBody: {
-          text: `${pr.isUrgent ? 'URGENT: ' : ''}New Purchase Request: PR #${pr.prNumber}`,
-          html: `
-        <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto;">
-            <h2 style="color: #333;">Purchase Request Details</h2>
-           
-            <div style="display: inline-block; 
-                        padding: 8px 16px; 
-                        border-radius: 4px; 
-                        font-weight: bold;
-                        margin-bottom: 20px;
-                        ${priorityStyle}">
-                ${priorityText}
-            </div>
-           
-            <table style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd; width: 150px;"><strong>PR Number</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.prNumber}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Description</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.description || 'N/A'}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Department</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.department || 'N/A'}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Required Date</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.requiredDate || 'N/A'}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Estimated Amount</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.currency || 'LSL'} ${pr.estimatedAmount || pr.amount || 0}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>Requestor</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;">${pr.requestor || 'N/A'}</td>
-                </tr>
-            </table>
+        undefined // no notes for initial submission
+      );
 
-            <div style="margin-bottom: 20px;">
-                <a href="https://pr.1pwrafrica.com/pr/${pr.id}" 
-                   target="_blank"
-                   style="display: inline-block;
-                          padding: 10px 20px;
-                          background-color: #4CAF50;
-                          color: white;
-                          text-decoration: none;
-                          border-radius: 4px;
-                          margin-bottom: 20px;">
-                    View Purchase Request
-                </a>
-            </div>
-
-            <h3 style="color: #333;">Items</h3>
-            ${lineItemsHtml}
-        </div>
-          `
-        },
-        metadata: {
-          prUrl: `https://pr.1pwrafrica.com/pr/${pr.id}`,
-          requestorEmail: pr.requestorEmail || ''
-        }
-      };
-
-      console.log('Sending notification with data:', notificationData);
-
-      const result = await sendPRNotification(notificationData);
-      console.log('Cloud function response:', result);
     } catch (error) {
       console.error('Error in handleSubmission:', error);
       throw error;
@@ -470,54 +357,42 @@ export class NotificationService {
     }
   }
 
+  /**
+   * Creates a notification object for a PR status change.
+   */
   private async createNotification(
     pr: any,
     oldStatus: PRStatus,
     newStatus: PRStatus,
     user: User | null,
     notes?: string
-  ): Promise<Notification> {
-    // Log input data
-    console.log('Creating notification with:', {
-      pr: {
-        id: pr.id,
-        prNumber: pr.prNumber,
-        status: pr.status
-      },
-      oldStatus,
-      newStatus,
-      user: user?.email,
-      notes
-    });
-
-    const notification: Notification = {
-      id: '', // Will be set by Firestore
+  ): Promise<any> {
+    const notification = {
+      id: '',
       type: 'STATUS_CHANGE',
       prId: pr.id,
-      prNumber: pr.prNumber || '',
+      prNumber: pr.prNumber,
       oldStatus,
       newStatus,
-      timestamp: new Date().toISOString(),
-      user: {
-        email: user?.email || 'system@1pwrafrica.com',
-        name: user?.firstName && user?.lastName 
-          ? `${user.firstName} ${user.lastName}`
-          : user?.email 
-            ? user.email.split('@')[0]
-            : 'System'
-      },
+      user: user ? {
+        email: user.email,
+        name: `${user.firstName} ${user.lastName}`.trim()
+      } : null,
       notes: notes || '',
-      metadata: {
-        organization: pr.organization || '',
-        department: pr.department || '',
-        amount: pr.estimatedAmount || 0,
-        currency: pr.currency || '',
+      recipients: [pr.requestor?.email || this.PROCUREMENT_EMAIL].filter(Boolean),
+      cc: [this.PROCUREMENT_EMAIL],
+      emailBody: {
+        subject: `PR ${pr.prNumber} Status Changed: ${oldStatus} → ${newStatus}`,
+        text: `PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}\n` +
+          (notes ? `Notes: ${notes}\n` : ''),
+        html: `
+          <p>PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
+          ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+        `
       }
     };
 
-    // Log notification before saving
     console.log('Notification object:', notification);
-
     return notification;
   }
 

@@ -31,6 +31,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
   const [selectedAction, setSelectedAction] = useState<'approve' | 'reject' | 'revise' | 'queue' | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
 
@@ -96,6 +97,35 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
     setSelectedAction(null);
     setNotes('');
     setError(null);
+  };
+
+  const handleStatusUpdate = async (newStatus: PRStatus, notes?: string) => {
+    const maxRetries = 3;
+    let retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+      try {
+        setLoading(true);
+        await prService.updatePRStatus(pr.id, newStatus, notes);
+        enqueueSnackbar(`PR status successfully updated to ${newStatus}`, { variant: 'success' });
+        onStatusChange(); // Trigger parent refresh
+        return;
+      } catch (error) {
+        retryCount++;
+        if (retryCount === maxRetries) {
+          console.error('Failed to update PR status:', error);
+          enqueueSnackbar('Failed to update PR status. Please check your network connection and try again.', { 
+            variant: 'error',
+            autoHideDuration: 5000
+          });
+        } else {
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const handleSubmit = async () => {
@@ -180,11 +210,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
       }
 
       // Update PR status
-      await prService.updatePRStatus(pr.id, newStatus, notes, currentUser);
-
-      enqueueSnackbar(`PR status successfully updated to ${newStatus}`, { variant: 'success' });
-      handleClose();
-      onStatusChange(); // Trigger parent refresh
+      await handleStatusUpdate(newStatus, notes);
 
       // Navigate to dashboard after any successful status change
       navigate('/dashboard');
@@ -284,7 +310,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSubmit} variant="contained" color="primary">
+          <Button onClick={handleSubmit} variant="contained" color="primary" disabled={loading}>
             Submit
           </Button>
         </DialogActions>

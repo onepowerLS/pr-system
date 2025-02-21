@@ -2,6 +2,7 @@ import { User } from '../../../types/user';
 import { EmailContent, NotificationContext, Recipients, StatusTransitionHandler } from '../types';
 import { db } from '../../../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { getBaseUrl } from '../../../utils/environment';
 
 export class RevisionRequiredToResubmittedHandler implements StatusTransitionHandler {
   async getRecipients(context: NotificationContext): Promise<Recipients> {
@@ -26,15 +27,17 @@ export class RevisionRequiredToResubmittedHandler implements StatusTransitionHan
   async getEmailContent(context: NotificationContext): Promise<EmailContent> {
     const { prNumber, oldStatus, newStatus, user, notes } = context;
     const userName = user ? `${user.firstName} ${user.lastName}`.trim() : 'System';
+    const baseUrl = getBaseUrl();
 
     const subject = `PR #${prNumber} Resubmitted`;
     const text = `PR ${prNumber} has been resubmitted after revisions by ${userName}.\n` +
-      (notes ? `Notes: ${notes}\n` : '');
+      (notes ? `Notes: ${notes}\n` : '') +
+      `View PR at: ${baseUrl}/pr/${context.prId}`;
 
     const html = `
         <p>PR ${prNumber} has been resubmitted after revisions by ${userName}.</p>
         ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-        <p><a href="${window.location.origin}/pr/${context.prId}">View PR Details</a></p>
+        <p><a href="${baseUrl}/pr/${context.prId}">View PR Details</a></p>
      `;
 
     return { subject, text, html };

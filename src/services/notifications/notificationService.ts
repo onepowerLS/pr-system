@@ -1,261 +1,149 @@
-import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../../config/firebase';
 import { User } from '../../types/user';
 import { PRStatus } from '../../types/pr';
-import { NotificationContext, StatusTransitionHandler } from './types';
-import { InQueueToPendingApprovalHandler } from './transitions/inQueueToPendingApproval';
-import { SubmittedToRevisionRequiredHandler } from './transitions/submittedToRevisionRequired';
-import { RevisionRequiredToResubmittedHandler } from './transitions/revisionRequiredToResubmitted';
+import { NotificationContext } from './types';
+import { getTransitionHandler } from './transitions';
 
+const functions = getFunctions();
+
+/**
+ * Notification Service class
+ * 
+ * Handles sending notifications for PR status changes using status-specific handlers.
+ */
 export class NotificationService {
-  private readonly notificationsCollection = 'purchaseRequestsNotifications';
-  private transitionHandlers: Map<string, StatusTransitionHandler>;
+  private readonly notificationsCollection = 'notifications';
+  private readonly maxRetries = 3;
+  private readonly retryDelay = 1000; // 1 second
 
-  constructor() {
-    this.transitionHandlers = new Map();
-    this.registerTransitionHandlers();
-  }
-
-  private registerTransitionHandlers() {
-    // Register handlers for each status transition
-    this.transitionHandlers.set(
-      this.getTransitionKey('IN_QUEUE', 'PENDING_APPROVAL'),
-      new InQueueToPendingApprovalHandler()
-    );
-    
-    // Register SUBMITTED to REVISION_REQUIRED handler
-    this.transitionHandlers.set(
-      this.getTransitionKey('SUBMITTED', 'REVISION_REQUIRED'),
-      new SubmittedToRevisionRequiredHandler()
-    );
-
-    // Register REVISION_REQUIRED to RESUBMITTED handler
-    this.transitionHandlers.set(
-      this.getTransitionKey('REVISION_REQUIRED', 'RESUBMITTED'),
-      new RevisionRequiredToResubmittedHandler()
-    );
-  }
-
-  private getTransitionKey(oldStatus: PRStatus, newStatus: PRStatus): string {
-    return `${oldStatus}_to_${newStatus}`;
-  }
-
-  private getDefaultHandler(): StatusTransitionHandler {
-    return {
-      getRecipients: async (context: NotificationContext) => ({
-        to: ['procurement@1pwrafrica.com'],
-        cc: context.user?.email ? [context.user.email] : []
-      }),
-      getEmailContent: async (context: NotificationContext) => ({
-        subject: `PR ${context.prNumber} Status Changed: ${context.oldStatus} → ${context.newStatus}`,
-        body: `
-          <p>PR ${context.prNumber} status has changed from ${context.oldStatus} to ${context.newStatus}</p>
-          ${context.notes ? `<p><strong>Notes:</strong> ${context.notes}</p>` : ''}
-          <p><a href="${window.location.origin}/pr/${context.prId}">View PR Details</a></p>
-        `
-      })
+  /**
+   * Get the appropriate cloud function for a status transition
+   */
+  private getCloudFunction(oldStatus: PRStatus | null, newStatus: PRStatus): Function {
+    const transitionKey = `${oldStatus || 'NEW'}->${newStatus}`;
+    const functionMap: Record<string, Function> = {
+      'NEW->SUBMITTED': httpsCallable(functions, 'sendNewPRNotification'),
+      'SUBMITTED->REVISION_REQUIRED': httpsCallable(functions, 'sendRevisionRequiredNotification'),
+      'REVISION_REQUIRED->SUBMITTED': httpsCallable(functions, 'sendResubmittedNotification'),
+      'SUBMITTED->PENDING_APPROVAL': httpsCallable(functions, 'sendPendingApprovalNotification'),
+      'PENDING_APPROVAL->APPROVED': httpsCallable(functions, 'sendApprovedNotification'),
+      'PENDING_APPROVAL->REJECTED': httpsCallable(functions, 'sendRejectedNotification')
     };
-  }
 
-  private async retryOperation<T>(operation: () => Promise<T>, maxRetries = 3, initialDelay = 1000): Promise<T> {
-    let lastError: any;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error;
-        console.warn(`Attempt ${attempt + 1} failed:`, error);
-        if (attempt < maxRetries - 1) {
-          const delay = initialDelay * Math.pow(2, attempt);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
+    const cloudFunction = functionMap[transitionKey];
+    if (!cloudFunction) {
+      throw new Error(`No notification handler found for transition: ${transitionKey}. Each status transition must have its own dedicated handler.`);
     }
-    throw lastError;
+
+    return cloudFunction;
   }
 
-  async createNotification(pr: any, oldStatus: string, newStatus: string, user: any, notes: string) {
-    try {
-      const prId = pr.id;
-      const prRef = doc(db, 'purchaseRequests', prId);
-      const prDoc = await this.retryOperation(() => getDoc(prRef));
-
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
-      }
-
-      const prData = prDoc.data();
-      const notification = {
-        id: '',
-        type: 'STATUS_CHANGE',
-        prId,
-        prNumber: prData.prNumber,
-        oldStatus,
-        newStatus,
-        user: user ? {
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`.trim()
-        } : undefined,
-        notes: notes || '',
-        metadata: {
-          description: prData.description,
-          amount: prData.amount,
-          currency: prData.currency,
-          department: prData.department,
-          requiredDate: prData.requiredDate,
-          isUrgent: prData.isUrgent || false
-        }
-      };
-
-      // Get the appropriate handler or use default
-      const transitionKey = this.getTransitionKey(oldStatus, newStatus);
-      const handler = this.transitionHandlers.get(transitionKey) || this.getDefaultHandler();
-
-      const context: NotificationContext = {
-        prId,
-        prNumber: prData.prNumber,
-        oldStatus,
-        newStatus,
-        user: user ? {
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName
-        } : undefined,
-        notes,
-        metadata: notification.metadata
-      };
-
-      // Get recipients and email content with retry
-      const recipients = await this.retryOperation(() => handler.getRecipients(context));
-      const emailContent = await this.retryOperation(() => handler.getEmailContent(context));
-
-      // Send notification using Firebase Function with retry
-      const sendPRNotification = httpsCallable(getFunctions(), 'sendPRNotification');
-      await this.retryOperation(() => sendPRNotification({
-        notification,
-        recipients: recipients.to,
-        cc: recipients.cc,
-        emailBody: emailContent
-      }), 5, 2000); // More retries and longer delay for sending email
-
-      // Log notification with retry
-      await this.retryOperation(() => addDoc(collection(db, this.notificationsCollection), {
-        ...notification,
-        status: 'sent',
-        recipients: recipients.to,
-        cc: recipients.cc,
-        emailContent,
-        timestamp: serverTimestamp()
-      }));
-
-      console.log('Notification sent successfully:', {
-        prId,
-        prNumber: prData.prNumber,
-        recipients: recipients.to,
-        cc: recipients.cc,
-        oldStatus,
-        newStatus
-      });
-
-      return notification;
-    } catch (error) {
-      console.error('Error creating notification:', error);
-      throw error;
-    }
-  }
-
+  /**
+   * Handles a PR status change notification.
+   * 
+   * @param prId PR ID associated with the notification
+   * @param oldStatus Previous PR status (null for new PR)
+   * @param newStatus New PR status
+   * @param user User who triggered the status change
+   * @param notes Optional notes about the status change
+   */
   async handleStatusChange(
     prId: string,
-    prNumber: string,
-    oldStatus: PRStatus,
+    oldStatus: PRStatus | null,
     newStatus: PRStatus,
     user: User | null,
-    notes?: string,
-    metadata?: Record<string, any>
+    notes?: string
   ): Promise<void> {
-    const transitionKey = this.getTransitionKey(oldStatus, newStatus);
-    const handler = this.transitionHandlers.get(transitionKey) || this.getDefaultHandler();
+    let lastError: Error | null = null;
 
+    // Create notification context
     const context: NotificationContext = {
       prId,
-      prNumber,
-      oldStatus,
+      prNumber: '', // Will be filled by the handler
+      oldStatus: oldStatus || PRStatus.SUBMITTED,
       newStatus,
-      user,
-      notes,
-      metadata
+      user: user ? {
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName
+      } : undefined,
+      notes
     };
 
-    try {
-      // Run pre-transition hooks if any
-      if (handler.beforeTransition) {
-        await this.retryOperation(() => handler.beforeTransition!(context));
-      }
-
-      // Get recipients and email content
-      const [recipients, emailContent] = await Promise.all([
-        this.retryOperation(() => handler.getRecipients(context)),
-        this.retryOperation(() => handler.getEmailContent(context))
-      ]);
-
-      // Send notification via Cloud Function
-      const functions = getFunctions();
-      const sendNotification = httpsCallable(functions, 'sendStatusChangeNotification');
-      
-      await this.retryOperation(() => 
-        sendNotification({
-          notification: {
-            prId,
-            prNumber,
-            oldStatus,
-            newStatus,
-            user: user ? {
-              email: user.email,
-              name: `${user.firstName} ${user.lastName}`.trim()
-            } : null,
-            notes,
-            metadata
-          },
-          recipients: recipients.to,
-          cc: recipients.cc,
-          emailBody: {
-            subject: emailContent.subject,
-            text: emailContent.text,
-            html: emailContent.html
-          }
-        })
-      );
-
-      // Log notification
-      await this.retryOperation(() =>
-        addDoc(collection(db, this.notificationsCollection), {
-          type: 'STATUS_CHANGE',
-          prId,
-          prNumber,
-          oldStatus,
-          newStatus,
-          user: user ? {
-            id: user.id,
-            email: user.email,
-            name: `${user.firstName} ${user.lastName}`.trim()
-          } : null,
-          notes,
-          recipients: recipients.to,
-          cc: recipients.cc,
-          metadata,
-          createdAt: serverTimestamp()
-        })
-      );
-
-      // Run post-transition hooks if any
-      if (handler.afterTransition) {
-        await this.retryOperation(() => handler.afterTransition!(context));
-      }
-    } catch (error) {
-      console.error(`Error handling ${transitionKey} notification:`, error);
-      throw error;
+    // Get the appropriate handler for this transition
+    const handler = getTransitionHandler(oldStatus, newStatus);
+    if (!handler) {
+      throw new Error(`No handler found for transition ${oldStatus} -> ${newStatus}`);
     }
+
+    // Execute any pre-transition logic
+    if (handler.beforeTransition) {
+      await handler.beforeTransition(context);
+    }
+
+    // Get recipients and email content
+    const recipients = await handler.getRecipients(context);
+    const emailContent = await handler.getEmailContent(context);
+
+    // Get the appropriate cloud function
+    const cloudFunction = this.getCloudFunction(oldStatus, newStatus);
+
+    // Try to send the notification with retries
+    for (let attempts = 1; attempts <= this.maxRetries; attempts++) {
+      try {
+        const result = await cloudFunction({
+          prId: context.prId,
+          prNumber: context.prNumber,
+          user: context.user ? {
+            email: context.user.email,
+            name: `${context.user.firstName} ${context.user.lastName}`.trim()
+          } : null,
+          notes: context.notes,
+          metadata: context.metadata,
+          recipients: recipients.to,
+          cc: recipients.cc,
+          emailContent
+        });
+
+        console.log('Notification sent successfully:', result);
+
+        // Save notification to Firestore
+        await addDoc(collection(db, this.notificationsCollection), {
+          type: 'STATUS_CHANGE',
+          prId: context.prId,
+          prNumber: context.prNumber,
+          oldStatus: context.oldStatus,
+          newStatus: context.newStatus,
+          user: context.user,
+          notes: context.notes,
+          recipients: recipients.to,
+          cc: recipients.cc,
+          emailContent,
+          timestamp: serverTimestamp()
+        });
+
+        // Execute any post-transition logic
+        if (handler.afterTransition) {
+          await handler.afterTransition(context);
+        }
+
+        return;
+
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Error sending status change notification (attempt ${attempts}/${this.maxRetries}):`, error);
+        
+        if (attempts < this.maxRetries) {
+          console.log(`Retrying in ${this.retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+        }
+      }
+    }
+
+    // If we get here, all attempts failed
+    throw lastError || new Error('Failed to send notification after multiple attempts');
   }
 }
 

@@ -1,7 +1,7 @@
 import { User } from '../../types/user';
 import { PRStatus } from '../../types/pr';
 
-export interface NotificationRecipients {
+export interface Recipients {
   to: string[];
   cc?: string[];
 }
@@ -17,13 +17,17 @@ export interface NotificationContext {
   prNumber: string;
   oldStatus: PRStatus;
   newStatus: PRStatus;
-  user: User | null;
+  user?: {
+    email: string;
+    firstName?: string;
+    lastName?: string;
+  };
   notes?: string;
   metadata?: Record<string, any>;
 }
 
 export interface StatusTransitionHandler {
-  getRecipients(context: NotificationContext): Promise<NotificationRecipients>;
+  getRecipients(context: NotificationContext): Promise<Recipients>;
   getEmailContent(context: NotificationContext): Promise<EmailContent>;
   beforeTransition?(context: NotificationContext): Promise<void>;
   afterTransition?(context: NotificationContext): Promise<void>;
