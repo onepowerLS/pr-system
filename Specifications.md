@@ -210,6 +210,157 @@
   - Example: "1PWR LESOTHO" becomes "1pwr_lesotho"
 - Organization matching uses normalized IDs for comparison
 
+## PR Data Model Structure
+
+### Core PR Fields
+- **id**: Unique identifier for the PR
+- **prNumber**: Human-readable PR number (format: ORG-YYYYMM-XXX)
+- **organization**: Organization the PR belongs to
+- **department**: Department making the request
+- **projectCategory**: Project or category the PR falls under
+- **description**: Detailed description of what is being requested
+- **site**: Site or location where items are needed
+- **expenseType**: Type of expense (CAPEX/OPEX)
+- **estimatedAmount**: Estimated total cost of the request
+- **currency**: Currency for the request
+- **preferredVendor**: Preferred vendor if any
+- **requiredDate**: Date by which items are needed
+- **requestorId**: ID of user making request
+- **requestorEmail**: Email of requestor
+- **requestor**: Full user object of requestor
+
+### Line Items Structure
+- Each PR contains an array of line items with:
+  - **id**: Unique identifier for the line item
+  - **description**: Description of the item
+  - **quantity**: Number of items requested
+  - **uom**: Unit of measure
+  - **notes**: Optional additional information
+  - **attachments**: Array of file attachments
+
+### Approval Workflow Structure
+- PRs use the `approvalWorkflow` field as the single source of truth for approval information:
+  ```typescript
+  interface ApprovalWorkflow {
+    currentApprover: string;  // Current approver's user ID
+    approvalHistory: ApprovalHistoryItem[];
+    lastUpdated: string;
+  }
+  ```
+- Legacy fields should be deprecated:
+  - `pr.approver` - Deprecated, use `approvalWorkflow.currentApprover`
+  - `pr.approvers` - Deprecated, approval history is in `approvalWorkflow.approvalHistory`
+
+- All code should be updated to use `approvalWorkflow.currentApprover` as the single source of truth.
+
+- Migration plan:
+  1. Update all PR documents to use `approvalWorkflow`
+  2. Update all code to read from `approvalWorkflow.currentApprover`
+  3. Add validation to ensure `approvalWorkflow` is always present
+  4. Remove legacy fields after migration
+
+### PR Status Workflow
+- PRs follow a defined status flow:
+  - **SUBMITTED**: Initial state when PR is first created
+  - **RESUBMITTED**: PR has been resubmitted after revision
+  - **IN_QUEUE**: PR is in procurement queue for processing
+  - **PENDING_APPROVAL**: Awaiting approval from designated approvers
+  - **APPROVED**: PR has been approved and is ready for processing
+  - **ORDERED**: Purchase order has been placed
+  - **PARTIALLY_RECEIVED**: Some items have been received
+  - **COMPLETED**: PR has been fully processed and closed
+  - **REVISION_REQUIRED**: Changes requested by approver
+  - **CANCELED**: PR has been canceled by requestor or admin
+  - **REJECTED**: PR has been rejected by approver
+
+### Standard Status Transitions
+1. SUBMITTED → PENDING_APPROVAL → [APPROVED | REJECTED]
+2. APPROVED → IN_QUEUE → [ORDERED | REVISION_REQUIRED]
+3. REVISION_REQUIRED → RESUBMITTED → PENDING_APPROVAL
+4. ORDERED → [PARTIALLY_RECEIVED | RECEIVED] → COMPLETED
+5. Any Status → CANCELED (if initiated by requestor or admin)
+
+## PR Workflow Implementation
+
+### PR Processing in IN_QUEUE Status
+1. Procurement Users (permissionLevel 2 or 3):
+   - Can "Push to Approver" (changes status to PENDING_APPROVAL)
+   - Can "Reject" (changes status to REJECTED)
+   - Can "Revise & Resubmit" (changes status to REVISION_REQUIRED)
+   - Must provide notes when rejecting or requesting revision
+   - Receive notifications about status changes
+
+2. Requestor Users:
+   - Can "Cancel PR" (changes status to CANCELED)
+   - Optional notes when canceling
+   - Receive notifications about status changes
+
+3. Approvers:
+   - Receive notification when PR is pushed for approval
+   - Notification includes PR details (requestor, category, expense type, site, estimatedAmount, preferredVendor, requiredDate)
+
+### PR Action Components
+- The workflow is implemented in the `ProcurementActions` component
+- Action buttons are displayed based on user permissions and PR status
+- Each action includes:
+  - Visual confirmation dialog
+  - Notes field (required for certain actions)
+  - Automatic notification triggers
+
+### Approval Process
+- Approvers are determined based on:
+  - Department hierarchy
+  - Amount thresholds
+  - Special category rules
+- The `approvalWorkflow` object tracks:
+  - Current approver information
+  - Complete approval history
+  - Timestamps of approval actions
+
+## PR Notifications System
+
+### Cloud Function Integration
+- PR notifications utilize Firebase Cloud Functions for email delivery
+- The client-side `sendPRNotification` handler prepares notification data and calls the `sendPRNotification` cloud function
+- The notification payload structure:
+  ```typescript
+  {
+    notification: {
+      prId: string;
+      prNumber: string;
+      oldStatus: string;
+      newStatus: string;
+      user: {
+        email: string;
+        name: string;
+      };
+      notes: string;
+      metadata: {
+        isUrgent?: boolean;
+        description: string;
+        amount: number;
+        currency: string;
+        department: string;
+        requiredDate: string;
+      };
+    };
+    recipients: string[];
+    cc?: string[];
+    emailBody: {
+      subject?: string;
+      text: string;
+      html: string;
+    };
+  }
+  ```
+
+### Email Template Data Fields
+- Templates must use the PR data model field names:
+  - **estimatedAmount**: For the total cost (NOT "amount")
+  - **preferredVendor**: For the vendor information (NOT "vendor")
+  - **requiredDate**: For the date by which items are needed
+  - **requestor**: Object containing requestor information
+
 ## Email Notifications
 
 ### General Rules
@@ -275,7 +426,8 @@
    - Description
    - Department
    - Required Date
-   - Estimated Amount (with currency)
+   - Estimated Amount (with currency) - uses `estimatedAmount` field
+   - Preferred Vendor - uses `preferredVendor` field
    - Requestor
 
 3. Line Items Section:
