@@ -30,13 +30,22 @@
  * - Dead letter queue for undeliverable notifications
  */
 
-import { collection, addDoc, doc, getDoc, serverTimestamp, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { collection, addDoc, doc, getDoc, serverTimestamp, query, where, getDocs, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { prService } from './pr';
 import { User } from '../types/user';
 import { PRStatus } from '../types/pr';
 import { Notification } from '../types/notification';
+import {
+  generateRevisionRequiredEmail,
+  generateResubmittedEmail,
+  generatePendingApprovalEmail,
+  generateApprovedEmail,
+  generateRejectedEmail,
+  generateNewPREmail
+} from './notifications/templates';
+import { EmailContent } from './notifications/types';
 
 const functions = getFunctions();
 
@@ -109,11 +118,30 @@ export class NotificationService {
     }
 
     const pr = { id: prDoc.id, ...prDoc.data() };
+    console.log('Full PR data:', pr);
+    
     const notification = await this.createNotification(pr, oldStatus, newStatus, user, notes);
 
     // Get base URL from window location
     const baseUrl = window.location.origin;
     const prUrl = `${baseUrl}/pr/${prId}`;
+
+    // Generate email content first
+    const emailContent = this.generateEmailContent(pr, oldStatus, newStatus, user, notes, baseUrl);
+    console.log('Email content for cloud function:', {
+      ...emailContent,
+      vendorDetails: emailContent.context?.pr?.vendorDetails // Ensure vendor details are included
+    });
+
+    // Save notification to Firestore without email headers and content
+    const { headers, content, ...emailContentToSave } = emailContent;
+    const notificationsRef = collection(db, 'notifications');
+    const notificationDoc = await addDoc(notificationsRef, {
+      ...notification,
+      emailContent: emailContentToSave,
+      status: 'pending',
+      createdAt: serverTimestamp()
+    });
 
     for (let attempts = 1; attempts <= maxAttempts; attempts++) {
       try {
@@ -133,31 +161,51 @@ export class NotificationService {
           throw new Error(`No notification handler found for transition: ${transitionKey}`);
         }
 
+        // Generate email content once and reuse it
         const result = await cloudFunction({
           prId: pr.id,
           prNumber: pr.prNumber,
           user: user ? {
+            firstName: user.firstName,
+            lastName: user.lastName,
             email: user.email,
             name: `${user.firstName} ${user.lastName}`
           } : null,
           notes,
           recipients: notification.recipients,
           cc: notification.cc || [],
-          emailContent: notification.emailBody,
+          emailContent,  // Pass the complete email content
           metadata: {
             prUrl,
+            baseUrl: window.location.origin,
             requestorEmail: pr.requestor?.email,
+            isUrgent: pr.isUrgent,
             ...(pr.approvalWorkflow?.currentApprover ? { approverInfo: pr.approvalWorkflow.currentApprover } : {})
+          },
+          pr: {
+            id: pr.id,
+            prNumber: pr.prNumber,
+            requestor: pr.requestor,
+            site: pr.site,
+            category: pr.projectCategory,
+            expenseType: pr.expenseType,
+            amount: pr.estimatedAmount,
+            currency: pr.currency,
+            vendor: pr.vendor,
+            vendorDetails: pr.vendorDetails,
+            preferredVendor: pr.preferredVendor,
+            requiredDate: pr.requiredDate,
+            isUrgent: pr.isUrgent,
+            department: pr.department
           }
         });
 
         console.log('Cloud function response:', result);
 
-        // Save notification to Firestore
-        const notificationsRef = collection(db, 'notifications');
-        await addDoc(notificationsRef, {
-          ...notification,
-          createdAt: serverTimestamp()
+        // Update notification status to sent
+        await updateDoc(notificationDoc, {
+          status: 'sent',
+          sentAt: serverTimestamp()
         });
 
         return;
@@ -165,6 +213,12 @@ export class NotificationService {
       } catch (error) {
         lastError = error as Error;
         console.error(`Error sending status change notification (attempt ${attempts}/${maxAttempts}):`, error);
+        
+        // Only retry if it's a network error, not a data validation error
+        if (error.message.includes('addDoc') || error.message.includes('validation')) {
+          throw error;
+        }
+        
         if (attempts < maxAttempts) {
           console.log(`Retrying in ${retryDelay}ms...`);
           await new Promise(resolve => setTimeout(resolve, retryDelay));
@@ -172,7 +226,12 @@ export class NotificationService {
       }
     }
 
-    // If we get here, all attempts failed
+    // If we get here, all attempts failed - update notification status to failed
+    await updateDoc(notificationDoc, {
+      status: 'failed',
+      error: lastError?.message
+    });
+
     throw lastError || new Error('Failed to send notification after multiple attempts');
   }
 
@@ -357,43 +416,191 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Creates a notification object for a PR status change.
-   */
-  private async createNotification(
+  async createNotification(
     pr: any,
     oldStatus: PRStatus,
     newStatus: PRStatus,
     user: User | null,
     notes?: string
   ): Promise<any> {
-    const notification = {
-      id: '',
-      type: 'STATUS_CHANGE',
-      prId: pr.id,
-      prNumber: pr.prNumber,
-      oldStatus,
-      newStatus,
-      user: user ? {
-        email: user.email,
-        name: `${user.firstName} ${user.lastName}`.trim()
-      } : null,
-      notes: notes || '',
-      recipients: [pr.requestor?.email || this.PROCUREMENT_EMAIL].filter(Boolean),
-      cc: [this.PROCUREMENT_EMAIL],
-      emailBody: {
-        subject: `PR ${pr.prNumber} Status Changed: ${oldStatus} → ${newStatus}`,
-        text: `PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}\n` +
-          (notes ? `Notes: ${notes}\n` : ''),
-        html: `
-          <p>PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
-          ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-        `
-      }
-    };
+    try {
+      const { prNumber } = pr;
+      const context: NotificationContext = {
+        pr,
+        prNumber,
+        user,
+        notes,
+        baseUrl: getBaseUrl(),
+        isUrgent: pr.isUrgent || false
+      };
 
-    console.log('Notification object:', notification);
-    return notification;
+      // Fetch vendor data if not already present
+      if (pr.preferredVendor && !pr.vendorDetails) {
+        try {
+          const vendorData = await getVendorById(pr.preferredVendor);
+          if (vendorData) {
+            pr.vendorDetails = vendorData;
+          }
+        } catch (err) {
+          console.error('Error fetching vendor data:', err);
+        }
+      }
+
+      let emailContent: EmailContent;
+
+      switch (`${oldStatus || 'NEW'}->${newStatus}`) {
+        case 'SUBMITTED->REVISION_REQUIRED':
+          emailContent = await generateRevisionRequiredEmail(context);
+          break;
+        case 'REVISION_REQUIRED->SUBMITTED':
+          emailContent = await generateResubmittedEmail(context);
+          break;
+        case 'SUBMITTED->PENDING_APPROVAL':
+          emailContent = await generatePendingApprovalEmail(context);
+          break;
+        case 'PENDING_APPROVAL->APPROVED':
+          emailContent = await generateApprovedEmail(context);
+          break;
+        case 'PENDING_APPROVAL->REJECTED':
+          emailContent = await generateRejectedEmail(context);
+          break;
+        case 'NEW->SUBMITTED':
+          emailContent = await generateNewPREmail(context);
+          break;
+        default:
+          emailContent = {
+            subject: `${pr.isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Status Changed: ${oldStatus} → ${newStatus}`,
+            text: `PR ${prNumber} status has changed from ${oldStatus} to ${newStatus}\n${notes ? `Notes: ${notes}\n` : ''}`,
+            html: `
+              <p>PR ${prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
+              ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+              <p><a href="${getBaseUrl()}/pr/${pr.id}">View PR</a></p>
+            `
+          };
+      }
+
+      if (!emailContent) {
+        throw new Error('Failed to generate email content');
+      }
+
+      // Log the notification
+      const notification: Notification = {
+        id: '',
+        type: 'STATUS_CHANGE',
+        prId: pr.id,
+        prNumber,
+        oldStatus,
+        newStatus,
+        timestamp: new Date().toISOString(),
+        user: user || '',
+        notes: notes || '',
+        emailContent
+      };
+
+      await this.logNotification(notification.type, notification.prId, notification.recipients, 'pending');
+
+      return notification;
+    } catch (error) {
+      console.error('Error creating notification:', error);
+      throw new Error(`Failed to create notification: ${error.message}`);
+    }
+  }
+
+  private generateEmailContent(
+    pr: any,
+    oldStatus: PRStatus,
+    newStatus: PRStatus,
+    user: User | null,
+    notes?: string,
+    baseUrl?: string
+  ): EmailContent {
+    try {
+      const prUrl = `${baseUrl}/pr/${pr.id}`;
+      const isUrgent = pr.isUrgent || false;
+
+      // Get the template based on the status transition
+      const transitionKey = `${oldStatus || 'NEW'}->${newStatus}`;
+      let emailContent: EmailContent;
+
+      switch (transitionKey) {
+        case 'SUBMITTED->REVISION_REQUIRED':
+          emailContent = generateRevisionRequiredEmail({
+            pr,
+            prNumber: pr.prNumber,
+            user,
+            notes,
+            baseUrl: baseUrl || '',
+            isUrgent
+          });
+          break;
+        case 'REVISION_REQUIRED->SUBMITTED':
+          emailContent = generateResubmittedEmail({
+            pr,
+            prNumber: pr.prNumber,
+            user,
+            notes,
+            baseUrl: baseUrl || '',
+            isUrgent
+          });
+          break;
+        case 'SUBMITTED->PENDING_APPROVAL':
+          emailContent = generatePendingApprovalEmail({
+            pr,
+            prNumber: pr.prNumber,
+            user,
+            notes,
+            baseUrl: baseUrl || '',
+            isUrgent
+          });
+          break;
+        case 'PENDING_APPROVAL->APPROVED':
+          emailContent = generateApprovedEmail({
+            pr,
+            prNumber: pr.prNumber,
+            user,
+            notes,
+            baseUrl: baseUrl || '',
+            isUrgent
+          });
+          break;
+        case 'PENDING_APPROVAL->REJECTED':
+          emailContent = generateRejectedEmail({
+            pr,
+            prNumber: pr.prNumber,
+            user,
+            notes,
+            baseUrl: baseUrl || '',
+            isUrgent
+          });
+          break;
+        case 'NEW->SUBMITTED':
+          emailContent = generateNewPREmail({
+            pr,
+            prNumber: pr.prNumber,
+            user,
+            notes,
+            baseUrl: baseUrl || '',
+            isUrgent
+          });
+          break;
+        default:
+          emailContent = {
+            subject: `${isUrgent ? 'URGENT: ' : ''}PR ${pr.prNumber} Status Changed: ${oldStatus} → ${newStatus}`,
+            text: `PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}\n${notes ? `Notes: ${notes}\n` : ''}`,
+            html: `
+              <p>PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
+              ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+              <p><a href="${prUrl}">View PR</a></p>
+            `
+          };
+      }
+
+      console.log('Generated email content:', emailContent);
+      return emailContent;
+    } catch (error) {
+      console.error('Error generating email content:', error);
+      throw new Error(`Failed to generate email content: ${error.message}`);
+    }
   }
 
   private async getNotificationRecipients(pr: PR): Promise<string[]> {

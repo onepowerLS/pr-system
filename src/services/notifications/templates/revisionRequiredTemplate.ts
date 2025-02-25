@@ -2,6 +2,7 @@ import { NotificationContext, EmailContent } from '../types';
 import { generateEmailHeaders } from '../types/emailHeaders';
 import { generateTable } from './baseTemplate';
 import { styles } from './styles';
+import { getVendorById } from '../../referenceData';
 
 interface RevisionRequiredDetails {
   prNumber: string;
@@ -28,127 +29,194 @@ function extractRevisionDetails(context: NotificationContext): RevisionRequiredD
   };
 }
 
-export function generateRevisionRequiredEmail(context: NotificationContext): EmailContent {
-  const { pr, prNumber, isUrgent, notes, baseUrl } = context;
-  const prUrl = `${baseUrl}/pr/${pr.id}`;
+const formatCurrency = (amount?: number | null, currency?: string) => {
+  if (amount === undefined || amount === null) return 'Not specified';
+  try {
+    return amount.toLocaleString('en-US', { 
+      style: 'currency', 
+      currency: currency || 'USD'
+    });
+  } catch (e) {
+    console.error('Error formatting currency:', e);
+    return `${amount} ${currency || 'USD'}`;
+  }
+};
+
+const formatDate = (date?: string | Date | null) => {
+  if (!date) return 'Not specified';
+  try {
+    return new Date(date).toLocaleDateString();
+  } catch (e) {
+    console.error('Error formatting date:', e);
+    return 'Invalid date';
+  }
+};
+
+function getRequestorName(requestor: any): string {
+  if (!requestor) return 'Not specified';
   
-  const subject = isUrgent ? `URGENT: PR #${prNumber} Requires Revision` : `PR #${prNumber} Requires Revision`;
-  const boundary = `NmP-${Math.random().toString(36).substring(2)}-Part_1`;
+  // If we have a name field, use it
+  if (requestor.name) {
+    return requestor.name;
+  }
   
-  const requestorDetails = [
-    ['Name', `${pr.requestor.firstName} ${pr.requestor.lastName}`],
-    ['Email', pr.requestor.email],
-    ['Department', pr.requestor.department || 'Not specified'],
-    ['Site', pr.site],
-  ];
+  // Next try displayName
+  if (requestor.displayName) {
+    return requestor.displayName;
+  }
+  
+  // Then try firstName + lastName
+  const firstName = requestor.firstName || '';
+  const lastName = requestor.lastName || '';
+  
+  if (firstName || lastName) {
+    return `${firstName} ${lastName}`.trim();
+  }
+  
+  // Finally fall back to email
+  return requestor.email || 'Not specified';
+}
 
-  const prSummary = [
-    ['PR Number', prNumber],
-    ['Category', pr.category],
-    ['Expense Type', pr.expenseType],
-    ['Total Amount', pr.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })],
-    ['Vendor', pr.vendor || 'Not specified'],
-    ['Required Date', new Date(pr.requiredDate).toLocaleDateString()],
-  ];
+function getRequestorEmail(requestor: any): string {
+  return requestor.email || 'Not specified';
+}
 
-  // Format line items table
-  const lineItemsTable = pr.lineItems.map((item, index) => [
-    `${index + 1}`,
-    item.description,
-    item.quantity.toString(),
-    item.unitPrice.toLocaleString('en-US', { style: 'currency', currency: 'USD' }),
-    (item.quantity * item.unitPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-  ]);
+async function getVendorName(pr: any): Promise<string> {
+  try {
+    // First check vendorDetails
+    if (pr?.vendorDetails) {
+      if (pr.vendorDetails.name) {
+        return pr.vendorDetails.name;
+      }
+      if (pr.vendorDetails.companyName) {
+        return pr.vendorDetails.companyName;
+      }
+    }
+    
+    // Then check vendor field
+    if (pr?.vendor) {
+      if (typeof pr.vendor === 'string') {
+        // If vendor is a string, it's likely an ID - try to fetch from reference data
+        const vendorData = await getVendorById(pr.vendor);
+        if (vendorData?.name) {
+          return vendorData.name;
+        }
+      }
+      if (pr.vendor.name) {
+        return pr.vendor.name;
+      }
+      if (pr.vendor.companyName) {
+        return pr.vendor.companyName;
+      }
+    }
+    
+    // Finally check preferredVendor
+    if (pr?.preferredVendor) {
+      const vendorData = await getVendorById(pr.preferredVendor);
+      if (vendorData?.name) {
+        return vendorData.name;
+      }
+      return pr.preferredVendor;
+    }
+    
+    return 'Not specified';
+  } catch (err) {
+    console.error('Error getting vendor name:', err);
+    return pr?.vendorDetails?.code || pr?.vendor?.code || pr?.preferredVendor || 'Not specified';
+  }
+}
 
-  const html = `
-    <div style="${styles.container}">
-      ${isUrgent ? `<div style="${styles.urgentHeader}">URGENT</div>` : ''}
-      <h2 style="${styles.header}">Purchase Request #${prNumber} Requires Revision</h2>
-      
-      <h3 style="${styles.subheader}">Requestor Information</h3>
-      ${generateTable('', requestorDetails)}
-      
-      <h3 style="${styles.subheader}">PR Summary</h3>
-      ${generateTable('', prSummary)}
-      
-      <h3 style="${styles.subheader}">Line Items</h3>
-      <table style="${styles.table}">
-        <thead>
-          <tr>
-            <th style="${styles.th}">#</th>
-            <th style="${styles.th}">Description</th>
-            <th style="${styles.th}">Quantity</th>
-            <th style="${styles.th}">Unit Price</th>
-            <th style="${styles.th}">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${lineItemsTable.map(([num, desc, qty, price, total]) => `
-            <tr>
-              <td style="${styles.td}">${num}</td>
-              <td style="${styles.td}">${desc}</td>
-              <td style="${styles.td}">${qty}</td>
-              <td style="${styles.td}">${price}</td>
-              <td style="${styles.td}">${total}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-      
-      ${notes ? `<div style="${styles.notes}"><strong>Revision Notes:</strong> ${notes}</div>` : ''}
-      <div style="${styles.actions}">
-        <a href="${prUrl}" style="${styles.button}">View PR</a>
+function formatAmount(amount?: number | null, currency?: string): string {
+  return formatCurrency(amount, currency);
+}
+
+export async function generateRevisionRequiredEmail(context: NotificationContext): Promise<EmailContent> {
+  try {
+    const { pr, prNumber, user, notes, baseUrl, isUrgent } = context;
+    const prUrl = `${baseUrl}/pr/${pr.id}`;
+    
+    const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Status Changed: SUBMITTED → REVISION_REQUIRED`;
+    
+    // Get requestor name and details
+    const requestorName = getRequestorName(pr.requestor);
+    const vendorName = await getVendorName(pr);
+    
+    console.log('Template data:', { 
+      requestor: pr.requestor,
+      requestorName,
+      vendor: pr.vendorDetails || pr.vendor,
+      vendorName,
+      preferredVendor: pr.preferredVendor,
+      vendorCode: pr.vendorDetails?.code || pr.vendor?.code
+    });
+
+    const requestorDetails = [
+      { label: 'Name', value: requestorName },
+      { label: 'Email', value: getRequestorEmail(pr.requestor) },
+      { label: 'Department', value: pr.department || 'Not specified' },
+      { label: 'Site', value: pr.site || 'Not specified' }
+    ];
+
+    const prDetails = [
+      { label: 'PR Number', value: prNumber },
+      { label: 'Category', value: pr.projectCategory || 'Not specified' },
+      { label: 'Expense Type', value: pr.expenseType || 'Not specified' },
+      { label: 'Total Amount', value: formatAmount(pr.estimatedAmount, pr.currency) },
+      { label: 'Vendor', value: vendorName },
+      { label: 'Required Date', value: formatDate(pr.requiredDate) },
+      { label: 'PR Link', value: prUrl }
+    ];
+
+    const html = `
+      <div style="${styles.container}">
+        ${isUrgent ? `<div style="${styles.urgentBadge}">URGENT</div>` : ''}
+        <h2 style="${styles.heading}">Purchase Request #${prNumber} Requires Revision</h2>
+        
+        <div style="${styles.section}">
+          <h3 style="${styles.subheading}">Revision Details</h3>
+          <p style="${styles.paragraph}">
+            <strong>Reviewer:</strong> ${user?.name || 'System'}
+          </p>
+          ${notes ? `
+            <p style="${styles.paragraph}">
+              <strong>Notes:</strong> ${notes}
+            </p>
+          ` : ''}
+        </div>
+
+        <div style="${styles.section}">
+          <h3 style="${styles.subheading}">Requestor Information</h3>
+          ${generateTable(requestorDetails)}
+        </div>
+
+        <div style="${styles.section}">
+          <h3 style="${styles.subheading}">PR Details</h3>
+          ${generateTable(prDetails)}
+        </div>
+
+        <div style="${styles.buttonContainer}">
+          <a href="${prUrl}" style="${styles.button}">View Purchase Request</a>
+        </div>
       </div>
-    </div>
-  `;
+    `;
 
-  const text = `${isUrgent ? 'URGENT: ' : ''}PR #${prNumber} Requires Revision
+    const emailContent: EmailContent = {
+      subject,
+      text: `PR ${prNumber} Requires Revision\n\nReviewer: ${user?.name || 'System'}\n${notes ? `Notes: ${notes}\n` : ''}\n\nRequestor Information:\n${requestorDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nPR Details:\n${prDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nView PR: ${prUrl}`,
+      html,
+      headers: generateEmailHeaders(),
+      context: {
+        ...context,
+        pr: {
+          ...pr,
+          vendorName // Include resolved vendor name in context
+        }
+      }
+    };
 
-Requestor Information:
-${requestorDetails.map(([key, value]) => `${key}: ${value}`).join('\n')}
-
-PR Summary:
-${prSummary.map(([key, value]) => `${key}: ${value}`).join('\n')}
-
-Line Items:
-${lineItemsTable.map(([num, desc, qty, price, total]) => 
-  `${num}. ${desc}\n   Quantity: ${qty}, Unit Price: ${price}, Total: ${total}`
-).join('\n')}
-
-${notes ? `\nRevision Notes: ${notes}` : ''}
-
-View PR: ${prUrl}
-  `.trim();
-
-  const headers = generateEmailHeaders({
-    prId: pr.id,
-    prNumber,
-    subject,
-    notificationType: 'revision-required'
-  });
-
-  const emailContent = `MIME-Version: 1.0
-Content-Type: multipart/alternative; boundary="${boundary}"
-
---${boundary}
-Content-Type: text/plain; charset=utf-8
-Content-Transfer-Encoding: 7bit
-
-${text}
-
---${boundary}
-Content-Type: text/html; charset=utf-8
-Content-Transfer-Encoding: quoted-printable
-
-${html}
---${boundary}--`;
-
-  return {
-    headers,
-    subject,
-    html,
-    text,
-    boundary,
-    content: emailContent
-  };
+    return emailContent;
+  } catch (error) {
+    console.error('Error generating revision required email:', error);
+    throw error;
+  }
 }
