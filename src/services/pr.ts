@@ -53,7 +53,6 @@ import {
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
 import { PRRequest, PRStatus } from '../types/pr';
-import { notificationService } from './notification';
 import { calculateDaysOpen } from '../utils/formatters';
 import { StorageService } from './storage';
 import { auth } from '../config/firebase';
@@ -61,6 +60,7 @@ import { UserRole } from '../types/user';
 import { User } from '../types/user';
 import { Rule } from '../types/referenceData';
 import { PERMISSION_LEVELS } from '../config/permissions';
+import { submitPRNotification } from './notifications/handlers/submitPRNotification';
 
 const PR_COLLECTION = 'purchaseRequests';
 const functions = getFunctions();
@@ -173,6 +173,12 @@ export const prService = {
         status: 'SUBMITTED' as PRStatus,
         createdAt: serverNow,
         updatedAt: serverNow,
+        requestor: {
+          firstName: prData.requestor?.name?.split(' ')[0] || prData.requestor?.firstName || '',
+          lastName: prData.requestor?.name?.split(' ')[1] || prData.requestor?.lastName || '',
+          email: prData.requestor?.email || prData.email || '',
+          department: prData.requestor?.department || prData.department || ''
+        },
         createdBy: {
           id: user.uid,
           name: user.displayName || '',
@@ -191,38 +197,25 @@ export const prService = {
             name: user.displayName || '',
             email: user.email || ''
           }
-        }]
+        }],
+        approvalWorkflow: {
+          currentApprover: null,
+          approvalHistory: [],
+          lastUpdated: now.toDate().toISOString()
+        }
       };
 
       // Create PR document
       const docRef = await addDoc(collection(db, PR_COLLECTION), pr);
+      const prWithId = { ...pr, id: docRef.id };
       console.log('Created PR with ID:', docRef.id);
 
       // Send notification for PR submission
       try {
-        // Get the complete PR data with ID
-        const prDoc = await getDoc(docRef);
-        if (!prDoc.exists()) {
-          throw new Error('PR document not found after creation');
-        }
-
-        const prWithId = {
-          ...prDoc.data(),
-          id: docRef.id,
-          // Ensure we maintain the requestor object structure
-          requestor: {
-            firstName: user.displayName?.split(' ')[0] || '',
-            lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
-            email: user.email || '',
-            department: prData.department || ''
-          }
-        };
-
-        console.log('Sending notification with PR data:', prWithId);
-        await notificationService.handleSubmission(prWithId, 'create');
-      } catch (notificationError) {
-        console.error('Error sending PR submission notification:', notificationError);
-        // Don't throw the error since PR was created successfully
+        await submitPRNotification.createNotification(prWithId, prNumber);
+      } catch (error) {
+        console.error('Error sending PR submission notification:', error);
+        // Don't throw here - we want the PR to be created even if notification fails
       }
 
       return docRef.id;

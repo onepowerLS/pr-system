@@ -2,7 +2,7 @@ import { NotificationContext, EmailContent } from '../types';
 import { generateEmailHeaders } from '../types/emailHeaders';
 import { generateTable } from './baseTemplate';
 import { styles } from './styles';
-import { getVendorById } from '../../referenceData';
+import { referenceDataService } from '../../referenceData';
 
 interface RevisionRequiredDetails {
   prNumber: string;
@@ -97,7 +97,7 @@ async function getVendorName(pr: any): Promise<string> {
     if (pr?.vendor) {
       if (typeof pr.vendor === 'string') {
         // If vendor is a string, it's likely an ID - try to fetch from reference data
-        const vendorData = await getVendorById(pr.vendor);
+        const vendorData = await referenceDataService.getVendorById(pr.vendor);
         if (vendorData?.name) {
           return vendorData.name;
         }
@@ -112,7 +112,7 @@ async function getVendorName(pr: any): Promise<string> {
     
     // Finally check preferredVendor
     if (pr?.preferredVendor) {
-      const vendorData = await getVendorById(pr.preferredVendor);
+      const vendorData = await referenceDataService.getVendorById(pr.preferredVendor);
       if (vendorData?.name) {
         return vendorData.name;
       }
@@ -161,8 +161,11 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
       { label: 'PR Number', value: prNumber },
       { label: 'Category', value: pr.projectCategory || 'Not specified' },
       { label: 'Expense Type', value: pr.expenseType || 'Not specified' },
-      { label: 'Total Amount', value: formatAmount(pr.estimatedAmount, pr.currency) },
-      { label: 'Vendor', value: vendorName },
+      { label: 'Total Amount', value: pr.estimatedAmount ? pr.estimatedAmount.toLocaleString('en-US', { 
+        style: 'currency', 
+        currency: pr.currency || 'USD' 
+      }) : 'Not specified' },
+      { label: 'Vendor', value: pr.preferredVendor || 'Not specified' },
       { label: 'Required Date', value: formatDate(pr.requiredDate) },
       { label: 'PR Link', value: prUrl }
     ];

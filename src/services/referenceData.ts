@@ -277,6 +277,24 @@ class ReferenceDataService {
       return this.handleError(error, 'creating reference data item');
     }
   }
+
+  async getVendorById(vendorId: string): Promise<ReferenceData | null> {
+    try {
+      const docRef = doc(this.db, this.getCollectionName('vendors'), vendorId);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        return {
+          id: docSnap.id,
+          ...docSnap.data()
+        } as ReferenceData;
+      }
+      
+      return null;
+    } catch (error) {
+      return this.handleError(error, 'getting vendor by ID');
+    }
+  }
 }
 
 export const referenceDataService = new ReferenceDataService();

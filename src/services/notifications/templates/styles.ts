@@ -6,41 +6,47 @@ export const styles = {
     padding: 20px;
   `,
   urgentHeader: `
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-bottom: 20px;
     background-color: #ff4444;
     color: white;
-    padding: 10px;
-    text-align: center;
-    margin-bottom: 20px;
-    border-radius: 4px;
   `,
-  normalHeader: `
-    background-color: #00C851;
-    color: black;
-    padding: 10px;
-    text-align: center;
-    margin-bottom: 20px;
-    border-radius: 4px;
+  header: `
+    color: #333;
+    margin-bottom: 30px;
+  `,
+  subHeader: `
+    color: #444;
+    margin-bottom: 15px;
+  `,
+  section: `
+    margin-bottom: 30px;
+  `,
+  paragraph: `
+    margin: 10px 0;
+    line-height: 1.5;
   `,
   table: `
-    width: 100%;
     border-collapse: collapse;
-    margin: 20px 0;
+    width: 100%;
+    margin-bottom: 30px;
   `,
-  th: `
+  tableHeader: `
+    padding: 12px;
+    border: 1px solid #ddd;
     background-color: #f8f9fa;
-    border: 1px solid #ddd;
-    padding: 8px;
     text-align: left;
   `,
-  td: `
-    border: 1px solid #ddd;
+  tableCell: `
     padding: 8px;
-    text-align: left;
+    border: 1px solid #ddd;
   `,
-  tr: `
-    &:nth-child(even) {
-      background-color: #f9f9f9;
-    }
+  buttonContainer: `
+    margin-top: 30px;
+    text-align: center;
   `,
   button: `
     display: inline-block;
@@ -49,12 +55,6 @@ export const styles = {
     color: white;
     text-decoration: none;
     border-radius: 4px;
-    margin-top: 20px;
-    &:hover {
-      background-color: #45a049;
-    }
+    font-weight: bold;
   `,
-  lineItems: `
-    margin-top: 20px;
-  `
-};
+} as const;

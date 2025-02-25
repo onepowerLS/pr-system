@@ -111,6 +111,10 @@ console.log('Firebase storage initialized successfully');
 
 // Initialize Firebase Functions with the correct region and custom domain
 export const functions = getFunctions(app, 'us-central1');
+if (import.meta.env.DEV) {
+  const { connectFunctionsEmulator } = require('firebase/functions');
+  connectFunctionsEmulator(functions, 'localhost', 5001);
+}
 console.log('Firebase functions initialized successfully');
 
 // Only initialize analytics in production

@@ -7,16 +7,17 @@ export function generateReviseAndResubmitEmail(context: NotificationContext): Em
   const { pr, prNumber, isUrgent, notes, baseUrl } = context;
   const prUrl = `${baseUrl}/pr/${pr.id}`;
   
-  const subject = isUrgent ? `URGENT: PR #${prNumber} Revise and Resubmit` : `PR #${prNumber} Revise and Resubmit`;
+  const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Status Changed: SUBMITTED → REVISION_REQUIRED`;
   
   const prDetails = [
     ['Requestor', `${pr.requestor.firstName} ${pr.requestor.lastName}`],
     ['Category', pr.category],
     ['Expense Type', pr.expenseType],
     ['Site', pr.site],
-    ['Amount', pr.amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })],
+    ['Amount', pr.amount.toLocaleString('en-US', { style: 'currency', currency: pr.currency })],
     ['Vendor', pr.vendor || 'Not specified'],
     ['Required Date', new Date(pr.requiredDate).toLocaleDateString()],
+    ['PR Link', prUrl]
   ];
 
   const html = `

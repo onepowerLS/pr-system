@@ -8,6 +8,8 @@ import { RootState } from '@/store';
 interface OrganizationSelectorProps {
   value: { id: string; name: string } | null | string;
   onChange: (value: { id: string; name: string }) => void;
+  error?: boolean;
+  helperText?: string;
 }
 
 // Map display names to codes
@@ -25,16 +27,16 @@ const organizationDisplayMap: Record<string, string> = {
 const organizationCodeMap: Record<string, string> = Object.entries(organizationDisplayMap)
   .reduce((acc, [display, code]) => ({ ...acc, [code]: display }), {});
 
-export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorProps) => {
+export const OrganizationSelector = ({ value, onChange, error, helperText }: OrganizationSelectorProps) => {
   const [organizations, setOrganizations] = useState<ReferenceData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [internalError, setInternalError] = useState<string | null>(null);
   const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
     const loadOrganizations = async () => {
       try {
-        setError(null);
+        setInternalError(null);
         console.log('Loading organizations for user:', {
           user,
           currentValue: value
@@ -50,7 +52,7 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
 
         if (allOrgs.length === 0) {
           console.error('No organizations found in the database');
-          setError('No organizations available');
+          setInternalError('No organizations available');
           setOrganizations([]);
           return;
         }
@@ -94,7 +96,7 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
 
           if (filteredOrgs.length === 0) {
             console.error('User has no matching organizations');
-            setError('No organizations available for your account');
+            setInternalError('No organizations available for your account');
           }
         }
         
@@ -125,7 +127,7 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
         }
       } catch (error) {
         console.error('Error loading organizations:', error);
-        setError('Failed to load organizations');
+        setInternalError('Failed to load organizations');
         setOrganizations([]);
       } finally {
         setLoading(false);
@@ -149,7 +151,7 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
   }
 
   return (
-    <FormControl fullWidth error={!!error}>
+    <FormControl fullWidth error={!!error || !!internalError}>
       <InputLabel id="organization-label">Organization</InputLabel>
       <Select
         labelId="organization-label"
@@ -171,7 +173,9 @@ export const OrganizationSelector = ({ value, onChange }: OrganizationSelectorPr
           </MenuItem>
         ))}
       </Select>
-      {error && <FormHelperText>{error}</FormHelperText>}
+      {(internalError && <FormHelperText error>{internalError}</FormHelperText>) || 
+       (error && helperText && <FormHelperText error>{helperText}</FormHelperText>) || 
+       (helperText && <FormHelperText>{helperText}</FormHelperText>)}
     </FormControl>
   );
 };

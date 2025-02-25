@@ -41,12 +41,8 @@ export function generateNewPREmail(context: NotificationContext): EmailContent {
   const requestorDept = pr.requestor?.department || 'Not specified';
   const requestorSite = pr.site || 'Not specified';
 
-  // Calculate total amount from line items
-  const totalAmount = pr.lineItems?.reduce((sum, item) => {
-    const quantity = item.quantity || 0;
-    const unitPrice = item.unitPrice || 0;
-    return sum + (quantity * unitPrice);
-  }, 0) || 0;
+  // Get vendor name
+  const vendorName = pr.preferredVendor || 'Not specified';
 
   const html = `
     <div style="${styles.container}">
@@ -93,7 +89,11 @@ export function generateNewPREmail(context: NotificationContext): EmailContent {
         </tr>
         <tr>
           <td style="${styles.th}"><strong>Estimated Amount</strong></td>
-          <td style="${styles.td}">${formatCurrency(totalAmount)}</td>
+          <td style="${styles.td}">${formatCurrency(pr.estimatedAmount)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.th}"><strong>Vendor</strong></td>
+          <td style="${styles.td}">${vendorName}</td>
         </tr>
         <tr>
           <td style="${styles.th}"><strong>Description</strong></td>
@@ -107,20 +107,14 @@ export function generateNewPREmail(context: NotificationContext): EmailContent {
           <tr>
             <th style="${styles.th}">Description</th>
             <th style="${styles.th}">Quantity</th>
-            <th style="${styles.th}">Unit Price</th>
-            <th style="${styles.th}">Total</th>
+            <th style="${styles.th}">UOM</th>
           </tr>
           ${pr.lineItems.map(item => {
-            const quantity = item.quantity || 0;
-            const unitPrice = item.unitPrice || 0;
-            const total = quantity * unitPrice;
-            
             return `
               <tr>
                 <td style="${styles.td}">${item.description || 'Not specified'}</td>
-                <td style="${styles.td}">${quantity}</td>
-                <td style="${styles.td}">${formatCurrency(unitPrice)}</td>
-                <td style="${styles.td}">${formatCurrency(total)}</td>
+                <td style="${styles.td}">${item.quantity || 0}</td>
+                <td style="${styles.td}">${item.uom || 'Not specified'}</td>
               </tr>
             `;
           }).join('')}
@@ -151,21 +145,17 @@ PR Details:
 - Category: ${pr.category || 'Not specified'}
 - Expense Type: ${pr.expenseType || 'Not specified'}
 - Required Date: ${formatDate(pr.requiredDate)}
-- Estimated Amount: ${formatCurrency(totalAmount)}
+- Estimated Amount: ${formatCurrency(pr.estimatedAmount)}
+- Vendor: ${vendorName}
 - Description: ${pr.description || 'Not specified'}
 
 ${pr.lineItems?.length ? `
 Line Items:
 ${pr.lineItems.map(item => {
-  const quantity = item.quantity || 0;
-  const unitPrice = item.unitPrice || 0;
-  const total = quantity * unitPrice;
-  
   return `
 - ${item.description || 'Not specified'}
-  Quantity: ${quantity}
-  Unit Price: ${formatCurrency(unitPrice)}
-  Total: ${formatCurrency(total)}
+  Quantity: ${item.quantity || 0}
+  UOM: ${item.uom || 'Not specified'}
 `;
 }).join('')}
 ` : 'No line items'}

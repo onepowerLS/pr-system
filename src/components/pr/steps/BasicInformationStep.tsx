@@ -23,6 +23,8 @@ import {
   Typography,
   SelectChangeEvent,
   CircularProgress,
+  Alert,
+  Paper,
 } from '@mui/material';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
@@ -47,7 +49,8 @@ interface BasicInformationStepProps {
   }>;
   currencies: ReferenceDataItem[];
   loading: boolean;
-  isSubmitted: boolean;
+  isSubmitted?: boolean;
+  validationErrors?: string[];
 }
 
 export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
@@ -62,7 +65,8 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
   approvers,
   currencies,
   loading,
-  isSubmitted,
+  isSubmitted = false,
+  validationErrors = [],
 }) => {
   const handleChange = (field: keyof FormState) => (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | SelectChangeEvent<any>
@@ -132,6 +136,22 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
 
   return (
     <Grid container spacing={3}>
+      {/* Validation Summary */}
+      {validationErrors.length > 0 && (
+        <Grid item xs={12}>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            <Typography variant="subtitle1" fontWeight="bold">
+              Please correct the following issues:
+            </Typography>
+            <ul style={{ margin: '8px 0', paddingLeft: '24px' }}>
+              {validationErrors.map((error, index) => (
+                <li key={index}>{error}</li>
+              ))}
+            </ul>
+          </Alert>
+        </Grid>
+      )}
+
       {/* Organization */}
       <Grid item xs={12}>
         <OrganizationSelector
@@ -142,6 +162,8 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               organization: org
             }));
           }}
+          error={isSubmitted && !formState.organization}
+          helperText={isSubmitted && !formState.organization ? "Organization is required" : ""}
         />
       </Grid>
 
@@ -154,8 +176,8 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           value={formState.requestor}
           onChange={handleChange('requestor')}
           required
-          error={formState.requestor === ''}
-          helperText={formState.requestor === '' ? 'Requestor is required' : ''}
+          error={isSubmitted && formState.requestor === ''}
+          helperText={isSubmitted && formState.requestor === '' ? 'Requestor is required' : ''}
           disabled={loading}
         />
       </Grid>
@@ -170,15 +192,15 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           value={formState.email}
           onChange={handleChange('email')}
           required
-          error={formState.email === ''}
-          helperText={formState.email === '' ? 'Email is required' : ''}
+          error={isSubmitted && formState.email === ''}
+          helperText={isSubmitted && formState.email === '' ? 'Email is required' : ''}
           disabled={loading}
         />
       </Grid>
 
       {/* Department */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required error={isSubmitted && !formState.department}>
           <InputLabel id="department-label">Department</InputLabel>
           <Select
             labelId="department-label"
@@ -197,13 +219,13 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               </MenuItem>
             ))}
           </Select>
-          <FormHelperText>Please select your department</FormHelperText>
+          <FormHelperText>{isSubmitted && !formState.department ? 'Department is required' : 'Please select your department'}</FormHelperText>
         </FormControl>
       </Grid>
 
       {/* Project Category */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required error={isSubmitted && !formState.projectCategory}>
           <InputLabel id="project-category-label">Project Category</InputLabel>
           <Select
             labelId="project-category-label"
@@ -213,12 +235,16 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             label="Project Category"
             disabled={loading}
           >
+            <MenuItem value="">
+              <em>Select a project category</em>
+            </MenuItem>
             {projectCategories.map(cat => (
               <MenuItem key={cat.id} value={cat.id}>
                 {cat.name}
               </MenuItem>
             ))}
           </Select>
+          <FormHelperText>{isSubmitted && !formState.projectCategory ? 'Project category is required' : 'Please select a project category'}</FormHelperText>
         </FormControl>
       </Grid>
 
@@ -233,17 +259,19 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           value={formState.description}
           onChange={handleChange('description')}
           required
+          error={isSubmitted && !formState.description}
+          helperText={
+            isSubmitted && !formState.description 
+              ? 'Description is required' 
+              : 'Provide a detailed description of the purchase request'
+          }
           disabled={loading}
-          helperText="Provide a clear description of what you are requesting"
-          inputProps={{
-            'aria-label': 'Description'
-          }}
         />
       </Grid>
 
       {/* Site */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required error={isSubmitted && !formState.site}>
           <InputLabel id="site-label">Site</InputLabel>
           <Select
             labelId="site-label"
@@ -253,18 +281,22 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             label="Site"
             disabled={loading}
           >
+            <MenuItem value="">
+              <em>Select a site</em>
+            </MenuItem>
             {sites.map(site => (
               <MenuItem key={site.id} value={site.id}>
-                {site.code} - {site.name}
+                {site.name}
               </MenuItem>
             ))}
           </Select>
+          <FormHelperText>{isSubmitted && !formState.site ? 'Site is required' : 'Please select a site'}</FormHelperText>
         </FormControl>
       </Grid>
 
       {/* Expense Type */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required error={isSubmitted && !formState.expenseType}>
           <InputLabel id="expense-type-label">Expense Type</InputLabel>
           <Select
             labelId="expense-type-label"
@@ -274,19 +306,27 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             label="Expense Type"
             disabled={loading}
           >
+            <MenuItem value="">
+              <em>Select an expense type</em>
+            </MenuItem>
             {expenseTypes.map(type => (
               <MenuItem key={type.id} value={type.id}>
-                {type.code} - {type.name}
+                {type.name}
               </MenuItem>
             ))}
           </Select>
+          <FormHelperText>{isSubmitted && !formState.expenseType ? 'Expense type is required' : 'Please select an expense type'}</FormHelperText>
         </FormControl>
       </Grid>
 
       {/* Vehicle Selection - Only shown for vehicle-related expenses */}
       {showVehicleField && (
         <Grid item xs={12} md={6}>
-          <FormControl fullWidth required>
+          <FormControl 
+            fullWidth 
+            required
+            error={isSubmitted && showVehicleField && !formState.vehicle}
+          >
             <InputLabel id="vehicle-label">Vehicle</InputLabel>
             <Select
               labelId="vehicle-label"
@@ -296,15 +336,67 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               label="Vehicle"
               disabled={loading}
             >
-              {filteredVehicles.map(vehicle => (
-                <MenuItem key={vehicle.id} value={vehicle.id}>
-                  {vehicle.code} - {vehicle.name}
+              <MenuItem value="">
+                <em>Select a vehicle</em>
+              </MenuItem>
+              {filteredVehicles.map(v => (
+                <MenuItem key={v.id} value={v.id}>
+                  {v.name}
                 </MenuItem>
               ))}
             </Select>
+            <FormHelperText>
+              {isSubmitted && showVehicleField && !formState.vehicle 
+                ? 'Vehicle is required for vehicle expense' 
+                : 'Please select a vehicle'}
+            </FormHelperText>
           </FormControl>
         </Grid>
       )}
+
+      {/* Amount */}
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          id="amount-input"
+          label="Estimated Amount"
+          type="number"
+          inputProps={{ step: '0.01', min: '0' }}
+          value={formState.estimatedAmount || ''}
+          onChange={handleChange('estimatedAmount')}
+          required
+          error={isSubmitted && (!formState.estimatedAmount || formState.estimatedAmount <= 0)}
+          helperText={
+            isSubmitted && (!formState.estimatedAmount || formState.estimatedAmount <= 0)
+              ? 'Amount must be greater than 0'
+              : 'Estimated total amount'
+          }
+          disabled={loading}
+        />
+      </Grid>
+
+      {/* Required Date */}
+      <Grid item xs={12} md={6}>
+        <TextField
+          fullWidth
+          id="date-input"
+          label="Required Date"
+          type="date"
+          value={formState.requiredDate || ''}
+          onChange={handleChange('requiredDate')}
+          InputLabelProps={{
+            shrink: true,
+          }}
+          required
+          error={isSubmitted && !formState.requiredDate}
+          helperText={
+            isSubmitted && !formState.requiredDate
+              ? 'Required date is required'
+              : 'When do you need this by?'
+          }
+          disabled={loading}
+        />
+      </Grid>
 
       {/* Preferred Vendor */}
       <Grid item xs={12} md={6}>
@@ -351,30 +443,9 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
         </Grid>
       )}
 
-      {/* Estimated Amount */}
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          id="estimated-amount-input"
-          label="Estimated Amount"
-          type="number"
-          value={formState.estimatedAmount}
-          onChange={handleChange('estimatedAmount')}
-          required
-          error={formState.estimatedAmount <= 0}
-          helperText={formState.estimatedAmount <= 0 ? 'Amount must be greater than 0' : ''}
-          disabled={loading}
-          inputProps={{
-            min: 0,
-            step: 0.01,
-            'aria-label': 'Estimated Amount'
-          }}
-        />
-      </Grid>
-
       {/* Currency */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required error={isSubmitted && !formState.currency}>
           <InputLabel id="currency-label">Currency</InputLabel>
           <Select
             labelId="currency-label"
@@ -392,12 +463,13 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
                 </MenuItem>
             ))}
           </Select>
+          <FormHelperText>{isSubmitted && !formState.currency ? 'Currency is required' : 'Please select a currency'}</FormHelperText>
         </FormControl>
       </Grid>
 
       {/* Urgency Level */}
       <Grid item xs={12} md={6}>
-        <FormControl fullWidth required>
+        <FormControl fullWidth required error={isSubmitted && formState.isUrgent === undefined}>
           <InputLabel id="urgency-label">Urgency Level</InputLabel>
           <Select
             labelId="urgency-label"
@@ -410,28 +482,8 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             <MenuItem value={false}>Normal</MenuItem>
             <MenuItem value={true}>Urgent</MenuItem>
           </Select>
-          <FormHelperText>Select 'Urgent' only if this request requires immediate attention</FormHelperText>
+          <FormHelperText>{isSubmitted && formState.isUrgent === undefined ? 'Urgency level is required' : 'Select \'Urgent\' only if this request requires immediate attention'}</FormHelperText>
         </FormControl>
-      </Grid>
-
-      {/* Required Date */}
-      <Grid item xs={12}>
-        <TextField
-          fullWidth
-          type="date"
-          label="Required Date *"
-          value={formState.requiredDate ? (typeof formState.requiredDate === 'string' ? formState.requiredDate : formState.requiredDate.toISOString().split('T')[0]) : ''}
-          onChange={(e) => {
-            setFormState(prev => ({
-              ...prev,
-              requiredDate: e.target.value || null,
-            }));
-          }}
-          required
-          error={!formState.requiredDate && isSubmitted}
-          helperText={!formState.requiredDate && isSubmitted ? "Required date is required" : ""}
-          InputLabelProps={{ shrink: true }}
-        />
       </Grid>
 
       {/* Approvers */}
@@ -449,7 +501,8 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               {...params}
               label="Approvers"
               required
-              helperText="Select at least one approver"
+              error={isSubmitted && (formState.approvers || []).length === 0}
+              helperText={isSubmitted && (formState.approvers || []).length === 0 ? 'Please select at least one approver' : 'Select at least one approver'}
             />
           )}
           renderTags={(tagValue, getTagProps) =>

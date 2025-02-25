@@ -234,6 +234,10 @@ export const NewPRForm = () => {
   const [formState, setFormState] = useState<FormState>(initialFormState);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Validation state
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Load reference data when organization changes
   useEffect(() => {
@@ -351,11 +355,17 @@ export const NewPRForm = () => {
 
   // Form navigation handlers
   const handleNext = useCallback(() => {
-    setActiveStep((prevStep) => prevStep + 1);
-  }, []);
+    setActiveStep((prev) => Math.min(prev + 1, steps.length - 1));
+    // Reset validation state when moving to a new step
+    setValidationAttempted(false);
+    setValidationErrors([]);
+  }, [steps.length]);
 
   const handleBack = useCallback(() => {
-    setActiveStep((prevStep) => prevStep - 1);
+    setActiveStep((prev) => Math.max(prev - 1, 0));
+    // Reset validation state when moving to a new step
+    setValidationAttempted(false);
+    setValidationErrors([]);
   }, []);
 
   const handleReset = useCallback(() => {
@@ -404,6 +414,8 @@ export const NewPRForm = () => {
       approvers={availableApprovers}
       currencies={currencies}
       loading={isLoadingData}
+      isSubmitted={validationAttempted}
+      validationErrors={validationErrors}
     />
   );
 
@@ -452,7 +464,7 @@ export const NewPRForm = () => {
     
     if (activeStep === 0) {
       console.log('Validating basic info...');
-      const isValid = isStepValid(0);
+      const isValid = validateBasicInfo();
       console.log('Basic info validation result:', isValid);
       if (!isValid) {
         console.log('Basic info validation failed');
@@ -478,6 +490,10 @@ export const NewPRForm = () => {
     try {
       console.log('Starting basic info validation...');
       console.log('Form state:', formState);
+      
+      // Clear previous validation errors
+      const errors: string[] = [];
+      setValidationAttempted(true);
       
       const requiredFields = [
         'organization',
@@ -505,11 +521,17 @@ export const NewPRForm = () => {
 
       if (missingFields.length > 0) {
         console.log('Missing required fields:', missingFields);
+        
+        // Add each missing field to the validation errors
+        missingFields.forEach(field => {
+          const fieldName = field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1').trim();
+          errors.push(`${fieldName} is required`);
+        });
+        
         enqueueSnackbar(`Please fill in: ${missingFields.join(', ')}`, { 
           variant: 'error',
-          autoHideDuration: 5000
+          autoHideDuration: 5000 
         });
-        return false;
       }
 
       // Convert estimatedAmount to number if it's a string
@@ -519,34 +541,39 @@ export const NewPRForm = () => {
 
       if (isNaN(estimatedAmount) || estimatedAmount <= 0) {
         console.log('Invalid estimated amount:', estimatedAmount);
+        errors.push('Estimated amount must be greater than 0');
         enqueueSnackbar('Estimated amount must be greater than 0', { variant: 'error' });
-        return false;
       }
 
       // Check vehicle if expense type is "4 - Vehicle"
       if (formState.expenseType === '4' && !formState.vehicle) {
         console.log('Vehicle not selected for vehicle expense type');
+        errors.push('Please select a vehicle for vehicle expense');
         enqueueSnackbar('Please select a vehicle for vehicle expense', { variant: 'error' });
-        return false;
       }
 
       // Check approvers
       if (!formState.approvers || formState.approvers.length === 0) {
         console.log('No approvers selected');
+        errors.push('Please select at least one approver');
         enqueueSnackbar('Please select at least one approver', { 
           variant: 'error',
-          autoHideDuration: 5000
+          autoHideDuration: 5000 
         });
-        return false;
       }
 
-      console.log('All validations passed');
-      return true;
+      // Update validation errors state
+      setValidationErrors(errors);
+      
+      console.log('Validation errors:', errors);
+      const isValid = errors.length === 0;
+      console.log('All validations passed:', isValid);
+      return isValid;
     } catch (error) {
       console.error('Error in validateBasicInfo:', error);
       enqueueSnackbar('An error occurred during validation', { 
         variant: 'error',
-        autoHideDuration: 5000
+        autoHideDuration: 5000 
       });
       return false;
     }
