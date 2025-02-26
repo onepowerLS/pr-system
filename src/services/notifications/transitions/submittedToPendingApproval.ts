@@ -26,11 +26,37 @@ export class SubmittedToPendingApprovalHandler implements StatusTransitionHandle
       recipients.to.push(pr.approvalWorkflow.currentApprover.email);
     }
 
-    // Add requestor and procurement to CC
+    // Add requestor to CC - check multiple possible locations for the email
+    // First try the requestor object structure
     if (pr.requestor?.email) {
       recipients.cc.push(pr.requestor.email);
+    } 
+    // Then try the requestorEmail field directly
+    else if (pr.requestorEmail) {
+      recipients.cc.push(pr.requestorEmail);
     }
+    
+    // Ensure we always have the requestor email
+    if (recipients.cc.length === 0 && pr.requestor) {
+      // Last resort - try to extract email from the requestor string if it's an email format
+      const requestorString = pr.requestor.toString();
+      if (requestorString.includes('@')) {
+        recipients.cc.push(requestorString);
+      }
+    }
+
+    // Add procurement to CC
     recipients.cc.push('procurement@1pwrafrica.com');
+
+    // Log the recipients for debugging
+    console.log('Notification recipients for pending approval:', {
+      to: recipients.to,
+      cc: recipients.cc,
+      pr: {
+        requestor: pr.requestor,
+        requestorEmail: pr.requestorEmail
+      }
+    });
 
     return recipients;
   }

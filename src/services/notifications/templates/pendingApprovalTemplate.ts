@@ -29,35 +29,59 @@ export function generatePendingApprovalEmail(context: NotificationContext): Emai
       ['Required Date', pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'Not specified'],
     ];
 
-    const html = `
+    const htmlContent = `
       <div style="${styles.container}">
-        ${isUrgent ? `<div style="${styles.urgentHeader}">URGENT</div>` : ''}
-        <h2 style="${styles.header}">Purchase Request #${prNumber} Awaiting Your Approval</h2>
+        <div style="${styles.header}">
+          <h1 style="${styles.headerText}">${isUrgent ? 'URGENT: ' : ''}Purchase Requisition Approval Required</h1>
+        </div>
         
-        <div style="${styles.section}">
-          <h3 style="${styles.subHeader}">Approval Request Details</h3>
+        <div style="${styles.body}">
+          <p style="${styles.paragraph}">Dear ${user?.firstName || 'Approver'},</p>
+          
           <p style="${styles.paragraph}">
-            <strong>Submitted By:</strong> ${user ? `${user.firstName} ${user.lastName}` : 'System'}
+            A purchase requisition (${prNumber}) requires your approval.
+            Please review the details below and take action by clicking the button at the bottom of this email.
           </p>
+          
+          <div style="${styles.section}">
+            <h2 style="${styles.sectionTitle}">Requestor Information</h2>
+            ${generateTable(requestorDetails)}
+          </div>
+          
+          <div style="${styles.section}">
+            <h2 style="${styles.sectionTitle}">Purchase Requisition Summary</h2>
+            ${generateTable(prSummary)}
+          </div>
+          
           ${notes ? `
-            <p style="${styles.paragraph}">
-              <strong>Notes:</strong> ${notes}
-            </p>
+            <div style="${styles.notesSection}">
+              <h3 style="${styles.notesTitle}">Additional Notes</h3>
+              <p style="${styles.notesParagraph}">${notes}</p>
+            </div>
           ` : ''}
-        </div>
+          
+          <div style="${styles.buttonContainer}">
+            <a href="${prUrl}" style="${styles.button}">View Purchase Requisition</a>
+          </div>
+          
+          <p style="${styles.paragraph}">
+            If you need additional information before making a decision, please contact the requestor directly.
+          </p>
 
-        <div style="${styles.section}">
-          <h3 style="${styles.subHeader}">Requestor Information</h3>
-          ${generateTable(requestorDetails)}
+          <p style="${styles.smallText}">
+            Note: This email has been copied to the requestor and the procurement team.
+          </p>
+          
+          <p style="${styles.paragraph}">
+            Thank you,<br />
+            1PWR Procurement System
+          </p>
         </div>
-
-        <div style="${styles.section}">
-          <h3 style="${styles.subHeader}">PR Details</h3>
-          ${generateTable(prSummary)}
-        </div>
-
-        <div style="${styles.buttonContainer}">
-          <a href="${prUrl}" style="${styles.button}">Review Purchase Request</a>
+        
+        <div style="${styles.footer}">
+          <p style="${styles.footerText}">
+            This is an automated message from the 1PWR Procurement System. Please do not reply to this email.
+          </p>
         </div>
       </div>
     `;
@@ -65,19 +89,30 @@ export function generatePendingApprovalEmail(context: NotificationContext): Emai
     const text = `
 PR ${prNumber} Awaiting Your Approval
 
-Submitted By: ${user ? `${user.firstName} ${user.lastName}` : 'System'}
-${notes ? `Notes: ${notes}\n` : ''}
+Dear ${user?.firstName || 'Approver'},
+
+A purchase requisition (${prNumber}) requires your approval.
+Please review the details below and take action by clicking the button at the bottom of this email.
 
 Requestor Information:
 ${requestorDetails.map(([key, value]) => `${key}: ${value}`).join('\n')}
 
-PR Details:
+Purchase Requisition Summary:
 ${prSummary.map(([key, value]) => `${key}: ${value}`).join('\n')}
 
-Review PR: ${prUrl}
+${notes ? `Additional Notes: ${notes}\n` : ''}
+
+View Purchase Requisition: ${prUrl}
+
+If you need additional information before making a decision, please contact the requestor directly.
+
+Note: This email has been copied to the requestor and the procurement team.
+
+Thank you,
+1PWR Procurement System
     `.trim();
 
-    return { subject, html, text };
+    return { subject, html: htmlContent, text };
   } catch (error) {
     console.error('Error generating pending approval email:', error);
     return {

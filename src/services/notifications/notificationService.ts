@@ -28,6 +28,7 @@ export class NotificationService {
       'SUBMITTED->REVISION_REQUIRED': httpsCallable(functions, 'sendRevisionRequiredNotification'),
       'REVISION_REQUIRED->SUBMITTED': httpsCallable(functions, 'sendResubmittedNotification'),
       'SUBMITTED->PENDING_APPROVAL': httpsCallable(functions, 'sendPendingApprovalNotification'),
+      'IN_QUEUE->PENDING_APPROVAL': httpsCallable(functions, 'sendPendingApprovalNotification'),
       'PENDING_APPROVAL->APPROVED': httpsCallable(functions, 'sendApprovedNotification'),
       'PENDING_APPROVAL->REJECTED': httpsCallable(functions, 'sendRejectedNotification')
     };
