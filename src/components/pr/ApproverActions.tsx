@@ -38,12 +38,12 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
   // Check if user has permission to take actions
   const canTakeAction = useMemo(() => {
     const isProcurement = currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
-    const isApprover = currentUser.id === assignedApprover?.id || pr.approvers?.includes(currentUser.id);
+    const isApprover = currentUser.id === assignedApprover?.id || currentUser.id === pr.approver;
 
     console.log('Permission check:', {
       userId: currentUser.id,
       assignedApproverId: assignedApprover?.id,
-      approvers: pr.approvers,
+      prApprover: pr.approver,
       isProcurement,
       isApprover,
       status: pr.status,
@@ -56,7 +56,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
     }
 
     return isProcurement || isApprover;
-  }, [currentUser, assignedApprover, pr.approvers, pr.status, pr.type]);
+  }, [currentUser, assignedApprover, pr.approver, pr.status, pr.type]);
 
   if (!canTakeAction) {
     return null;
@@ -64,7 +64,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
 
   const getAvailableActions = () => {
     const isProcurement = currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
-    const isApprover = currentUser.id === assignedApprover?.id || pr.approvers?.includes(currentUser.id);
+    const isApprover = currentUser.id === assignedApprover?.id || currentUser.id === pr.approver;
     
     // If PO is in PENDING_APPROVAL
     if (pr.status === PRStatus.PENDING_APPROVAL && pr.type === 'PO') {

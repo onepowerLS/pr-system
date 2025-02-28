@@ -167,6 +167,21 @@ export const prService = {
       const now = Timestamp.now();
       const serverNow = serverTimestamp();
       
+      // Handle approver data 
+      if (prData.approver) {
+        console.log('PR Creation: Approver information found', {
+          approver: prData.approver,
+          type: typeof prData.approver
+        });
+      }
+      
+      // Set up approval workflow (mirroring PR.approver which is the source of truth)
+      const approvalWorkflow = {
+        currentApprover: prData.approver || null, // Mirror the PR.approver field
+        approvalHistory: [],
+        lastUpdated: now.toDate().toISOString()
+      };
+
       const pr = {
         ...prData,
         prNumber,
@@ -198,11 +213,7 @@ export const prService = {
             email: user.email || ''
           }
         }],
-        approvalWorkflow: {
-          currentApprover: null,
-          approvalHistory: [],
-          lastUpdated: now.toDate().toISOString()
-        }
+        approvalWorkflow,
       };
 
       // Create PR document
@@ -344,13 +355,19 @@ export const prService = {
         submittedAt: null,
         submittedBy: user.uid, // Use Firebase UID
         requestorId: user.uid, // Use Firebase UID
-        approvers: [],
+        approver: prData.approver || null, // Use approver field as single source of truth
         comments: [],
         history: [],
         attachments: [],
         metrics: {
           daysOpen: 0,
           isUrgent: prData.isUrgent || false
+        },
+        // Initialize approval workflow structure
+        approvalWorkflow: {
+          currentApprover: prData.approver || null, // Mirror the PR.approver field
+          approvalHistory: [],
+          lastUpdated: new Date().toISOString()
         }
       };
 
@@ -434,20 +451,67 @@ export const prService = {
         lastUpdated: Timestamp.fromDate(new Date())
       };
 
-      // If approver is being updated, update the workflow
+      // Check for discrepancies between legacy approver field and approval workflow
+      if (prData.approver && approvalWorkflow.currentApprover && 
+          prData.approver !== approvalWorkflow.currentApprover) {
+        console.warn('PR Service: Discrepancy detected between PR approver and approvalWorkflow', {
+          prId,
+          prApprover: prData.approver,
+          workflowApprover: approvalWorkflow.currentApprover
+        });
+        
+        // Fix the discrepancy by updating workflow to match PR approver
+        approvalWorkflow.currentApprover = prData.approver;
+        console.log('PR Service: Corrected approvalWorkflow.currentApprover to match PR.approver');
+      }
+      
+      // If approver is being updated, update the workflow and add to history
       if (updates.approver) {
-        approvalWorkflow = {
-          ...approvalWorkflow,
-          currentApprover: updates.approver,
-          lastUpdated: Timestamp.fromDate(new Date())
-        };
+        const newApproverId = updates.approver;
+        const currentApproverId = prData.approver; // Use PR.approver as source of truth
+        
+        console.log('PR Service: Updating approver', {
+          prId,
+          currentApproverId: currentApproverId || 'Not set',
+          newApproverId,
+          previousApprovers: prData.approvers || []
+        });
+        
+        // Add to approval history if the approver is changing
+        if (currentApproverId !== newApproverId) {
+          const newHistoryItem = {
+            approverId: newApproverId,
+            timestamp: new Date().toISOString(),
+            approved: false,
+            notes: updates.notes || 'Approver reassigned'
+          };
+          
+          approvalWorkflow = {
+            ...approvalWorkflow,
+            currentApprover: newApproverId, // Mirror PR.approver in approval workflow
+            approvalHistory: [...approvalWorkflow.approvalHistory, newHistoryItem],
+            lastUpdated: Timestamp.fromDate(new Date())
+          };
+          
+          console.log('PR Service: Added approver change to history', {
+            previousApprover: currentApproverId,
+            newApprover: newApproverId
+          });
+        } else {
+          // Just update the timestamp if the approver didn't change
+          approvalWorkflow = {
+            ...approvalWorkflow,
+            currentApprover: newApproverId, // Still mirror PR.approver
+            lastUpdated: Timestamp.fromDate(new Date())
+          };
+        }
       }
       
       // Merge updates with current data
       const finalUpdates = {
         ...updates,
         approvalWorkflow,
-        approvers: updates.approver ? [updates.approver] : prData.approvers, // Update approvers array
+        approver: updates.approver || prData.approver, // Update approver field
         updatedAt: Timestamp.fromDate(new Date()),
         isUrgent: updates.isUrgent ?? prData.isUrgent ?? false
       };
@@ -631,7 +695,7 @@ export const prService = {
       // Build query conditions
       const conditions: any[] = [
         where('status', '==', PRStatus.SUBMITTED),
-        where('approvers', 'array-contains', approverId)
+        where('approver', '==', approverId)
       ];
       
       // Add organization filter if provided
@@ -724,7 +788,7 @@ export const prService = {
       // Only approver or procurement can move from PENDING_APPROVAL to IN_QUEUE
       if (oldStatus === PRStatus.PENDING_APPROVAL && newStatus === PRStatus.IN_QUEUE) {
         const isApprover = user.id === prData.approvalWorkflow?.currentApprover?.id ||
-          prData.approvers?.includes(user.id);
+          prData.approver === user.id;
         if (!isApprover && !isProcurement) {
           throw new Error('Only the current approver or procurement team can return a PR to queue');
         }
@@ -766,17 +830,46 @@ export const prService = {
         user: user?.email,
         type: updates.type || prData.type
       });
+      
+      // Special handling for DRAFT to SUBMITTED transition to ensure approver is set
+      if (oldStatus === PRStatus.DRAFT && newStatus === PRStatus.SUBMITTED) {
+        // Ensure approvalWorkflow structure exists
+        let approvalWorkflow = prData.approvalWorkflow || {
+          currentApprover: null,
+          approvalHistory: [],
+          lastUpdated: Timestamp.fromDate(new Date())
+        };
+        
+        // Ensure approvalWorkflow.currentApprover mirrors PR.approver (source of truth)
+        if (approvalWorkflow.currentApprover !== prData.approver) {
+          console.log('Synchronizing approvalWorkflow.currentApprover with PR.approver:', {
+            prId,
+            prApprover: prData.approver || 'Not set',
+            workflowApprover: approvalWorkflow.currentApprover || 'Not set'
+          });
+          
+          approvalWorkflow.currentApprover = prData.approver;
+          updates.approvalWorkflow = approvalWorkflow;
+        }
+        
+        // Make sure submittedAt is set
+        updates.submittedAt = Timestamp.now();
+      }
 
       // Update PR status and add to workflow history
       updates.workflowHistory = arrayUnion(workflowEntry);
       await updateDoc(prRef, updates);
 
+      // Reload the PR with updated data for notification
+      const updatedPrDoc = await getDoc(prRef);
+      const updatedPrData = updatedPrDoc.data();
+      
       // Send notification
       await notificationService.createNotification(
         {
           id: prId,
-          ...prData,
-          prNumber: prData.prNumber
+          ...updatedPrData, // Use updated data here
+          prNumber: updatedPrData.prNumber
         },
         oldStatus,
         newStatus,
@@ -859,18 +952,28 @@ export const prService = {
       } as PRRequest;
 
       // Initialize approver if missing
-      if (!prData.approvers || prData.approvers.length === 0) {
+      if (!prData.approver) {
         console.log('PR Service: No approver assigned for PR:', prId);
+        console.log('PR Service: Checking for approver - PR data:', {
+          approver: prData.approver || 'Not set',
+          approvalWorkflow: prData.approvalWorkflow ? 
+            `currentApprover: ${prData.approvalWorkflow.currentApprover}` : 'Not set'
+        });
         
         // Get appropriate approver based on rules
         const approver = await this.getApproverForPR(prData);
-        console.log('PR Service: Selected approver:', approver?.id || null);
+        console.log('PR Service: Selected approver:', approver ? {
+          id: approver.id,
+          name: `${approver.firstName || ''} ${approver.lastName || ''}`.trim(),
+          permissionLevel: approver.permissionLevel,
+          organization: approver.organization
+        } : 'No approver found');
         
         if (approver) {
-          prData.approvers = [approver.id];
+          prData.approver = approver.id;
           // Update the PR document with the approver
           await updateDoc(prRef, {
-            approvers: [approver.id]
+            approver: approver.id
           });
         } else {
           console.warn('PR Service: No eligible approver found for PR:', prId);
@@ -1124,57 +1227,128 @@ export const prService = {
    */
   async getApproverForPR(pr: PRRequest): Promise<User | null> {
     try {
-      if (!pr.organization) {
-        console.warn('No organization specified for PR');
+      // Normalize organization name for consistent matching
+      const organizationId = pr.organization.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      
+      // Validate the PR data
+      if (!organizationId) {
+        console.warn('No organization provided for PR');
         return null;
+      }
+
+      console.log('PR Service: Getting approver for PR with data:', {
+        id: pr.id,
+        prNumber: pr.prNumber,
+        approver: pr.approver || 'Not set',
+        approvalWorkflow: pr.approvalWorkflow ? 
+          `currentApprover: ${pr.approvalWorkflow.currentApprover}` : 'Not set'
+      });
+
+      // Check if there's already a manually assigned approver in the approver field
+      if (pr.approver) {
+        console.log('PR Service: Using manually assigned approver:', pr.approver);
+        
+        // If we have a manually assigned approver, return that user
+        const db = getFirestore();
+        const userRef = doc(db, 'users', pr.approver);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          const user = { id: userSnap.id, ...userSnap.data() } as User;
+          // Only use the approver if they're active
+          if (user.isActive !== false) {
+            return user;
+          } else {
+            console.warn(`Manually assigned approver ${pr.approver} is inactive`);
+          }
+        } else {
+          console.warn(`Manually assigned approver ${pr.approver} not found`);
+        }
       }
 
       const db = getFirestore();
       
       // Get organization rules to determine approval thresholds
-      const rules = await this.getRuleForOrganization(pr.organization, pr.estimatedAmount);
-      const prAmount = pr.estimatedAmount || 0;
+      const rules = await this.getRuleForOrganization(organizationId, pr.estimatedAmount);
       
-      // Find the applicable rule based on PR amount
-      const applicableRule = rules.find(rule => prAmount <= rule.threshold) || rules[rules.length - 1];
-      const requiredPermissionLevel = applicableRule?.requiredPermissionLevel || PERMISSION_LEVELS.APPROVER;
-      
-      console.log('PR Service: Finding approver with rules:', {
-        amount: prAmount,
-        applicableRule,
-        requiredPermissionLevel
-      });
-
-      const usersRef = collection(db, 'users');
-      const usersSnap = await getDocs(usersRef);
-      
-      // Get all users with appropriate permission level and matching organization
-      const eligibleApprovers = usersSnap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as User))
-        .filter(user => {
-          const hasPermission = user.permissionLevel >= requiredPermissionLevel;
-          const matchesOrg = user.organization === pr.organization;
-          const isActive = user.isActive !== false; // Default to true if not specified
-          const notRequestor = user.id !== pr.requestorId; // Approver cannot be the requestor
-          
-          return hasPermission && matchesOrg && isActive && notRequestor;
-        });
-
-      if (eligibleApprovers.length === 0) {
-        console.warn(`No eligible approvers found for organization: ${pr.organization}, amount: ${prAmount}`);
+      if (!rules || rules.length === 0) {
+        console.warn(`No rules found for organization: ${organizationId}`);
+        
+        // If no rules but have a manually assigned approver, return that
+        if (pr.approver) {
+          const userRef = doc(db, 'users', pr.approver);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            return { id: userSnap.id, ...userSnap.data() } as User;
+          }
+        }
+        
+        // Otherwise return null
         return null;
       }
 
-      // Sort approvers by permission level and select the one with the lowest sufficient level
-      eligibleApprovers.sort((a, b) => a.permissionLevel - b.permissionLevel);
-      const selectedApprover = eligibleApprovers[0];
-      
-      console.log('PR Service: Selected approver:', {
-        id: selectedApprover.id,
-        permissionLevel: selectedApprover.permissionLevel,
-        organization: selectedApprover.organization
+      // Determine if a higher permission level approver is needed based on rules
+      const needsHigherPermission = rules.some(rule => {
+        if (!rule.conditions) return false;
+        return rule.conditions.some(condition => {
+          // Normalize currency for comparison
+          const baseAmount = pr.currency === condition.currency 
+            ? pr.estimatedAmount 
+            : convertAmount(pr.estimatedAmount, pr.currency, condition.currency);
+          
+          // Check if PR amount is above threshold
+          if (baseAmount > condition.amount) {
+            return true;
+          }
+          return false;
+        });
       });
+      
+      console.log('PR Service: Permission level check:', {
+        needsHigherPermission,
+        rules: rules.length,
+        estimatedAmount: pr.estimatedAmount,
+        currency: pr.currency
+      });
+      
+      // Query for users that can approve based on permission level
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('isActive', '==', true),
+        where('permissionLevel', '==', needsHigherPermission ? 2 : 6),
+        where('organization', '==', organizationId)
+      );
+      
+      const usersSnap = await getDocs(usersQuery);
+      if (usersSnap.empty) {
+        console.warn(`No active users with required permission level (${needsHigherPermission ? 2 : 6}) found for ${organizationId}`);
+        return null;
+      }
 
+      // Get eligible approvers
+      const eligibleApprovers: User[] = [];
+      usersSnap.forEach(doc => {
+        const user = { id: doc.id, ...doc.data() } as User;
+        if (user.isActive !== false) {
+          eligibleApprovers.push(user);
+        }
+      });
+      
+      if (eligibleApprovers.length === 0) {
+        console.warn('No eligible approvers found');
+        return null;
+      }
+      
+      // Select a random approver from the list (simplified approach)
+      const randomIndex = Math.floor(Math.random() * eligibleApprovers.length);
+      const selectedApprover = eligibleApprovers[randomIndex];
+      
+      console.log('PR Service: Selected approver from eligible list:', {
+        id: selectedApprover.id,
+        name: `${selectedApprover.firstName || ''} ${selectedApprover.lastName || ''}`.trim(),
+        permissionLevel: selectedApprover.permissionLevel
+      });
+      
       return selectedApprover;
     } catch (error) {
       console.error('Error getting approver for PR:', error);

@@ -690,7 +690,7 @@ export function PRView() {
     return () => {
       mounted = false;
     };
-  }, [pr?.organization, pr?.approver, pr?.approvers, pr?.approvalWorkflow]);
+  }, [pr?.organization, pr?.approver, pr?.approvalWorkflow]);
 
   useEffect(() => {
     const loadCurrentApprover = async () => {
@@ -1748,6 +1748,25 @@ export function PRView() {
   const cancelExitEditMode = () => {
     setIsExitingEditMode(false);
   };
+
+  useEffect(() => {
+    if (pr && pr.approver) {
+      const fetchApprover = async () => {
+        try {
+          setIsLoadingApprover(true);
+          const user = await userService.getUserById(pr.approver);
+          if (user) {
+            setAssignedApprover(user);
+          }
+          setIsLoadingApprover(false);
+        } catch (error) {
+          console.error('Error fetching approver:', error);
+          setIsLoadingApprover(false);
+        }
+      };
+      fetchApprover();
+    }
+  }, [pr?.approver]);
 
   return (
     <Box sx={{ p: 3 }}>

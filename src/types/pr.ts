@@ -92,7 +92,12 @@ export interface PRRequest {
   requestorEmail: string;
   /** Full user object of requestor */ 
   requestor: User;
-  /** User IDs of approvers for this PR */
+  /** Current approver for this PR - single source of truth */
+  approver?: string;
+  /**
+   * @deprecated Use approver field instead. 
+   * Will be removed in a future version. 
+   */
   approvers?: string[];
   /** Individual items being requested */
   lineItems: LineItem[];
@@ -100,6 +105,8 @@ export interface PRRequest {
   quotes: Quote[];
   /** Current status of the PR */
   status: PRStatus;
+  /** Approval workflow tracking - mirrors the approver field */
+  approvalWorkflow?: ApprovalWorkflow;
   /** Creation timestamp */
   createdAt: string;
   /** Last update timestamp */
@@ -142,8 +149,6 @@ export interface PRRequest {
   rejectedAt?: string;
   /** When PR was canceled */
   canceledAt?: string;
-  /** Approval workflow information */
-  approvalWorkflow?: ApprovalWorkflow | null;
 }
 
 /**

@@ -130,10 +130,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
             lastModifiedBy: currentUser.email,
             lastModifiedAt: new Date().toISOString(),
             approvalWorkflow: {
-              currentApprover: pr.approvers?.[0],
-              approvalChain: pr.approvers || [],
+              currentApprover: pr.approver,
               approvalHistory: [],
-              submittedForApprovalAt: new Date().toISOString()
+              lastUpdated: new Date().toISOString()
             }
           });
 
@@ -195,9 +194,9 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
           return;
       }
 
-      // For push to approver, ensure we have approvers
-      if (selectedAction === 'approve' && (!pr.approvers || pr.approvers.length === 0)) {
-        setError('Cannot push to approval - no approvers assigned');
+      // For push to approver, ensure we have an approver
+      if (selectedAction === 'approve' && !pr.approver) {
+        setError('Cannot push to approval - no approver assigned');
         return;
       }
 
