@@ -13,9 +13,10 @@
  * - Manages PR status transitions and validations
  * 
  * Business Rules:
- * - PRs over $1,000 require admin approval
- * - PRs over $5,000 require multiple quotes
- * - PRs over $50,000 require finance approval
+ * - PR approval thresholds are configured in the Rules collection and managed by administrators
+ * - Approval levels are determined dynamically based on PR amount and configured thresholds
+ * - Multiple quotes may be required based on thresholds in Rules collection
+ * - Finance approval requirements are defined in Rules collection
  * - Preferred vendors may bypass quote requirements
  * - Department heads must be in approval chain
  * 
@@ -52,13 +53,23 @@ import {
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db } from '../config/firebase';
-import { PRRequest, PRStatus } from '../types/pr';
+import { 
+  PRRequest, 
+  PRStatus, 
+  Quote, 
+  LineItem, 
+  PRWorkflow, 
+  WorkflowStep, 
+  ApprovalWorkflow,
+  ApprovalHistoryItem,
+  PR_AMOUNT_THRESHOLDS 
+} from '../types/pr';
+import { User } from '../types/user';
+import { Rule } from '../types/referenceData';
 import { calculateDaysOpen } from '../utils/formatters';
 import { StorageService } from './storage';
 import { auth } from '../config/firebase';
 import { UserRole } from '../types/user';
-import { User } from '../types/user';
-import { Rule } from '../types/referenceData';
 import { PERMISSION_LEVELS } from '../config/permissions';
 import { submitPRNotification } from './notifications/handlers/submitPRNotification';
 
@@ -457,7 +468,7 @@ export const prService = {
         console.warn('PR Service: Discrepancy detected between PR approver and approvalWorkflow', {
           prId,
           prApprover: prData.approver,
-          workflowApprover: approvalWorkflow.currentApprover
+          type: typeof prData.approver
         });
         
         // Fix the discrepancy by updating workflow to match PR approver
@@ -1167,9 +1178,12 @@ export const prService = {
       // Convert all documents to Rule objects
       const rules = querySnapshot.docs.map(doc => {
         const data = doc.data();
+        // Use the default PR_AMOUNT_THRESHOLDS as fallback
+        const adminThreshold = PR_AMOUNT_THRESHOLDS.ADMIN_APPROVAL;
+        
         return {
           id: doc.id,
-          type: data.threshold <= 1000 ? 'RULE_1' : 'RULE_2', // Set type based on threshold
+          type: data.threshold <= (data.adminThreshold || adminThreshold) ? 'RULE_1' : 'RULE_2', // Set type based on threshold
           number: data.number || '1',
           description: data.description || '',
           threshold: Number(data.threshold) || 0,

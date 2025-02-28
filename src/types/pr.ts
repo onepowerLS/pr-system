@@ -422,15 +422,21 @@ export interface PRMetrics {
 
 /**
  * PR Amount Thresholds
- * Defines the thresholds for different approval levels
+ * 
+ * IMPORTANT: These values are DEFAULT FALLBACKS ONLY.
+ * Actual thresholds MUST be retrieved from the Rules collection in Firestore
+ * which contains administrator-configurable values.
+ * 
+ * DO NOT rely on these constants directly in business logic.
+ * Always fetch from Rules collection via prService.getRuleForOrganization()
  */
 export const PR_AMOUNT_THRESHOLDS = {
-  /** Admin approval threshold */
+  /** Admin approval threshold - DEFAULT VALUE ONLY */
   ADMIN_APPROVAL: 1000,     
-  /** Quotes required threshold */
+  /** Quotes required threshold - DEFAULT VALUE ONLY */
   QUOTES_REQUIRED: 5000,     
-  /** Finance approval threshold */
+  /** Finance approval threshold - DEFAULT VALUE ONLY */
   FINANCE_APPROVAL: 50000,   
-  /** Adjudication required threshold */
+  /** Adjudication required threshold - DEFAULT VALUE ONLY */
   ADJUDICATION_REQUIRED: 100000
 };

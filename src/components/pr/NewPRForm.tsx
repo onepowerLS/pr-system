@@ -146,11 +146,14 @@ export interface FormState {
   isUrgent: boolean;
 }
 
-// Business rule thresholds
+// Business rule thresholds - DEFAULT VALUES ONLY
+// IMPORTANT: These values should be retrieved from the Rules collection
+// which contains administrator-configurable thresholds
+// These constants are used only as fallbacks
 const PR_AMOUNT_THRESHOLDS = {
-  ADMIN_APPROVAL: 1000,    // Requires admin approval above this amount
-  QUOTES_REQUIRED: 5000,   // Requires multiple quotes above this amount
-  FINANCE_APPROVAL: 50000  // Requires finance approval above this amount
+  ADMIN_APPROVAL: 1000,    // Default value - actual threshold from Rules collection
+  QUOTES_REQUIRED: 5000,   // Default value - actual threshold from Rules collection
+  FINANCE_APPROVAL: 50000  // Default value - actual threshold from Rules collection
 } as const;
 
 /**
