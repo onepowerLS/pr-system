@@ -185,10 +185,10 @@ export const prService = {
           type: typeof prData.approver
         });
       }
-      
-      // Set up approval workflow (mirroring PR.approver which is the source of truth)
+      // Set up approval workflow structure - this is NOT the source of truth for approver
+      // It exists solely to track changes and display history to users
       const approvalWorkflow = {
-        currentApprover: prData.approver || null, // Mirror the PR.approver field
+        currentApprover: prData.approver || null, // Mirror the PR.approver field which is the source of truth
         approvalHistory: [],
         lastUpdated: now.toDate().toISOString()
       };
@@ -367,16 +367,16 @@ export const prService = {
         submittedBy: user.uid, // Use Firebase UID
         requestorId: user.uid, // Use Firebase UID
         approver: prData.approver || null, // Use approver field as single source of truth
-        comments: [],
         history: [],
         attachments: [],
         metrics: {
           daysOpen: 0,
           isUrgent: prData.isUrgent || false
         },
-        // Initialize approval workflow structure
+        // Initialize approval workflow structure - this is NOT the source of truth for approver
+        // It exists solely to track changes and display history to users
         approvalWorkflow: {
-          currentApprover: prData.approver || null, // Mirror the PR.approver field
+          currentApprover: prData.approver || null, // Mirror the PR.approver field which is the source of truth
           approvalHistory: [],
           lastUpdated: new Date().toISOString()
         }
@@ -1233,139 +1233,49 @@ export const prService = {
       throw new Error('Failed to fetch organization rules');
     }
   },
-
   /**
-   * Gets the appropriate approver for a PR based on rules
+   * Gets the assigned approver for a PR
    * @param pr PR to get approver for
-   * @returns Promise<User | null> User object of the approver, or null if none found
+   * @returns Promise<User | null> User object of the approver, or null if none found or inactive
    */
   async getApproverForPR(pr: PRRequest): Promise<User | null> {
     try {
-      // Normalize organization name for consistent matching
-      const organizationId = pr.organization.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      
-      // Validate the PR data
-      if (!organizationId) {
-        console.warn('No organization provided for PR');
+      if (!pr.approver) {
+        console.warn("No approver assigned to PR");
         return null;
       }
 
-      console.log('PR Service: Getting approver for PR with data:', {
+      console.log("PR Service: Getting assigned approver for PR with data:", {
         id: pr.id,
         prNumber: pr.prNumber,
-        approver: pr.approver || 'Not set',
+        approver: pr.approver,
         approvalWorkflow: pr.approvalWorkflow ? 
-          `currentApprover: ${pr.approvalWorkflow.currentApprover}` : 'Not set'
+          `currentApprover: ${pr.approvalWorkflow.currentApprover}` : "Not set"
       });
-
-      // Check if there's already a manually assigned approver in the approver field
-      if (pr.approver) {
-        console.log('PR Service: Using manually assigned approver:', pr.approver);
-        
-        // If we have a manually assigned approver, return that user
-        const db = getFirestore();
-        const userRef = doc(db, 'users', pr.approver);
-        const userSnap = await getDoc(userRef);
-        
-        if (userSnap.exists()) {
-          const user = { id: userSnap.id, ...userSnap.data() } as User;
-          // Only use the approver if they're active
-          if (user.isActive !== false) {
-            return user;
-          } else {
-            console.warn(`Manually assigned approver ${pr.approver} is inactive`);
-          }
-        } else {
-          console.warn(`Manually assigned approver ${pr.approver} not found`);
-        }
-      }
 
       const db = getFirestore();
+      const userRef = doc(db, "users", pr.approver);
+      const userSnap = await getDoc(userRef);
       
-      // Get organization rules to determine approval thresholds
-      const rules = await this.getRuleForOrganization(organizationId, pr.estimatedAmount);
-      
-      if (!rules || rules.length === 0) {
-        console.warn(`No rules found for organization: ${organizationId}`);
-        
-        // If no rules but have a manually assigned approver, return that
-        if (pr.approver) {
-          const userRef = doc(db, 'users', pr.approver);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            return { id: userSnap.id, ...userSnap.data() } as User;
-          }
-        }
-        
-        // Otherwise return null
-        return null;
-      }
-
-      // Determine if a higher permission level approver is needed based on rules
-      const needsHigherPermission = rules.some(rule => {
-        if (!rule.conditions) return false;
-        return rule.conditions.some(condition => {
-          // Normalize currency for comparison
-          const baseAmount = pr.currency === condition.currency 
-            ? pr.estimatedAmount 
-            : convertAmount(pr.estimatedAmount, pr.currency, condition.currency);
-          
-          // Check if PR amount is above threshold
-          if (baseAmount > condition.amount) {
-            return true;
-          }
-          return false;
-        });
-      });
-      
-      console.log('PR Service: Permission level check:', {
-        needsHigherPermission,
-        rules: rules.length,
-        estimatedAmount: pr.estimatedAmount,
-        currency: pr.currency
-      });
-      
-      // Query for users that can approve based on permission level
-      const usersQuery = query(
-        collection(db, 'users'),
-        where('isActive', '==', true),
-        where('permissionLevel', '==', needsHigherPermission ? 2 : 6),
-        where('organization', '==', organizationId)
-      );
-      
-      const usersSnap = await getDocs(usersQuery);
-      if (usersSnap.empty) {
-        console.warn(`No active users with required permission level (${needsHigherPermission ? 2 : 6}) found for ${organizationId}`);
-        return null;
-      }
-
-      // Get eligible approvers
-      const eligibleApprovers: User[] = [];
-      usersSnap.forEach(doc => {
-        const user = { id: doc.id, ...doc.data() } as User;
+      if (userSnap.exists()) {
+        const user = { id: userSnap.id, ...userSnap.data() } as User;
         if (user.isActive !== false) {
-          eligibleApprovers.push(user);
+          console.log("PR Service: Found assigned approver:", {
+            id: user.id,
+            name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+            permissionLevel: user.permissionLevel
+          });
+          return user;
+        } else {
+          console.warn(`Assigned approver ${pr.approver} is inactive`);
+          return null;
         }
-      });
-      
-      if (eligibleApprovers.length === 0) {
-        console.warn('No eligible approvers found');
+      } else {
+        console.warn(`Assigned approver ${pr.approver} not found`);
         return null;
       }
-      
-      // Select a random approver from the list (simplified approach)
-      const randomIndex = Math.floor(Math.random() * eligibleApprovers.length);
-      const selectedApprover = eligibleApprovers[randomIndex];
-      
-      console.log('PR Service: Selected approver from eligible list:', {
-        id: selectedApprover.id,
-        name: `${selectedApprover.firstName || ''} ${selectedApprover.lastName || ''}`.trim(),
-        permissionLevel: selectedApprover.permissionLevel
-      });
-      
-      return selectedApprover;
     } catch (error) {
-      console.error('Error getting approver for PR:', error);
+      console.error("Error getting approver for PR:", error);
       return null;
     }
   }
