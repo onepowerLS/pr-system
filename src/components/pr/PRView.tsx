@@ -51,7 +51,8 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import SendIcon from '@mui/icons-material/Send';
 import { RootState } from '@/store';
 import { prService } from '@/services/pr';
-import { PRRequest, PRStatus } from '@/types/pr';
+import { PRRequest, PRStatus, LineItem, Quote, Attachment, ApprovalHistoryItem, WorkflowHistoryItem, UserReference as User, PRUpdateParams } from '@/types/pr';
+import { ReferenceDataItem } from '@/types/referenceData';
 import { formatCurrency } from '@/utils/formatters';
 import mammoth from 'mammoth';
 import { ProcurementActions } from './ProcurementActions';
@@ -63,12 +64,12 @@ import { PlusIcon, EyeIcon, FileIcon } from 'lucide-react';
 import { QuoteCard } from './QuoteCard';
 import { StorageService } from "@/services/storage";
 import { CircularProgress, Chip } from "@mui/material";
-import { ReferenceDataItem } from '@/types/pr';
 import { db } from "@/config/firebase";
 import { collection, doc, getDoc, query, where, getDocs, updateDoc } from "firebase/firestore";
 import { QuotesStep } from './steps/QuotesStep';
 import { notificationService } from '@/services/notification';
 import { approverService } from '@/services/approver';
+import * as auth from '@/services/auth';
 import { ApproverActions } from './ApproverActions';
 
 interface EditablePRFields {
@@ -90,22 +91,13 @@ interface FileUploadProps {
   maxFiles?: number;
 }
 
-interface LineItem {
-  id: string;
-  description: string;
-  quantity: number;
-  uom: string;
-  unitPrice: number;
-  notes?: string;
-  attachments?: Array<{
-    name: string;
-    url: string;
-  }>;
-}
-
 interface UomOption {
   code: string;
   label: string;
+}
+
+interface ExtendedLineItem extends LineItem {
+  unitPrice: number;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({ 
@@ -134,7 +126,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         return {
           code: 'invalid-file-type',
           message: `File type .${ext} is not supported`
-        };
+        }
       }
       return null;
     }
@@ -443,7 +435,7 @@ export function PRView() {
   const [error, setError] = useState<string | null>(null);
   const [editedPR, setEditedPR] = useState<Partial<PRRequest>>({});
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
-  const [lineItems, setLineItems] = useState<Array<LineItem>>([]);
+  const [lineItems, setLineItems] = useState<Array<ExtendedLineItem>>([]);
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const isProcurement = currentUser?.permissionLevel === 2 || currentUser?.permissionLevel === 3;
   const isRequestor = pr?.requestorEmail?.toLowerCase() === currentUser?.email?.toLowerCase();
@@ -457,6 +449,7 @@ export function PRView() {
     pr?.status === PRStatus.RESUBMITTED ||
     (isRequestor && pr?.status === PRStatus.REVISION_REQUIRED);
   const [previewFile, setPreviewFile] = useState<{ name: string; url: string; type: string } | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
   const [projectCategories, setProjectCategories] = useState<ReferenceDataItem[]>([]);
   const [sites, setSites] = useState<ReferenceDataItem[]>([]);
@@ -465,12 +458,14 @@ export function PRView() {
   const [vendors, setVendors] = useState<ReferenceDataItem[]>([]);
   const [currencies, setCurrencies] = useState<ReferenceDataItem[]>([]);
   const [loadingReference, setLoadingReference] = useState(true);
-  const [approvers, setApprovers] = useState<Approver[]>([]);
+  const [approvers, setApprovers] = useState<User[]>([]);
   const [selectedApprover, setSelectedApprover] = useState<string | undefined>(
     pr?.approvalWorkflow?.currentApprover || undefined
   );
   const [loadingApprovers, setLoadingApprovers] = useState(false);
   const [currentApprover, setCurrentApprover] = useState<User | null>(null);
+  const [isLoadingApprover, setIsLoadingApprover] = useState(false);
+  const [assignedApprover, setAssignedApprover] = useState<User | null>(null);
   const { enqueueSnackbar } = useSnackbar();
   const [isExitingEditMode, setIsExitingEditMode] = React.useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
@@ -482,12 +477,12 @@ export function PRView() {
       setLoading(true);
       const prData = await prService.getPR(id);
       console.log('PR data received:', {
-        id: prData.id,
-        department: prData.department,
-        organization: prData.organization,
-        requestor: prData.requestor,
-        approvalWorkflow: prData.approvalWorkflow,
-        status: prData.status
+        id: prData?.id,
+        department: prData?.department,
+        organization: prData?.organization,
+        requestor: prData?.requestor,
+        approvalWorkflow: prData?.approvalWorkflow,
+        status: prData?.status
       });
 
       if (!prData) {
@@ -502,7 +497,7 @@ export function PRView() {
           currentApprover: prData.approver || prData.approvers?.[0] || undefined,
           approvalHistory: [],
           lastUpdated: new Date().toISOString()
-        };
+        }
       }
 
       setPr(prData);
@@ -510,7 +505,7 @@ export function PRView() {
       // Load requestor details if not already loaded
       if (prData.requestorId && (!prData.requestor || !prData.requestor.organization)) {
         try {
-          const requestorData = await userService.getUserById(prData.requestorId);
+          const requestorData = await auth.getUserDetails(prData.requestorId);
           console.log('Requestor data loaded:', requestorData);
           
           // Update PR with requestor data
@@ -630,6 +625,7 @@ export function PRView() {
       const itemsWithIds = pr.lineItems.map(item => ({
         ...item,
         id: item.id || crypto.randomUUID(),
+        unitPrice: item.unitPrice || 0
       }));
       setLineItems(itemsWithIds);
     }
@@ -694,39 +690,62 @@ export function PRView() {
 
   useEffect(() => {
     const loadCurrentApprover = async () => {
-      if (!pr?.approvalWorkflow?.currentApprover) return;
-      
-      try {
-        const approverDoc = await userService.getUserById(pr.approvalWorkflow.currentApprover);
-        setCurrentApprover(approverDoc);
-      } catch (error) {
-        console.error('Error loading current approver:', error);
+      // Check pr.approver first as it's the single source of truth
+      if (pr?.approver) {
+        try {
+          setIsLoadingApprover(true);
+          const user = await auth.getUserDetails(pr.approver);
+          if (user) {
+            setAssignedApprover(user);
+            // Also set currentApprover for consistency
+            setCurrentApprover(user);
+          }
+          setIsLoadingApprover(false);
+        } catch (error) {
+          console.error('Error fetching approver from pr.approver field:', error);
+          setIsLoadingApprover(false);
+        }
+      } 
+      // Fallback to approvalWorkflow.currentApprover if pr.approver is not available
+      else if (pr?.approvalWorkflow?.currentApprover) {
+        try {
+          setIsLoadingApprover(true);
+          const approverDoc = await auth.getUserDetails(pr.approvalWorkflow.currentApprover);
+          setCurrentApprover(approverDoc);
+          setAssignedApprover(approverDoc);
+          setIsLoadingApprover(false);
+        } catch (error) {
+          console.error('Error loading current approver from approvalWorkflow:', error);
+          setIsLoadingApprover(false);
+        }
+      } else {
+        setIsLoadingApprover(false);
       }
     };
 
     loadCurrentApprover();
-  }, [pr?.approvalWorkflow?.currentApprover]);
+  }, [pr?.approvalWorkflow?.currentApprover, pr?.approver]);
 
   const handleAddLineItem = (): void => {
-    const newItem: LineItem = {
+    const newItem: ExtendedLineItem = {
       id: crypto.randomUUID(),
       description: '',
-      quantity: 0,
-      uom: 'EA',
+      quantity: 1,
+      uom: '',
       unitPrice: 0,
       notes: '',
       attachments: []
     };
+
     setLineItems(prevItems => [...prevItems, newItem]);
   };
 
-  const handleUpdateLineItem = (index: number, updatedItem: LineItem): void => {
+  const handleUpdateLineItem = (index: number, updatedItem: ExtendedLineItem): void => {
     setLineItems(prevItems => 
       prevItems.map((item, i) => 
         i === index ? { 
           ...item, 
-          ...updatedItem,
-          id: item.id // Preserve the original ID
+          ...updatedItem
         } : item
       )
     );
@@ -738,33 +757,48 @@ export function PRView() {
 
   // Add file upload handler for line items
   const handleLineItemFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, index: number) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
+    if (!event.target.files || event.target.files.length === 0) return;
+    
+    const file = event.target.files[0];
+    setLoading(true);
+    
     try {
+      // Use the available uploadToTempStorage method instead of uploadFile
       const result = await StorageService.uploadToTempStorage(file);
       
-      setLineItems(prev => prev.map((item, i) => {
+      setLineItems(prevItems => prevItems.map((item, i) => {
         if (i === index) {
           return {
             ...item,
-            id: item.id, // Preserve the original ID
             attachments: [
               ...(item.attachments || []),
               {
+                id: crypto.randomUUID(),
                 name: file.name,
                 url: result.url,
-                path: result.path
+                path: result.path,
+                type: file.type,
+                size: file.size,
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: currentUser ? { ...currentUser } as User : { 
+                  id: 'unknown',
+                  email: 'unknown',
+                  displayName: 'Unknown User',
+                  permissionLevel: 1
+                }
               }
             ]
           };
         }
         return item;
       }));
+      
+      enqueueSnackbar('File uploaded successfully', { variant: 'success' });
     } catch (error) {
       console.error('Error uploading file:', error);
       enqueueSnackbar('Failed to upload file', { variant: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -904,86 +938,50 @@ export function PRView() {
   };
 
   const handleSave = async () => {
-    if (!pr) return;
-
+    if (!pr) {
+      enqueueSnackbar('No PR data to save', { variant: 'error' });
+      return;
+    }
+    
+    setLoading(true);
+    
     try {
-      setLoading(true);
-
-      // Validate vendor ID
-      if (editedPR.preferredVendor) {
-        const vendorExists = vendors.some(v => 
-          v.id === editedPR.preferredVendor && 
-          v.active
-        );
-        if (!vendorExists) {
-          enqueueSnackbar('Selected vendor is not valid or inactive', { variant: 'error' });
-          return;
-        }
-      }
-
-      // Clean up updates object
-      const cleanUpdates = Object.entries(editedPR).reduce((acc, [key, value]) => {
-        // Skip undefined or null values
-        if (value === undefined || value === null) return acc;
-        
-        // Handle vehicle field
-        if (key === 'vehicle') {
-          const selectedExpenseType = editedPR.expenseType || pr.expenseType;
-          const expenseTypeObj = expenseTypes.find(t => t.id === selectedExpenseType);
-          const isVehicleExpense = expenseTypeObj?.name.toLowerCase() === 'vehicle';
-          
-          // Only include vehicle if it's a vehicle expense type
-          if (isVehicleExpense) {
-            acc[key] = value;
-          }
-        } else {
-          acc[key] = value;
-        }
-        
-        return acc;
-      }, {} as Partial<PRRequest>);
-
-      // Add line items and metadata to updates
-      const updates = {
-        ...cleanUpdates,
+      // Prepare the PR data for update
+      const updatedPR: PRUpdateParams = {
+        ...pr,
+        ...editedPR,
         lineItems: lineItems.map(item => ({
           id: item.id,
           description: item.description,
           quantity: item.quantity,
           uom: item.uom,
           notes: item.notes || '',
-          unitPrice: item.unitPrice || 0,
+          unitPrice: item.unitPrice,
           attachments: item.attachments || []
         })),
-        quotes: pr.quotes || [], // Preserve existing quotes
+        quotes: pr.quotes || [],
         updatedAt: new Date().toISOString(),
-        updatedBy: currentUser?.email,
         approvalWorkflow: {
-          ...pr.approvalWorkflow,
-          currentApprover: selectedApprover,
+          currentApprover: pr.approvalWorkflow?.currentApprover || null,
+          approvalHistory: pr.approvalWorkflow?.approvalHistory || [],
           lastUpdated: new Date().toISOString()
         }
       };
-
-      console.log('Saving PR updates:', updates);
-      await prService.updatePR(id!, updates);
-
-      enqueueSnackbar('Changes saved successfully', { variant: 'success' });
-      setHasUnsavedChanges(false);
       
-      // Refresh PR data after save
+      // Update the PR
+      await prService.updatePR(pr.id, updatedPR);
+      
+      // Refresh the PR data
       await fetchPR();
       
-      navigate(`/pr/${pr.id}`); // Exit edit mode by navigating to view mode
+      enqueueSnackbar('PR saved successfully', { variant: 'success' });
     } catch (error) {
-      console.error('Error updating PR:', error);
-      enqueueSnackbar('Failed to save changes', { variant: 'error' });
+      console.error('Error saving PR:', error);
+      enqueueSnackbar('Failed to save PR', { variant: 'error' });
     } finally {
       setLoading(false);
     }
   };
-
-  const canEditRequiredDate = !(currentUser?.role === 'procurement' && pr?.status === PRStatus.IN_QUEUE);
 
   // Step management
   const [activeStep, setActiveStep] = useState(0);
@@ -1258,13 +1256,13 @@ export function PRView() {
               <Grid item xs={6}>
                 <Typography color="textSecondary">Created By</Typography>
                 <Typography>
-                  {pr.requestor?.firstName && pr.requestor?.lastName ? (
+                  {pr?.requestor?.firstName && pr?.requestor?.lastName ? (
                     `${pr.requestor.firstName} ${pr.requestor.lastName}`
                   ) : (
                     console.error('PR requestor not found:', {
-                      prId: pr.id,
-                      requestorId: pr.requestorId,
-                      requestorEmail: pr.requestorEmail
+                      prId: pr?.id,
+                      requestorId: pr?.requestorId,
+                      requestorEmail: pr?.requestorEmail
                     }),
                     <span style={{ color: 'red' }}>Error loading user details</span>
                   )}
@@ -1273,25 +1271,25 @@ export function PRView() {
               <Grid item xs={6}>
                 <Typography color="textSecondary">Created Date</Typography>
                 <Typography>
-                  {pr.createdAt ? new Date(pr.createdAt).toLocaleDateString() : 'N/A'}
+                  {pr?.createdAt ? new Date(pr.createdAt).toLocaleDateString() : 'N/A'}
                 </Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Last Updated</Typography>
                 <Typography>
-                  {pr.updatedAt ? new Date(pr.updatedAt).toLocaleDateString() : 'N/A'}
+                  {pr?.updatedAt ? new Date(pr.updatedAt).toLocaleDateString() : 'N/A'}
                 </Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Organization</Typography>
-                <Typography>{pr.organization || 'N/A'}</Typography>
+                <Typography>{pr?.organization || 'N/A'}</Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Urgency</Typography>
                 <Chip
-                  label={pr.isUrgent || pr.metrics?.isUrgent ? 'Urgent' : 'Normal'}
+                  label={pr?.isUrgent || pr?.metrics?.isUrgent ? 'Urgent' : 'Normal'}
                   color={
-                    pr.isUrgent || pr.metrics?.isUrgent ? 'error' : 'default'
+                    pr?.isUrgent || pr?.metrics?.isUrgent ? 'error' : 'default'
                   }
                   size="small"
                   sx={{ mt: 1 }}
@@ -1301,7 +1299,7 @@ export function PRView() {
                 <Typography color="textSecondary">Current Approver</Typography>
                 <div className="flex flex-wrap gap-2 mt-1">
                   {(() => {
-                    const approverId = pr.approvalWorkflow?.currentApprover;
+                    const approverId = pr?.approvalWorkflow?.currentApprover;
                     console.log('Finding current approver:', { 
                       approverId, 
                       approversCount: approvers.length,
@@ -1349,7 +1347,7 @@ export function PRView() {
               <Grid item xs={12}>
                 <Typography color="textSecondary">Approval History</Typography>
                 <div className="flex flex-col gap-2 mt-1">
-                  {pr.approvalWorkflow?.approvalHistory?.length > 0 ? (
+                  {pr?.approvalWorkflow?.approvalHistory?.length > 0 ? (
                     pr.approvalWorkflow.approvalHistory.map((history, index) => (
                       <div key={index} className="flex items-center gap-2">
                         <Chip
@@ -1488,7 +1486,7 @@ export function PRView() {
                               </IconButton>
                               <IconButton 
                                 size="small"
-                                onClick={() => handleDownloadAttachment(file)}
+                                onClick={() => handleDownloadQuoteAttachment(file)}
                                 title="Download"
                               >
                                 <DownloadIcon />
@@ -1645,7 +1643,7 @@ export function PRView() {
       setApprovers(approverList);
 
       // Set initial selected approver if present
-      if (pr.approvalWorkflow?.currentApprover) {
+      if (pr?.approvalWorkflow?.currentApprover) {
         const currentApprover = approverList.find(a => a.id === pr.approvalWorkflow?.currentApprover);
         console.log('Setting current approver:', {
           workflowApproverId: pr.approvalWorkflow.currentApprover,
@@ -1749,31 +1747,47 @@ export function PRView() {
     setIsExitingEditMode(false);
   };
 
-  useEffect(() => {
-    if (pr && pr.approver) {
-      const fetchApprover = async () => {
-        try {
-          setIsLoadingApprover(true);
-          const user = await userService.getUserById(pr.approver);
-          if (user) {
-            setAssignedApprover(user);
-          }
-          setIsLoadingApprover(false);
-        } catch (error) {
-          console.error('Error fetching approver:', error);
-          setIsLoadingApprover(false);
-        }
-      };
-      fetchApprover();
+  const handleFilePreview = (file: { name: string; url: string }) => {
+    setPreviewFile({
+      name: file.name,
+      url: file.url,
+      type: file.name.split('.').pop()?.toLowerCase() || ''
+    });
+    setPreviewOpen(true);
+  };
+
+  const handleClosePreview = () => {
+    setPreviewOpen(false);
+    setPreviewFile(null);
+  };
+
+  // Function to handle downloading quote attachments
+  const handleDownloadQuoteAttachment = async (attachment: { name: string; url: string }) => {
+    try {
+      const response = await fetch(attachment.url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = attachment.name;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      enqueueSnackbar('Error downloading file', { variant: 'error' });
     }
-  }, [pr?.approver]);
+  };
+
+  const canEditRequiredDate = !(currentUser?.role === 'procurement' && pr?.status === PRStatus.IN_QUEUE);
 
   return (
     <Box sx={{ p: 3 }}>
       {/* Header with Title and Actions */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
-          PR Details: {pr.prNumber}
+          PR Details: {pr?.prNumber}
         </Typography>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Button
@@ -1792,7 +1806,7 @@ export function PRView() {
               Edit PR
             </Button>
           )}
-          {pr.status === PRStatus.REVISION_REQUIRED && pr.requestor?.id === currentUser?.id && (
+          {pr?.status === PRStatus.REVISION_REQUIRED && pr?.requestor?.id === currentUser?.id && (
             <Button
               startIcon={<SendIcon />}
               onClick={handleResubmit}
@@ -1810,9 +1824,9 @@ export function PRView() {
       {canProcessPR && (
         <Box sx={{ mb: 3 }}>
           <ProcurementActions
-            prId={pr.id}
-            currentStatus={pr.status}
-            requestorEmail={pr.requestorEmail}
+            prId={pr?.id}
+            currentStatus={pr?.status}
+            requestorEmail={pr?.requestorEmail}
             currentUser={currentUser}
             onStatusChange={refreshPR}
           />
@@ -1820,7 +1834,7 @@ export function PRView() {
       )}
 
       {/* Approver Actions */}
-      {pr.status === PRStatus.PENDING_APPROVAL && (
+      {pr?.status === PRStatus.PENDING_APPROVAL && (
         <Box sx={{ mb: 3 }}>
           <ApproverActions
             pr={pr}
@@ -1837,11 +1851,11 @@ export function PRView() {
           Status
         </Typography>
         <Chip
-          label={PRStatus[pr.status]}
+          label={PRStatus[pr?.status]}
           color={
-            pr.status === PRStatus.REJECTED
+            pr?.status === PRStatus.REJECTED
               ? 'error'
-              : pr.status === PRStatus.REVISION_REQUIRED
+              : pr?.status === PRStatus.REVISION_REQUIRED
               ? 'warning'
               : 'primary'
           }
@@ -1850,7 +1864,7 @@ export function PRView() {
       </Box>
 
       {/* Workflow History */}
-      {pr.workflowHistory && pr.workflowHistory.length > 0 && (
+      {pr?.workflowHistory && pr.workflowHistory.length > 0 && (
         <Box sx={{ mb: 3 }}>
           <Typography variant="h6" gutterBottom>
             Workflow History
@@ -1962,24 +1976,11 @@ export function PRView() {
           </Button>
         </DialogActions>
       </Dialog>
+      <FilePreviewDialog
+        open={previewOpen}
+        onClose={handleClosePreview}
+        file={previewFile || { name: '', url: '', type: '' }}
+      />
     </Box>
   );
 }
-
-const handleDownloadQuoteAttachment = async (attachment: { name: string; url: string }) => {
-  try {
-    const response = await fetch(attachment.url);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = attachment.name;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  } catch (error) {
-    console.error('Error downloading file:', error);
-    enqueueSnackbar('Error downloading file', { variant: 'error' });
-  }
-};

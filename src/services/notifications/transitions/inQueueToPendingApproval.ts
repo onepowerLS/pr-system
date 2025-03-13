@@ -21,8 +21,12 @@ export class InQueueToPendingApprovalHandler implements StatusTransitionHandler 
 
     const pr = prDoc.data();
 
-    // Add current approver as primary recipient
-    if (pr.approvalWorkflow?.currentApprover) {
+    // Add current approver as primary recipient - prioritize pr.approver as the single source of truth
+    if (pr.approver) {
+      recipients.to.push(pr.approver);
+    } 
+    // Fallback to approvalWorkflow.currentApprover only if pr.approver is not available
+    else if (pr.approvalWorkflow?.currentApprover) {
       recipients.to.push(pr.approvalWorkflow.currentApprover);
     }
 

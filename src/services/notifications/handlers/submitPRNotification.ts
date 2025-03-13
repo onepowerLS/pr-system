@@ -5,6 +5,7 @@ import { generateNewPREmail } from '../templates/newPRTemplate';
 import { NotificationLog } from '@/types/notification';
 import { getEnvironmentConfig } from '@/config/environment';
 import { logger } from '@/utils/logger';
+import { prService } from '@/services/pr';
 
 const functions = getFunctions();
 
@@ -138,36 +139,63 @@ export class SubmitPRNotificationHandler {
 
       // Detailed raw data logging to detect approver issues
       logger.debug('Raw PR approver data:', {
-        legacyApprover: prDoc.approver,
-        legacyApproverType: typeof prDoc.approver,
+        approver: prDoc.approver,
+        approverType: typeof prDoc.approver,
         approverList: prDoc.approvers,
         workflowExists: !!prDoc.approvalWorkflow,
         workflowApprover: prDoc.approvalWorkflow?.currentApprover,
         workflowApproverType: typeof prDoc.approvalWorkflow?.currentApprover,
       });
 
-      // Find approver information from various sources, prioritizing the PR.approver as the source of truth
+      // Find approver information - pr.approver is the single source of truth
       let approverId = null;
       let approverInfo = null;
 
-      // First check the PR.approver field (source of truth)
+      // Check the PR.approver field (single source of truth)
       if (prDoc.approver) {
         if (typeof prDoc.approver === 'string') {
           approverId = prDoc.approver;
-          logger.debug('Found approver ID in PR.approver (source of truth):', approverId);
+          logger.debug('Using approver ID from PR.approver (single source of truth):', approverId);
         } else if (typeof prDoc.approver === 'object') {
           approverInfo = prDoc.approver;
-          logger.debug('Found approver object in PR.approver (source of truth):', approverInfo);
+          logger.debug('Using approver object from PR.approver (single source of truth):', approverInfo);
         }
       }
-      // Only fall back to approvalWorkflow if PR.approver is not set
-      else if (prDoc.approvalWorkflow?.currentApprover) {
-        if (typeof prDoc.approvalWorkflow.currentApprover === 'string') {
-          approverId = prDoc.approvalWorkflow.currentApprover;
-          logger.debug('Falling back to approvalWorkflow.currentApprover:', approverId);
-        } else if (typeof prDoc.approvalWorkflow.currentApprover === 'object') {
-          approverInfo = prDoc.approvalWorkflow.currentApprover;
-          logger.debug('Falling back to approvalWorkflow.currentApprover object:', approverInfo);
+      
+      // Check for discrepancy between approver and approvalWorkflow.currentApprover
+      if (prDoc.approvalWorkflow?.currentApprover && prDoc.approver !== prDoc.approvalWorkflow.currentApprover) {
+        logger.warn('Discrepancy detected between PR.approver and approvalWorkflow.currentApprover', {
+          prId: prDoc.id,
+          prApprover: prDoc.approver,
+          workflowApprover: prDoc.approvalWorkflow.currentApprover
+        });
+        
+        // Fix the discrepancy by updating approvalWorkflow.currentApprover to match pr.approver
+        if (prDoc.approver) {
+          logger.info('Updating approvalWorkflow.currentApprover to match PR.approver (single source of truth)', {
+            prId: prDoc.id,
+            approver: prDoc.approver
+          });
+          
+          // Update the document in memory
+          if (prDoc.approvalWorkflow) {
+            prDoc.approvalWorkflow.currentApprover = prDoc.approver;
+          }
+          
+          // Update the document in the database
+          try {
+            await this.prService.updatePR(prDoc.id, {
+              approvalWorkflow: {
+                ...prDoc.approvalWorkflow,
+                currentApprover: prDoc.approver
+              }
+            });
+          } catch (error) {
+            logger.error('Failed to update approvalWorkflow.currentApprover', {
+              prId: prDoc.id,
+              error
+            });
+          }
         }
       }
 
@@ -238,8 +266,8 @@ export class SubmitPRNotificationHandler {
       });
 
       // Send email via cloud function
-      const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
-      await sendPRNotification({
+      const sendPRNotificationV2 = httpsCallable(functions, 'sendPRNotificationV2');
+      await sendPRNotificationV2({
         notification: {
           prId: prDoc.id,
           prNumber,

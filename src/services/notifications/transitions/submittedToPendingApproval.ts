@@ -21,8 +21,24 @@ export class SubmittedToPendingApprovalHandler implements StatusTransitionHandle
 
     const pr = prDoc.data();
 
-    // Add current approver as primary recipient
-    if (pr.approvalWorkflow?.currentApprover?.email) {
+    // Add current approver as primary recipient - prioritize pr.approver as the single source of truth
+    if (pr.approver) {
+      // If approver is an object with email
+      if (typeof pr.approver === 'object' && pr.approver?.email) {
+        recipients.to.push(pr.approver.email);
+      } 
+      // If approver is a string and looks like an email
+      else if (typeof pr.approver === 'string' && pr.approver.includes('@')) {
+        recipients.to.push(pr.approver);
+      }
+      // If approver is just an ID, we'll need to fetch the user details
+      else {
+        // This would require additional code to fetch user details by ID
+        console.log('Approver ID found, but email not available directly:', pr.approver);
+      }
+    }
+    // Fallback to approvalWorkflow.currentApprover only if pr.approver is not available
+    else if (pr.approvalWorkflow?.currentApprover?.email) {
       recipients.to.push(pr.approvalWorkflow.currentApprover.email);
     }
 

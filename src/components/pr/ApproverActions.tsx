@@ -176,7 +176,8 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
             lastModifiedBy: currentUser.email,
             lastModifiedAt: new Date().toISOString(),
             approvalWorkflow: {
-              currentApprover: prData.approvers[0], // Start with first approver
+              // Respect pr.approver as the single source of truth
+              currentApprover: prData.approver || prData.approvers[0], 
               approvalChain: prData.approvers,
               approvalHistory: [],
               submittedForApprovalAt: new Date().toISOString()
