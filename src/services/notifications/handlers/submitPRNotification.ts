@@ -1,9 +1,10 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDoc, doc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { generateNewPREmail } from '../templates/newPRTemplate';
 import { NotificationLog } from '@/types/notification';
 import { getEnvironmentConfig } from '@/config/environment';
+import { logger } from '@/utils/logger';
 
 const functions = getFunctions();
 
@@ -32,74 +33,250 @@ export class SubmitPRNotificationHandler {
   }
 
   /**
+   * Fetches the approver details if only an ID is available
+   */
+  private async getApproverDetails(approverId: string): Promise<any | null> {
+    try {
+      if (!approverId) {
+        logger.warn('Empty approver ID provided to getApproverDetails');
+        return null;
+      }
+      
+      logger.debug('Fetching approver details for ID:', approverId);
+      
+      // Handle the case where approverId is an object
+      if (typeof approverId === 'object') {
+        logger.debug('Approver ID is already an object:', approverId);
+        return approverId;
+      }
+      
+      const userDocRef = doc(db, 'users', approverId);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        logger.debug('Found approver data:', { userData });
+        
+        return {
+          id: approverId,
+          email: userData.email,
+          firstName: userData.firstName || '',
+          lastName: userData.lastName || '',
+          name: userData.firstName && userData.lastName ? 
+            `${userData.firstName} ${userData.lastName}` : 
+            userData.displayName || userData.email
+        };
+      }
+      
+      logger.warn('Approver not found in users collection:', approverId);
+      return null;
+    } catch (error) {
+      logger.error('Error fetching approver details:', error);
+      return null;
+    }
+  }
+
+  /**
    * Creates and sends a PR submission notification
    */
-  async createNotification(pr: any, prNumber: string): Promise<void> {
-    if (!pr.id) {
-      throw new Error('PR ID is required for notification');
-    }
-
+  async createNotification(pr: any, inputPrNumber?: string): Promise<void> {
     try {
-      const baseUrl = getEnvironmentConfig().baseUrl;
+      // Generate a user-friendly PR number if not available
+      const prNumber = inputPrNumber || pr.prNumber || `PR-${pr.id.substring(0, 8)}`;
+
+      logger.debug('Creating PR submission notification', { prId: pr.id, prNumber });
       
-      // Generate email content
-      const emailContent = generateNewPREmail({
-        pr,
-        prNumber,
-        baseUrl,
-        user: pr.requestor || {
-          firstName: '',
-          lastName: '',
-          email: pr.requestorEmail || '',
-          department: pr.department || ''
-        },
-        notes: pr.notes,
-        isUrgent: pr.isUrgent || false
-      });
-
-      // Prepare recipients
-      const recipients = [
-        this.PROCUREMENT_EMAIL,
-        pr.requestorEmail
-      ].filter(Boolean);
-
-      // Add current approver to recipients if available
-      if (pr.approvalWorkflow?.currentApprover?.email) {
-        recipients.push(pr.approvalWorkflow.currentApprover.email);
+      // Check if this PR already has a notification sent
+      // This prevents duplicate emails
+      const notificationsRef = collection(db, 'notifications');
+      const q = query(
+        notificationsRef,
+        where('prId', '==', pr.id),
+        where('type', '==', 'STATUS_CHANGE'),
+        where('oldStatus', '==', null),
+        where('newStatus', '==', 'SUBMITTED')
+      );
+      
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        logger.info('Notification already sent for this PR submission. Skipping duplicate notification.');
+        return;
       }
 
-      // Log the notification
-      const notificationId = await this.logNotification(pr.id, recipients);
+      // Also check in the purchaseRequestsNotifications collection
+      const prNotificationsRef = collection(db, this.notificationsCollection);
+      const prNotificationsQuery = query(
+        prNotificationsRef,
+        where('prId', '==', pr.id),
+        where('type', '==', 'PR_SUBMITTED')
+      );
+      
+      const prNotificationsSnapshot = await getDocs(prNotificationsQuery);
+      if (!prNotificationsSnapshot.empty) {
+        logger.info('PR submission notification already exists in purchaseRequestsNotifications. Skipping duplicate notification.');
+        return;
+      }
+      
+      // Get the PR document to ensure we have all the data
+      const prDoc = await this.getPRDocument(pr.id);
+      if (!prDoc) {
+        throw new Error(`PR document not found: ${pr.id}`);
+      }
+
+      if (!prDoc.id) {
+        throw new Error('PR ID is required for notification');
+      }
+
+      const config = getEnvironmentConfig();
+      const baseUrl = config.baseUrl;
+      if (!baseUrl) {
+        throw new Error('Base URL is not configured');
+      }
+
+      // Generate notification ID and log
+      const notificationId = await this.logNotification(prDoc.id, [this.PROCUREMENT_EMAIL]);
+
+      // Detailed raw data logging to detect approver issues
+      logger.debug('Raw PR approver data:', {
+        legacyApprover: prDoc.approver,
+        legacyApproverType: typeof prDoc.approver,
+        approverList: prDoc.approvers,
+        workflowExists: !!prDoc.approvalWorkflow,
+        workflowApprover: prDoc.approvalWorkflow?.currentApprover,
+        workflowApproverType: typeof prDoc.approvalWorkflow?.currentApprover,
+      });
+
+      // Find approver information from various sources, prioritizing the PR.approver as the source of truth
+      let approverId = null;
+      let approverInfo = null;
+
+      // First check the PR.approver field (source of truth)
+      if (prDoc.approver) {
+        if (typeof prDoc.approver === 'string') {
+          approverId = prDoc.approver;
+          logger.debug('Found approver ID in PR.approver (source of truth):', approverId);
+        } else if (typeof prDoc.approver === 'object') {
+          approverInfo = prDoc.approver;
+          logger.debug('Found approver object in PR.approver (source of truth):', approverInfo);
+        }
+      }
+      // Only fall back to approvalWorkflow if PR.approver is not set
+      else if (prDoc.approvalWorkflow?.currentApprover) {
+        if (typeof prDoc.approvalWorkflow.currentApprover === 'string') {
+          approverId = prDoc.approvalWorkflow.currentApprover;
+          logger.debug('Falling back to approvalWorkflow.currentApprover:', approverId);
+        } else if (typeof prDoc.approvalWorkflow.currentApprover === 'object') {
+          approverInfo = prDoc.approvalWorkflow.currentApprover;
+          logger.debug('Falling back to approvalWorkflow.currentApprover object:', approverInfo);
+        }
+      }
+
+      // If we only have an ID, fetch the full details
+      if (approverId && !approverInfo) {
+        logger.debug('Fetching detailed approver info for:', approverId);
+        approverInfo = await this.getApproverDetails(approverId);
+        
+        // If we get back null but have a valid ID, create a minimal info object
+        if (!approverInfo && approverId) {
+          logger.warn(`Could not find full approver details for ID: ${approverId}, creating minimal info`);
+          approverInfo = {
+            id: approverId,
+            email: `approver-${approverId}@unknown.com`, // placeholder email
+            name: `Approver (ID: ${approverId})` // placeholder name
+          };
+        }
+      }
+
+      // Log what we found
+      logger.info('Approver resolution result:', { 
+        hasApprover: !!approverInfo, 
+        approverId, 
+        approverInfo: approverInfo ? {
+          id: approverInfo.id,
+          email: approverInfo.email,
+          name: approverInfo.name || `${approverInfo.firstName || ''} ${approverInfo.lastName || ''}`.trim()
+        } : null
+      });
+
+      // Ensure requestor information is complete
+      const requestorInfo = {
+        firstName: prDoc.requestor?.firstName || '',
+        lastName: prDoc.requestor?.lastName || '',
+        email: prDoc.requestor?.email || prDoc.requestorEmail || '',
+        name: prDoc.requestor?.name || 
+              (prDoc.requestor?.firstName && prDoc.requestor?.lastName) ? 
+              `${prDoc.requestor.firstName} ${prDoc.requestor.lastName}`.trim() : 
+              ''
+      };
+
+      // Generate email content with whatever approver info we have
+      const emailContent = generateNewPREmail({
+        pr: prDoc,
+        prNumber,
+        approver: approverInfo,
+        baseUrl,
+        submitter: requestorInfo
+      });
+
+      // Set up recipients
+      const toRecipients = [this.PROCUREMENT_EMAIL];
+      const ccRecipients = new Set<string>(); // Use a Set to avoid duplicates
+      
+      // Add approver to CC if available
+      if (approverInfo?.email) {
+        ccRecipients.add(approverInfo.email);
+      }
+      
+      // Add requestor to CC if different from sender
+      if (requestorInfo.email) {
+        ccRecipients.add(requestorInfo.email);
+      }
+
+      logger.debug('Sending PR submission notification to:', { 
+        to: toRecipients, 
+        cc: Array.from(ccRecipients) 
+      });
 
       // Send email via cloud function
       const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
       await sendPRNotification({
         notification: {
-          type: 'PR_SUBMITTED',
-          prId: pr.id,
+          prId: prDoc.id,
           prNumber,
-          oldStatus: null,
+          oldStatus: '',
           newStatus: 'SUBMITTED',
           user: {
-            email: pr.requestorEmail || '',
-            name: pr.requestor ? `${pr.requestor.firstName || ''} ${pr.requestor.lastName || ''}`.trim() : ''
+            email: requestorInfo.email,
+            name: requestorInfo.name || `${requestorInfo.firstName || ''} ${requestorInfo.lastName || ''}`.trim()
           },
-          notes: pr.notes || '',
+          notes: prDoc.notes || '',
           metadata: {
-            isUrgent: pr.isUrgent,
-            requestorEmail: pr.requestorEmail,
-            approvalWorkflow: pr.approvalWorkflow || null,
-            department: pr.department,
-            amount: pr.estimatedAmount,
-            currency: pr.currency,
-            requiredDate: pr.requiredDate
+            description: prDoc.description || '',
+            amount: prDoc.estimatedAmount,
+            currency: prDoc.currency,
+            department: prDoc.department || prDoc.requestor?.department,
+            requiredDate: prDoc.requiredDate,
+            isUrgent: prDoc.isUrgent
           }
         },
-        recipients,
+        recipients: toRecipients,
+        cc: Array.from(ccRecipients),
         emailBody: {
           subject: emailContent.subject,
           text: emailContent.text,
           html: emailContent.html
+        },
+        metadata: {
+          prUrl: `${baseUrl}/pr/${prDoc.id}`,
+          requestorEmail: requestorInfo.email,
+          approverInfo: approverInfo ? {
+            id: approverInfo.id || '',
+            email: approverInfo.email || '',
+            name: approverInfo.name || 
+                  (approverInfo.firstName && approverInfo.lastName ? 
+                   `${approverInfo.firstName} ${approverInfo.lastName}`.trim() : 
+                   '')
+          } : null
         }
       });
 
@@ -110,9 +287,29 @@ export class SubmitPRNotificationHandler {
         updatedAt: serverTimestamp()
       });
 
+    } catch (error: unknown) {
+      logger.error('Failed to create PR submission notification', { 
+        error: error instanceof Error ? error.message : String(error),
+        prId: pr.id
+      });
+      throw new Error(`Failed to create PR submission notification: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async getPRDocument(prId: string): Promise<any> {
+    try {
+      const prRef = doc(db, 'prs', prId);
+      const prSnap = await getDoc(prRef);
+      if (!prSnap.exists()) {
+        return null;
+      }
+      return { id: prSnap.id, ...prSnap.data() };
     } catch (error) {
-      console.error('Error creating PR submission notification:', error);
-      throw new Error(`Failed to create PR submission notification: ${error.message}`);
+      logger.error('Error fetching PR document', { 
+        error: error instanceof Error ? error.message : String(error),
+        prId 
+      });
+      return null;
     }
   }
 }
