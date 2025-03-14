@@ -1396,7 +1396,8 @@ export const prService = {
           number: data.number || '1',
           description: data.description || '',
           threshold: Number(data.threshold) || 0,
-          currency: data.currency || 'LSL',
+          // Only include currency if it exists and makes sense for this rule type
+          ...(data.currency && { currency: data.currency }),
           active: data.active ?? true,
           organization: data.organization || {
             id: normalizedOrgId,

@@ -2,32 +2,31 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import {
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   InputLabel,
   MenuItem,
+  Paper,
   Select,
-  Typography,
+  Switch as SwitchComponent,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   TextField,
-  IconButton,
-  Switch,
+  Typography,
   Snackbar,
   Alert,
-  FormHelperText,
-  Chip,
   Tooltip,
-  Switch as SwitchComponent
+  IconButton,
+  Chip
 } from "@mui/material"
 import { Edit as EditIcon, Delete as DeleteIcon, Info as InfoIcon } from "@mui/icons-material"
 import { ReferenceDataItem } from "@/types/referenceData"
@@ -41,6 +40,7 @@ import {
 } from '@/config/permissions'
 import { referenceDataAdminService } from '@/services/referenceDataAdmin'
 import { organizationService } from '@/services/organizationService'
+import { ORG_INDEPENDENT_TYPES } from '@/services/referenceData'
 
 const REFERENCE_DATA_TYPE_LABELS = {
   departments: "Departments",
@@ -58,7 +58,6 @@ const REFERENCE_DATA_TYPE_LABELS = {
 
 type ReferenceDataType = keyof typeof REFERENCE_DATA_TYPE_LABELS
 
-const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'uom', 'permissions', 'organizations'] as const;
 const CODE_BASED_ID_TYPES = ['currencies', 'uom', 'organizations'] as const;
 
 const SEED_DATA = {
@@ -189,6 +188,7 @@ interface ReferenceDataField {
   readOnly?: boolean;
   hideInTable?: boolean;
   defaultValue?: any;
+  sx?: Record<string, any>; // Add sx property for styling
 }
 
 const isCodeBasedIdType = (type: string): boolean => {
@@ -339,16 +339,18 @@ function getDisplayFields(type: ReferenceDataType): ReferenceDataField[] {
         { name: 'threshold', label: 'Threshold' },
         { name: 'currency', label: 'Currency' },
         { name: 'active', label: 'Active', type: 'boolean' },
-        { name: 'organization', label: 'Organization', type: 'organization' }
+        // Only show organization field for rules that require it
+        ...(type === 'rules' ? [{ name: 'organization', label: 'Organization', type: 'organization' }] : [])
       ];
+    case 'currencies':
+    case 'uom':
+      // For global reference data types, don't include organization field
+      return codeBasedFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     case 'departments':
     case 'sites':
     case 'expenseTypes':
     case 'projectCategories':
       return codeIncludedFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
-    case 'currencies':
-    case 'uom':
-      return codeBasedFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
     default:
       return commonFields.map(field => ({ ...field, sx: { whiteSpace: 'normal', wordWrap: 'break-word' } }));
   }
@@ -417,9 +419,9 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
 
   // Memoize the shouldShowOrgSelect function to prevent unnecessary re-renders
   const shouldShowOrgSelect = useMemo(() => {
-    // Show org selector for all users that can access admin portal
-    return user?.permissionLevel === 1 || user?.permissionLevel === 2 || user?.permissionLevel === 3 || user?.permissionLevel === 4;
-  }, [user?.permissionLevel]);
+    // Only show organization select for organization-dependent types
+    return !ORG_INDEPENDENT_TYPES.includes(selectedType);
+  }, [selectedType]);
 
   const loadOrganizations = useCallback(async () => {
     // Only load organizations if we need to show the selector
@@ -519,6 +521,13 @@ export function ReferenceDataManagement({ isReadOnly }: ReferenceDataManagementP
         const codeA = a.code || '';
         const codeB = b.code || '';
         return codeA.localeCompare(codeB, undefined, { numeric: true });
+      });
+    } else if (selectedType === 'rules') {
+      // Sort rules by number in ascending order
+      result.sort((a, b) => {
+        const numberA = a.number ? parseInt(a.number.toString(), 10) : 0;
+        const numberB = b.number ? parseInt(b.number.toString(), 10) : 0;
+        return numberA - numberB;
       });
     } else {
       // Default sort by name for other types

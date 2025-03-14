@@ -60,7 +60,7 @@ export interface Rule {
   number: string;
   description: string;
   threshold: number;
-  currency: string;
+  currency?: string; // Made optional since it's not relevant for multipliers and quote requirements
   active: boolean;
   organization: {
     id: string;

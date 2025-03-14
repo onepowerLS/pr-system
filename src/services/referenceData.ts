@@ -20,7 +20,7 @@ export interface ReferenceData {
 }
 
 const COLLECTION_PREFIX = "referenceData_";
-const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'organizations', 'uom', 'permissions'];
+export const ORG_INDEPENDENT_TYPES = ['vendors', 'currencies', 'organizations', 'uom', 'permissions'];
 
 class ReferenceDataService {
   private db = db;
