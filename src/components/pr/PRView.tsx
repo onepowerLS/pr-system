@@ -975,6 +975,9 @@ export function PRView() {
       await fetchPR();
       
       enqueueSnackbar('PR saved successfully', { variant: 'success' });
+      
+      // Navigate back to view mode after successful save
+      navigate(`/pr/${pr.id}`);
     } catch (error) {
       console.error('Error saving PR:', error);
       enqueueSnackbar('Failed to save PR', { variant: 'error' });

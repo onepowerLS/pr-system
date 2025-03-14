@@ -283,7 +283,7 @@ export const prService = {
         id: docRef.id,
         // Ensure all required fields are present
         approvalWorkflow: {
-          currentApprover: prData.approver || '',
+          currentApprover: prData.approver || '', // Mirror of pr.approver (single source of truth)
           approvalHistory: [],
           lastUpdated: new Date().toISOString()
         }
@@ -513,7 +513,7 @@ export const prService = {
         id: docRef.id,
         // Ensure all required fields are present
         approvalWorkflow: {
-          currentApprover: prData.approver || '',
+          currentApprover: prData.approver || '', // Mirror of pr.approver (single source of truth)
           approvalHistory: [],
           lastUpdated: new Date().toISOString()
         }
@@ -561,23 +561,23 @@ export const prService = {
       
       // Initialize or update approval workflow
       let approvalWorkflow = prData.approvalWorkflow || {
-        currentApprover: null,
+        currentApprover: prData.approver || null, // Initialize with current approver
         approvalHistory: [],
         lastUpdated: Timestamp.fromDate(new Date())
       };
 
-      // Check for discrepancies between legacy approver field and approval workflow
+      // Check for discrepancies between approver field and approval workflow
       if (prData.approver && approvalWorkflow.currentApprover && 
           prData.approver !== approvalWorkflow.currentApprover) {
         console.warn('PR Service: Discrepancy detected between PR approver and approvalWorkflow', {
           prId,
           prApprover: prData.approver,
-          type: typeof prData.approver
+          workflowApprover: approvalWorkflow.currentApprover
         });
         
-        // Fix the discrepancy by updating workflow to match PR approver
+        // Fix the discrepancy by updating workflow to match PR approver (single source of truth)
         approvalWorkflow.currentApprover = prData.approver;
-        console.log('PR Service: Corrected approvalWorkflow.currentApprover to match PR.approver');
+        console.log('PR Service: Corrected approvalWorkflow.currentApprover to match PR.approver (single source of truth)');
       }
       
       // If approver is being updated, update the workflow and add to history
@@ -594,11 +594,41 @@ export const prService = {
         
         // Add to approval history if the approver is changing
         if (currentApproverId !== newApproverId) {
+          // Get approver names for better history tracking
+          let previousApproverName = 'Unknown';
+          let newApproverName = 'Unknown';
+          
+          // Try to get approver names from users collection
+          try {
+            // Get previous approver name if available
+            if (currentApproverId) {
+              const prevApproverRef = doc(getFirestore(app), 'users', currentApproverId);
+              const prevApproverSnap = await getDoc(prevApproverRef);
+              if (prevApproverSnap.exists()) {
+                const userData = prevApproverSnap.data();
+                previousApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+              }
+            }
+            
+            // Get new approver name
+            const newApproverRef = doc(getFirestore(app), 'users', newApproverId);
+            const newApproverSnap = await getDoc(newApproverRef);
+            if (newApproverSnap.exists()) {
+              const userData = newApproverSnap.data();
+              newApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+            }
+          } catch (error) {
+            console.warn('Could not fetch approver names:', error);
+            // Continue with unknown names
+          }
+          
           const newHistoryItem = {
             approverId: newApproverId,
             timestamp: new Date().toISOString(),
             approved: false,
-            notes: typeof updates.notes === 'string' ? updates.notes : 'Approver reassigned'
+            notes: typeof updates.notes === 'string' 
+              ? updates.notes 
+              : `Approver changed from ${previousApproverName} to ${newApproverName}`
           };
           
           approvalWorkflow = {
@@ -610,7 +640,9 @@ export const prService = {
           
           console.log('PR Service: Added approver change to history', {
             previousApprover: currentApproverId,
-            newApprover: newApproverId
+            previousApproverName,
+            newApprover: newApproverId,
+            newApproverName
           });
         } else {
           // Just update the timestamp if the approver didn't change
@@ -626,13 +658,24 @@ export const prService = {
       const finalUpdates = {
         ...updates,
         approvalWorkflow,
-        approver: updates.approver || prData.approver, // Update approver field
         updatedAt: Timestamp.fromDate(new Date()),
         isUrgent: updates.isUrgent ?? prData.isUrgent ?? false
       };
       
       console.log('Final updates:', JSON.stringify(finalUpdates, null, 2));
-      await updateDoc(prRef, finalUpdates);
+      
+      // Filter out undefined values which Firestore doesn't support
+      const cleanedUpdates = Object.entries(finalUpdates).reduce((acc, [key, value]) => {
+        // Skip undefined values
+        if (value !== undefined) {
+          acc[key] = value;
+        } else {
+          console.log(`Removing undefined field from update: ${key}`);
+        }
+        return acc;
+      }, {} as Record<string, any>);
+      
+      await updateDoc(prRef, cleanedUpdates);
     } catch (error) {
       console.error('Error updating PR:', JSON.stringify(error, null, 2));
       throw error;
@@ -668,7 +711,19 @@ export const prService = {
           updatedAt: Timestamp.fromDate(new Date()),
           isUrgent: updates.isUrgent ?? data.isUrgent ?? false
         };
-        batch.update(ref, finalUpdates);
+        
+        // Filter out undefined values which Firestore doesn't support
+        const cleanedUpdates = Object.entries(finalUpdates).reduce((acc, [key, value]) => {
+          // Skip undefined values
+          if (value !== undefined) {
+            acc[key] = value;
+          } else {
+            console.log(`Removing undefined field from update: ${key}`);
+          }
+          return acc;
+        }, {} as Record<string, any>);
+        
+        batch.update(ref, cleanedUpdates);
       });
       
       // Commit all updates
@@ -909,8 +964,8 @@ export const prService = {
 
       // Only approver or procurement can move from PENDING_APPROVAL to IN_QUEUE
       if (oldStatus === PRStatus.PENDING_APPROVAL && newStatus === PRStatus.IN_QUEUE) {
-        const isApprover = user.id === prData.approvalWorkflow?.currentApprover?.id ||
-          prData.approver === user.id;
+        const isApprover = prData.approver === user.id;
+        
         if (!isApprover && !isProcurement) {
           throw new Error('Only the current approver or procurement team can return a PR to queue');
         }
@@ -1111,8 +1166,8 @@ export const prService = {
 
       // Initialize approver if missing
       if (!prData.approver) {
-        console.log('PR Service: No approver assigned for PR:', prId);
-        console.log('PR Service: Checking for approver - PR data:', {
+        console.log("No approver assigned to PR");
+        console.log("Checking for approver - PR data:", {
           approver: prData.approver || 'Not set',
           approvalWorkflow: prData.approvalWorkflow ? 
             `currentApprover: ${prData.approvalWorkflow.currentApprover}` : 'Not set'
@@ -1122,7 +1177,7 @@ export const prService = {
         // use that as the approver for backward compatibility
         if (prData.approvalWorkflow?.currentApprover) {
           prData.approver = prData.approvalWorkflow.currentApprover;
-          console.log('PR Service: Using approval workflow current approver:', prData.approver);
+          console.log('Using approval workflow current approver:', prData.approver);
         }
       }
 
@@ -1394,25 +1449,7 @@ export const prService = {
    */
   async getApproverForPR(pr: PRRequest): Promise<User | null> {
     try {
-      // First check if we have an approval workflow with a current approver
-      if (pr.approvalWorkflow?.currentApprover) {
-        console.log("PR Service: Using currentApprover from approvalWorkflow:", pr.approvalWorkflow.currentApprover);
-        const approverId = pr.approvalWorkflow.currentApprover;
-        
-        // Fetch the approver user
-        const db = getFirestore(app);
-        const userRef = doc(db, "users", approverId);
-        const userSnap = await getDoc(userRef);
-        
-        if (userSnap.exists()) {
-          const user = { id: userSnap.id, ...userSnap.data() } as User;
-          if (user.isActive !== false) {
-            return user;
-          }
-        }
-      }
-      
-      // Fall back to legacy approver field if no approvalWorkflow or approver not found
+      // pr.approver is the single source of truth for the designated approver
       if (!pr.approver) {
         console.warn("No approver assigned to PR");
         return null;
@@ -1425,6 +1462,15 @@ export const prService = {
         approvalWorkflow: pr.approvalWorkflow ? 
           `currentApprover: ${pr.approvalWorkflow.currentApprover}` : "Not set"
       });
+
+      // Check for discrepancy between approver and approvalWorkflow.currentApprover
+      if (pr.approvalWorkflow?.currentApprover && pr.approver !== pr.approvalWorkflow.currentApprover) {
+        console.warn("PR Service: Discrepancy detected between PR approver and approvalWorkflow", {
+          prId: pr.id,
+          prApprover: pr.approver,
+          workflowApprover: pr.approvalWorkflow.currentApprover
+        });
+      }
 
       const db = getFirestore(app);
       const userRef = doc(db, "users", pr.approver);
@@ -1472,27 +1518,76 @@ export const prService = {
       }
       
       const prData = prSnap.data() as PRRequest;
+      const currentApproverId = prData.approver;
+      
+      // Get approver names for better history tracking
+      let previousApproverName = 'Unknown';
+      let newApproverName = 'Unknown';
+      
+      // Try to get approver names from users collection
+      try {
+        // Get previous approver name if available
+        if (currentApproverId) {
+          const prevApproverRef = doc(getFirestore(app), 'users', currentApproverId);
+          const prevApproverSnap = await getDoc(prevApproverRef);
+          if (prevApproverSnap.exists()) {
+            const userData = prevApproverSnap.data();
+            previousApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+          }
+        }
+        
+        // Get new approver name
+        const newApproverRef = doc(getFirestore(app), 'users', approverId);
+        const newApproverSnap = await getDoc(newApproverRef);
+        if (newApproverSnap.exists()) {
+          const userData = newApproverSnap.data();
+          newApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+        }
+      } catch (error) {
+        console.warn('Could not fetch approver names:', error);
+        // Continue with unknown names
+      }
+      
+      console.log('PR Service: Adding approver change to history', {
+        previousApprover: currentApproverId,
+        previousApproverName,
+        newApprover: approverId,
+        newApproverName
+      });
       
       // Update approver and approval workflow
       const updates: Partial<PRRequest> = {
-        approver: approverId, // Legacy field, maintained for backward compatibility
+        approver: approverId, // Single source of truth for the designated approver
         updatedAt: new Date().toISOString(),
         approvalWorkflow: {
-          currentApprover: approverId, // Single source of truth
+          currentApprover: approverId, // Mirror of pr.approver
           approvalHistory: [
             ...(prData.approvalWorkflow?.approvalHistory || []),
             {
               approverId,
               timestamp: new Date().toISOString(),
               approved: false,
-              notes: notes
+              notes: notes === 'Approver reassigned' 
+                ? `Approver changed from ${previousApproverName} to ${newApproverName}`
+                : notes
             }
           ],
           lastUpdated: new Date().toISOString()
         }
       };
       
-      await updateDoc(prRef, updates);
+      // Filter out undefined values which Firestore doesn't support
+      const cleanedUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+        // Skip undefined values
+        if (value !== undefined) {
+          acc[key] = value;
+        } else {
+          console.log(`Removing undefined field from update: ${key}`);
+        }
+        return acc;
+      }, {} as Record<string, any>);
+      
+      await updateDoc(prRef, cleanedUpdates);
       console.log('Approver updated successfully:', { prId, approverId });
     } catch (error) {
       console.error('Error updating approver:', error instanceof Error ? error.message : String(error));
