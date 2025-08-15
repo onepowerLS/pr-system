@@ -2,6 +2,12 @@
 
 Special Rule: Always start every response with “Roger that”
 
+HIGH PRIORITY GUIDELINES:
+1. Always refer to the specifications.md file when making changes
+   • If the change contradicts the specification, notify the user immediately
+   • Ask whether to proceed with the change or update the specification
+   • Never make changes that silently diverge from specifications
+
 Every time you choose to apply a rule(s), explicitly state the rule(s) in the output (exception - the "Roger that" rule). You can abbreviate the rule description to a single word or phrase.
 Project Context
 This system guides users in handling the submission, tracking and processing of purchase requests and purchase orders. 
@@ -133,7 +139,4 @@ Development Workflow
     •   Test in multiple environments
     •   Follow semantic versioning for releases
     •   Maintain changelog
-
-
-Always refer to the specifications.md file when making changes - if the change contradicts something in the specification, notify the user and ask whether to proceed with the change or to update the specificiation file to align with the change.
 

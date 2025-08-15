@@ -1,11 +1,11 @@
-import { PRStatus } from '../../types/pr';
-import { StatusTransitionHandler } from './types';
-import { NewPRSubmittedHandler } from './transitions/newPRSubmitted';
-import { SubmittedToRevisionRequiredHandler } from './transitions/submittedToRevisionRequired';
-import { RevisionRequiredToResubmittedHandler } from './transitions/revisionRequiredToResubmitted';
-import { SubmittedToPendingApprovalHandler } from './transitions/submittedToPendingApproval';
-import { PendingApprovalToApprovedHandler } from './transitions/pendingApprovalToApproved';
-import { PendingApprovalToRejectedHandler } from './transitions/pendingApprovalToRejected';
+import { PRStatus } from '../../../types/pr';
+import { StatusTransitionHandler } from '../types';
+import { NewPRSubmittedHandler } from './newPRSubmitted';
+import { SubmittedToRevisionRequiredHandler } from './submittedToRevisionRequired';
+import { RevisionRequiredToResubmittedHandler } from './revisionRequiredToResubmitted';
+import { SubmittedToPendingApprovalHandler } from './submittedToPendingApproval';
+import { PendingApprovalToApprovedHandler } from './pendingApprovalToApproved';
+import { PendingApprovalToRejectedHandler } from './pendingApprovalToRejected';
 
 // Map of status transitions to their handlers
 const transitionHandlers = new Map<string, StatusTransitionHandler>();

@@ -341,7 +341,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               </MenuItem>
               {filteredVehicles.map(v => (
                 <MenuItem key={v.id} value={v.id}>
-                  {v.name}
+                  {v.code || v.registrationNumber || v.name || `Vehicle ${v.id}`}
                 </MenuItem>
               ))}
             </Select>
@@ -474,13 +474,16 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           <Select
             labelId="urgency-label"
             id="urgency-select"
-            value={formState.isUrgent || false}
-            onChange={handleChange('isUrgent')}
-            label="Urgency Level"
+            value={formState.isUrgent ? 'true' : 'false'}
+            onChange={(e) => {
+              const isUrgent = e.target.value === 'true';
+              setFormState(prev => ({ ...prev, isUrgent }));
+            }}
+            label="Urgency"
             disabled={loading}
           >
-            <MenuItem value={false}>Normal</MenuItem>
-            <MenuItem value={true}>Urgent</MenuItem>
+            <MenuItem value="false">Normal</MenuItem>
+            <MenuItem value="true">Urgent</MenuItem>
           </Select>
           <FormHelperText>{isSubmitted && formState.isUrgent === undefined ? 'Urgency level is required' : 'Select \'Urgent\' only if this request requires immediate attention'}</FormHelperText>
         </FormControl>
@@ -492,7 +495,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
           multiple
           id="approvers-select"
           options={approvers}
-          getOptionLabel={(option) => `${option.name} (${option.permissionLevel === 1 ? 'Global' : 'Organization'} Approver)`}
+          getOptionLabel={(option) => `${option.name} (${option.permissionLevel === '1' ? 'Global' : 'Organization'} Approver)`}
           value={approvers.filter(a => (formState.approvers || []).includes(a.id))}
           onChange={handleApproverChange}
           disabled={loading}
@@ -511,7 +514,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
               return (
                 <Chip
                   key={key}
-                  label={`${option.name} (${option.permissionLevel === 1 ? 'Global' : 'Organization'})`}
+                  label={`${option.name} (${option.permissionLevel === '1' ? 'Global' : 'Organization'})`}
                   {...otherProps}
                 />
               );

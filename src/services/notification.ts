@@ -33,9 +33,8 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { collection, addDoc, doc, getDoc, serverTimestamp, query, where, getDocs, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { prService } from './pr';
-import { User } from '../types/user';
-import { PRStatus } from '../types/pr';
+import { UserReference } from '../types/pr';
+import { PRStatus, PRRequest } from '../types/pr';
 import { Notification } from '../types/notification';
 import {
   generateRevisionRequiredEmail,
@@ -46,6 +45,7 @@ import {
   generateNewPREmail
 } from './notifications/templates';
 import { EmailContent } from './notifications/types';
+import { generatePRNumber, updatePR } from './pr'; // Import specific functions
 
 const functions = getFunctions();
 
@@ -69,24 +69,45 @@ export class NotificationService {
    * @param prId PR ID associated with the notification
    * @param recipients List of recipient email addresses
    * @param status Initial notification status (default: 'pending')
+   * @param metadata Additional metadata to include in the notification
    * @returns Notification ID
    */
   async logNotification(
-    type: NotificationType,
+    type: string,
     prId: string,
     recipients: string[],
-    status: NotificationLog['status'] = 'pending'
+    status: string = 'pending',
+    metadata?: Record<string, any>
   ): Promise<string> {
-    const notification: Omit<NotificationLog, 'id'> = {
-      type,
-      prId,
-      recipients,
-      sentAt: new Date(),
-      status,
-    };
-
-    const docRef = await addDoc(collection(db, this.notificationsCollection), notification);
-    return docRef.id;
+    try {
+      // Filter out any undefined values from metadata
+      const cleanMetadata = metadata ? Object.fromEntries(
+        Object.entries(metadata).filter(([_, v]) => v !== undefined)
+      ) : {};
+      
+      // Ensure prNumber is always defined
+      if (!cleanMetadata.prNumber && prId) {
+        cleanMetadata.prNumber = `ID-${prId.substring(0, 8)}`;
+      }
+      
+      const notificationLog = {
+        type,
+        prId,
+        recipients,
+        status,
+        timestamp: serverTimestamp(),
+        ...cleanMetadata
+      };
+      
+      const notificationRef = collection(db, 'notificationLogs');
+      const notificationDoc = await addDoc(notificationRef, notificationLog);
+      console.log('Notification logged:', { type, prId, recipients, status });
+      
+      return notificationDoc.id;
+    } catch (error) {
+      console.error('Error logging notification:', error);
+      throw error;
+    }
   }
 
   /**
@@ -100,139 +121,284 @@ export class NotificationService {
    */
   async handleStatusChange(
     prId: string,
-    oldStatus: PRStatus,
-    newStatus: PRStatus,
-    user: User | null,
+    oldStatus: string,
+    newStatus: string,
+    user: UserReference | null,
     notes?: string
   ): Promise<void> {
     const maxAttempts = 3;
-    const retryDelay = 1000; // 1 second
+    const retryDelay = 1000; // 1 second delay between retries
     let lastError: Error | null = null;
-
-    // Get PR data
-    const prRef = doc(db, 'purchaseRequests', prId);
-    const prDoc = await getDoc(prRef);
     
-    if (!prDoc.exists()) {
-      throw new Error('PR not found');
-    }
+    try {
+      // Fetch PR data
+      const prRef = doc(db, 'purchaseRequests', prId);
+      const prSnapshot = await getDoc(prRef);
+      
+      if (!prSnapshot.exists()) {
+        throw new Error(`PR with ID ${prId} not found`);
+      }
+      
+      const pr = { id: prId, ...prSnapshot.data() } as PRRequest;
+      console.log('Full PR data:', pr);
+      
+      // Ensure prNumber is always defined
+      const prNumber = pr.prNumber || `ID-${prId.substring(0, 8)}`;
+      
+      // Create notification object
+      const notification = {
+        type: 'STATUS_CHANGE',
+        prId,
+        oldStatus: oldStatus || 'NEW', // Ensure oldStatus is never null
+        newStatus,
+        prNumber,
+        timestamp: new Date().toISOString(),
+        userId: user?.id
+      };
+      
+      // Generate base URL for PR link
+      const prUrl = `${window.location.origin}/pr/${prId}`;
+      
+      // Log notification in Firestore
+      await this.logNotification('STATUS_CHANGE', prId, [], 'pending', { 
+        prNumber,
+        oldStatus: oldStatus || 'NEW', // Ensure oldStatus is never null
+        newStatus
+      });
 
-    const pr = { id: prDoc.id, ...prDoc.data() };
-    console.log('Full PR data:', pr);
-    
-    const notification = await this.createNotification(pr, oldStatus, newStatus, user, notes);
+      // Generate email content first
+      const emailContent = {
+        subject: `${pr.isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Status Changed: ${oldStatus || 'NEW'} → ${newStatus}`,
+        text: `PR ${prNumber} status has changed from ${oldStatus || 'NEW'} to ${newStatus}\n${notes ? `Notes: ${notes}\n` : ''}`,
+        html: `
+          <p>PR ${prNumber} status has changed from ${oldStatus || 'NEW'} to ${newStatus}</p>
+          ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+          <p><a href="${prUrl}">View PR</a></p>
+        `,
+        headers: {}
+      };
 
-    // Get base URL from window location
-    const baseUrl = window.location.origin;
-    const prUrl = `${baseUrl}/pr/${prId}`;
+      console.log('Email content for cloud function:', {
+        ...emailContent,
+        vendorDetails: pr.vendorDetails
+      });
 
-    // Generate email content first
-    const emailContent = this.generateEmailContent(pr, oldStatus, newStatus, user, notes, baseUrl);
-    console.log('Email content for cloud function:', {
-      ...emailContent,
-      vendorDetails: emailContent.context?.pr?.vendorDetails // Ensure vendor details are included
-    });
+      // Save notification to Firestore without email headers and content
+      const { headers, ...emailContentToSave } = emailContent;
+      
+      // Create a clean notification object with no undefined values
+      const notificationData = {
+        ...notification,
+        emailContent: emailContentToSave,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      };
+      
+      // Filter out any undefined values to prevent Firestore errors
+      const cleanNotificationData = Object.fromEntries(
+        Object.entries(notificationData).filter(([_, v]) => v !== undefined)
+      );
+      
+      // Ensure prNumber is always defined
+      if (!cleanNotificationData.prNumber && pr.id) {
+        cleanNotificationData.prNumber = `ID-${pr.id.substring(0, 8)}`;
+      }
+      
+      const notificationsRef = collection(db, 'notifications');
+      const notificationDoc = await addDoc(notificationsRef, cleanNotificationData);
 
-    // Save notification to Firestore without email headers and content
-    const { headers, content, ...emailContentToSave } = emailContent;
-    const notificationsRef = collection(db, 'notifications');
-    const notificationDoc = await addDoc(notificationsRef, {
-      ...notification,
-      emailContent: emailContentToSave,
-      status: 'pending',
-      createdAt: serverTimestamp()
-    });
+      // Ensure we have recipients - always include procurement email and requestor email
+      const recipients = [this.PROCUREMENT_EMAIL];
+      
+      // Set up CC list for proper email formatting
+      const ccList = [];
+      
+      // Add requestor email to CC list if available
+      if (pr.requestorEmail) {
+        ccList.push(pr.requestorEmail);
+      } else if (pr.requestor?.email) {
+        ccList.push(pr.requestor.email);
+      }
+      
+      // Add submitter email to CC if available and different from requestor
+      if (user?.email && 
+          user.email !== pr.requestorEmail && 
+          user.email !== pr.requestor?.email) {
+        ccList.push(user.email);
+      }
+      
+      console.log('Notification recipients:', recipients);
+      console.log('CC list:', ccList);
 
-    for (let attempts = 1; attempts <= maxAttempts; attempts++) {
-      try {
-        // Get the appropriate cloud function based on the status transition
-        const transitionKey = `${oldStatus || 'NEW'}->${newStatus}`;
-        const functionMap: Record<string, Function> = {
-          'NEW->SUBMITTED': httpsCallable(functions, 'sendNewPRNotification'),
-          'SUBMITTED->REVISION_REQUIRED': httpsCallable(functions, 'sendRevisionRequiredNotification'),
-          'REVISION_REQUIRED->SUBMITTED': httpsCallable(functions, 'sendResubmittedNotification'),
-          'SUBMITTED->PENDING_APPROVAL': httpsCallable(functions, 'sendPendingApprovalNotification'),
-          'PENDING_APPROVAL->APPROVED': httpsCallable(functions, 'sendApprovedNotification'),
-          'PENDING_APPROVAL->REJECTED': httpsCallable(functions, 'sendRejectedNotification')
-        };
+      for (let attempts = 1; attempts <= maxAttempts; attempts++) {
+        try {
+          // Get the appropriate cloud function based on the status transition
+          const transitionKey = `${oldStatus || 'NEW'}->${newStatus}`;
+          const functionMap: Record<string, Function> = {
+            'NEW->SUBMITTED': httpsCallable(functions, 'sendNewPRNotification'),
+            'SUBMITTED->REVISION_REQUIRED': httpsCallable(functions, 'sendRevisionRequiredNotification'),
+            'REVISION_REQUIRED->SUBMITTED': httpsCallable(functions, 'sendResubmittedNotification'),
+            'SUBMITTED->PENDING_APPROVAL': httpsCallable(functions, 'sendPendingApprovalNotification'),
+            'PENDING_APPROVAL->APPROVED': httpsCallable(functions, 'sendApprovedNotification'),
+            'PENDING_APPROVAL->REJECTED': httpsCallable(functions, 'sendRejectedNotification')
+          };
 
-        const cloudFunction = functionMap[transitionKey];
-        if (!cloudFunction) {
-          throw new Error(`No notification handler found for transition: ${transitionKey}`);
-        }
-
-        // Generate email content once and reuse it
-        const result = await cloudFunction({
-          prId: pr.id,
-          prNumber: pr.prNumber,
-          user: user ? {
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            name: `${user.firstName} ${user.lastName}`
-          } : null,
-          notes,
-          recipients: notification.recipients,
-          cc: notification.cc || [],
-          emailContent,  // Pass the complete email content
-          metadata: {
-            prUrl,
-            baseUrl: window.location.origin,
-            requestorEmail: pr.requestor?.email,
-            isUrgent: pr.isUrgent,
-            ...(pr.approvalWorkflow?.currentApprover ? { approverInfo: pr.approvalWorkflow.currentApprover } : {})
-          },
-          pr: {
-            id: pr.id,
-            prNumber: pr.prNumber,
-            requestor: pr.requestor,
-            site: pr.site,
-            category: pr.projectCategory,
-            expenseType: pr.expenseType,
-            amount: pr.estimatedAmount,
-            currency: pr.currency,
-            vendor: pr.vendor,
-            vendorDetails: pr.vendorDetails,
-            preferredVendor: pr.preferredVendor,
-            requiredDate: pr.requiredDate,
-            isUrgent: pr.isUrgent,
-            department: pr.department
+          // Check if we should use the specialized notification service
+          // This prevents duplicate emails by ensuring only one service sends the notification
+          if (transitionKey === 'NEW->SUBMITTED') {
+            try {
+              // Import the specialized handler dynamically to avoid circular dependencies
+              const { getTransitionHandler } = await import('./notifications/transitions');
+              const handler = await getTransitionHandler(null, PRStatus.SUBMITTED);
+              
+              if (handler) {
+                console.log('Using specialized notification handler for new PR submission - skipping default handler');
+                
+                // Just update the notification status to sent without actually sending an email
+                // The specialized handler will take care of sending the email
+                await updateDoc(notificationDoc, {
+                  status: 'sent',
+                  sentAt: serverTimestamp(),
+                  notes: 'Delegated to specialized notification handler'
+                });
+                
+                return;
+              }
+            } catch (error) {
+              console.error('Error checking for specialized handler:', error);
+              // Continue with the default handler if there's an error
+            }
           }
-        });
 
-        console.log('Cloud function response:', result);
+          const cloudFunction = functionMap[transitionKey];
+          if (!cloudFunction) {
+            throw new Error(`No notification handler found for transition: ${transitionKey}`);
+          }
 
-        // Update notification status to sent
-        await updateDoc(notificationDoc, {
-          status: 'sent',
-          sentAt: serverTimestamp()
-        });
+          // Generate email content once and reuse it
+          const result = await cloudFunction({ 
+            prId: pr.id,
+            prNumber: notification.prNumber,
+            user: user ? {
+              id: user.id,
+              email: user.email,
+              firstName: user.firstName || '',
+              lastName: user.lastName || '',
+              name: user.name || `${user.firstName || ''} ${user.lastName || ''}`,
+              role: user.role,
+              organization: user.organization,
+              isActive: user.isActive,
+              permissionLevel: user.permissionLevel,
+              permissions: user.permissions,
+              department: user.department
+            } : null,
+            notes,
+            recipients: recipients, // Use our explicitly defined recipients
+            cc: ccList, // Pass the CC list
+            emailContent,  // Pass the complete email content
+            metadata: {
+              prUrl,
+              baseUrl: window.location.origin,
+              requestorEmail: pr.requestor?.email,
+              isUrgent: pr.isUrgent,
+              ...(pr.approvalWorkflow?.currentApprover ? { approverInfo: pr.approvalWorkflow.currentApprover } : {})
+            },
+            pr: {
+              id: pr.id,
+              prNumber: notification.prNumber,
+              requestor: pr.requestor,
+              site: pr.site,
+              category: pr.projectCategory,
+              expenseType: pr.expenseType,
+              amount: pr.estimatedAmount,
+              currency: pr.currency,
+              vendor: pr.vendor,
+              vendorDetails: pr.vendorDetails,
+              preferredVendor: pr.preferredVendor,
+              requiredDate: pr.requiredDate,
+              isUrgent: pr.isUrgent,
+              department: pr.department,
+              approvalWorkflow: pr.approvalWorkflow
+            }
+          });
 
-        return;
+          console.log('Cloud function response:', result);
 
-      } catch (error) {
-        lastError = error as Error;
-        console.error(`Error sending status change notification (attempt ${attempts}/${maxAttempts}):`, error);
-        
-        // Only retry if it's a network error, not a data validation error
-        if (error.message.includes('addDoc') || error.message.includes('validation')) {
-          throw error;
-        }
-        
-        if (attempts < maxAttempts) {
-          console.log(`Retrying in ${retryDelay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          // Update notification status to sent
+          await updateDoc(notificationDoc, {
+            status: 'sent',
+            sentAt: serverTimestamp()
+          });
+
+          return;
+
+        } catch (error: any) {
+          lastError = error as Error;
+          console.error(`Error sending status change notification (attempt ${attempts}/${maxAttempts}):`, error);
+          
+          // Only retry if it's a network error, not a data validation error
+          if (error.message && (error.message.includes('addDoc') || error.message.includes('validation'))) {
+            throw error;
+          }
+          
+          if (attempts < maxAttempts) {
+            console.log(`Retrying in ${retryDelay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+          }
         }
       }
+
+      // If we get here, all attempts failed - update notification status to failed
+      await updateDoc(notificationDoc, {
+        status: 'failed',
+        error: lastError?.message
+      });
+
+      throw lastError || new Error('Failed to send notification after multiple attempts');
+    } catch (error) {
+      console.error('Error in handleStatusChange:', error);
+      throw error;
     }
+  }
 
-    // If we get here, all attempts failed - update notification status to failed
-    await updateDoc(notificationDoc, {
-      status: 'failed',
-      error: lastError?.message
-    });
+  async handleSubmission(pr: PRRequest, action: string): Promise<void> {
+    try {
+      console.log('Starting handleSubmission with:', {
+        prId: pr.id,
+        prNumber: pr.prNumber,
+        action
+      });
 
-    throw lastError || new Error('Failed to send notification after multiple attempts');
+      // Use handleStatusChange which now uses the modular notification system
+      await this.handleStatusChange(
+        pr.id,
+        '', // Empty string instead of null for new PR
+        PRStatus.SUBMITTED, // newStatus is SUBMITTED for new PR
+        {
+          id: pr.requestorId || '',
+          email: pr.requestorEmail || '',
+          firstName: pr.requestor?.firstName || '',
+          lastName: pr.requestor?.lastName || '',
+          name: pr.requestor?.name || `${pr.requestor?.firstName || ''} ${pr.requestor?.lastName || ''}`,
+          role: pr.requestor?.role,
+          organization: pr.requestor?.organization,
+          isActive: true,
+          permissionLevel: pr.requestor?.permissionLevel || 0,
+          permissions: pr.requestor?.permissions || {
+            canCreatePR: true,
+            canApprovePR: false,
+            canProcessPR: false,
+            canManageUsers: false,
+            canViewReports: false
+          }
+        } as unknown as UserReference,
+        undefined // no notes for initial submission
+      );
+
+    } catch (error) {
+      console.error('Error in handleSubmission:', error);
+      throw error;
+    }
   }
 
   /**
@@ -275,34 +441,6 @@ export class NotificationService {
     } catch (error) {
       console.error('Error sending approver notification:', error);
       throw new Error('Failed to send approver notification');
-    }
-  }
-
-  async handleSubmission(pr: PR, action: string): Promise<void> {
-    try {
-      console.log('Starting handleSubmission with:', {
-        prId: pr.id,
-        prNumber: pr.prNumber,
-        action
-      });
-
-      // Use handleStatusChange which now uses the modular notification system
-      await this.handleStatusChange(
-        pr.id,
-        null, // oldStatus is null for new PR
-        PRStatus.SUBMITTED, // newStatus is SUBMITTED for new PR
-        {
-          email: pr.requestorEmail || '',
-          firstName: pr.requestor?.firstName || '',
-          lastName: pr.requestor?.lastName || '',
-          id: pr.requestorId || ''
-        },
-        undefined // no notes for initial submission
-      );
-
-    } catch (error) {
-      console.error('Error in handleSubmission:', error);
-      throw error;
     }
   }
 
@@ -350,7 +488,7 @@ export class NotificationService {
 
     } catch (error) {
       console.error('Error sending notification:', error);
-      throw error;
+      throw new Error('Failed to send notification');
     }
   }
 
@@ -360,7 +498,7 @@ export class NotificationService {
    * @param prId PR ID to retrieve notifications for
    * @returns List of notification logs
    */
-  async getNotificationsByPR(prId: string): Promise<NotificationLog[]> {
+  async getNotificationsByPR(prId: string): Promise<any[]> {
     const q = query(
       collection(db, this.notificationsCollection),
       where('prId', '==', prId)
@@ -370,7 +508,7 @@ export class NotificationService {
     return querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
-    })) as NotificationLog[];
+    }));
   }
 
   async getProcurementTeamEmails(organization: string): Promise<string[]> {
@@ -417,202 +555,538 @@ export class NotificationService {
   }
 
   async createNotification(
-    pr: any,
-    oldStatus: PRStatus,
+    pr: PRRequest,
+    oldStatus: PRStatus | null,
     newStatus: PRStatus,
-    user: User | null,
+    user: UserReference | null,
     notes?: string
   ): Promise<any> {
     try {
-      const { prNumber } = pr;
-      const context: NotificationContext = {
-        pr,
+      // Ensure prNumber is always defined with a proper PR number format
+      // Use the proper PR number format instead of falling back to internal ID
+      let prNumber = pr.prNumber;
+      if (!prNumber) {
+        try {
+          // Generate a proper PR number if one doesn't exist
+          prNumber = await generatePRNumber(pr.organization);
+          
+          // Update the PR with the new PR number
+          await updatePR(pr.id, { prNumber });
+          console.log(`Generated and updated PR number: ${prNumber} for PR ID: ${pr.id}`);
+        } catch (error) {
+          console.error('Error generating PR number:', error);
+          // Only as a last resort, use a formatted version of the ID
+          prNumber = `PR-${pr.organization.substring(0, 3)}-${new Date().getFullYear()}-${pr.id.substring(0, 3)}`;
+        }
+      }
+      
+      const context: any = {
+        pr: {
+          ...pr,
+          prNumber // Ensure the PR object has the updated PR number
+        },
         prNumber,
         user,
         notes,
-        baseUrl: getBaseUrl(),
+        baseUrl: window.location.origin,
         isUrgent: pr.isUrgent || false
       };
-
+      
       // Fetch vendor data if not already present
       if (pr.preferredVendor && !pr.vendorDetails) {
         try {
-          const vendorData = await getVendorById(pr.preferredVendor);
-          if (vendorData) {
-            pr.vendorDetails = vendorData;
-          }
+          // Vendor details would be fetched here if needed
+          console.log('Would fetch vendor details for:', pr.preferredVendor);
         } catch (err) {
           console.error('Error fetching vendor data:', err);
         }
       }
 
-      let emailContent: EmailContent;
+      // Create email content based on status transition
+      let subject = '';
+      let plainText = '';
+      let htmlContent = '';
 
-      switch (`${oldStatus || 'NEW'}->${newStatus}`) {
-        case 'SUBMITTED->REVISION_REQUIRED':
-          emailContent = await generateRevisionRequiredEmail(context);
-          break;
-        case 'REVISION_REQUIRED->SUBMITTED':
-          emailContent = await generateResubmittedEmail(context);
-          break;
-        case 'SUBMITTED->PENDING_APPROVAL':
-          emailContent = await generatePendingApprovalEmail(context);
-          break;
-        case 'PENDING_APPROVAL->APPROVED':
-          emailContent = await generateApprovedEmail(context);
-          break;
-        case 'PENDING_APPROVAL->REJECTED':
-          emailContent = await generateRejectedEmail(context);
-          break;
-        case 'NEW->SUBMITTED':
-          emailContent = await generateNewPREmail(context);
-          break;
-        default:
-          emailContent = {
-            subject: `${pr.isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Status Changed: ${oldStatus} → ${newStatus}`,
-            text: `PR ${prNumber} status has changed from ${oldStatus} to ${newStatus}\n${notes ? `Notes: ${notes}\n` : ''}`,
-            html: `
-              <p>PR ${prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
-              ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-              <p><a href="${getBaseUrl()}/pr/${pr.id}">View PR</a></p>
-            `
-          };
+      // Format currency amount if available
+      const formattedAmount = pr.estimatedAmount 
+        ? `${pr.currency || 'LSL'}\u00A0${Number(pr.estimatedAmount).toFixed(2)}`
+        : 'N/A';
+
+      if (oldStatus === null && newStatus === PRStatus.SUBMITTED) {
+        // New PR submission
+        subject = `${pr.isUrgent ? 'URGENT: ' : ''}New PR ${prNumber} Submitted`;
+        
+        plainText = `New PR ${prNumber} Submitted\n\n`;
+        plainText += `Submitted By: ${user?.firstName || ''} ${user?.lastName || ''}\n\n`;
+        plainText += `Requestor Information:\n`;
+        plainText += `Name: ${pr.requestor?.firstName || ''} ${pr.requestor?.lastName || ''}\n`;
+        plainText += `Email: ${pr.requestorEmail || pr.requestor?.email || ''}\n`;
+        plainText += `Department: ${pr.department || ''}\n`;
+        plainText += `Site: ${pr.site || ''}\n\n`;
+        plainText += `PR Details:\n`;
+        plainText += `PR Number: ${prNumber}\n`;
+        plainText += `Category: ${pr.projectCategory || ''}\n`;
+        plainText += `Expense Type: ${pr.expenseType || ''}\n`;
+        plainText += `Total Amount: ${formattedAmount}\n`;
+        plainText += `Vendor: ${pr.preferredVendor || ''}\n`;
+        plainText += `Required Date: ${pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : ''}\n\n`;
+        plainText += `View PR: ${window.location.origin}/pr/${pr.id}`;
+        
+        htmlContent = `
+      <div style="
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+  ">
+        ${pr.isUrgent ? `<div style="
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    background-color: #ff4444;
+    color: white;
+  ">URGENT</div>` : ''}
+        <h2 style="
+    color: #333;
+    margin-bottom: 30px;
+  ">New Purchase Request #${prNumber} Submitted</h2>
+       
+        <div style="
+    margin-bottom: 30px;
+  ">
+          <h3 style="
+    color: #444;
+    margin-bottom: 15px;
+  ">Submission Details</h3>
+          <p style="
+    margin: 10px 0;
+    line-height: 1.5;
+  ">
+            <strong>Submitted By:</strong> ${user?.firstName || ''} ${user?.lastName || ''}
+          </p>
+         
+        </div>
+
+        <div style="
+    margin-bottom: 30px;
+  ">
+          <h3 style="
+    color: #444;
+    margin-bottom: 15px;
+  ">Requestor Information</h3>
+         
+    <table style="
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 30px;
+  ">
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Name</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.requestor?.firstName || ''} ${pr.requestor?.lastName || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Email</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.requestorEmail || pr.requestor?.email || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Department</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.department || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Site</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.site || ''}</td>
+        </tr>
+     
+    </table>
+ 
+        </div>
+
+        <div style="
+    margin-bottom: 30px;
+  ">
+          <h3 style="
+    color: #444;
+    margin-bottom: 15px;
+  ">PR Details</h3>
+         
+    <table style="
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 30px;
+  ">
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>PR Number</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${prNumber}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Category</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.projectCategory || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Expense Type</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.expenseType || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Total Amount</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${formattedAmount}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Vendor</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.preferredVendor || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Required Date</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : ''}</td>
+        </tr>
+     
+    </table>
+ 
+        </div>
+
+        <div style="
+    margin-top: 30px;
+    text-align: center;
+  ">
+          <a href="${window.location.origin}/pr/${pr.id}" style="
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #4CAF50;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: bold;
+  ">View Purchase Request</a>
+        </div>
+      </div>
+        `;
+      } else {
+        // Status change notification
+        subject = `${pr.isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Status Changed: ${oldStatus || 'NEW'} → ${newStatus}`;
+        
+        plainText = `PR ${prNumber} status has changed from ${oldStatus || 'NEW'} to ${newStatus}\n`;
+        if (notes) plainText += `Notes: ${notes}\n`;
+        plainText += `\nView PR: ${window.location.origin}/pr/${pr.id}`;
+        
+        htmlContent = `
+      <div style="
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+  ">
+        ${pr.isUrgent ? `<div style="
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    background-color: #ff4444;
+    color: white;
+  ">URGENT</div>` : ''}
+        <h2 style="
+    color: #333;
+    margin-bottom: 30px;
+  ">Purchase Request #${prNumber} Status Update</h2>
+       
+        <div style="
+    margin-bottom: 30px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-left: 4px solid #4CAF50;
+  ">
+          <p style="
+    margin: 10px 0;
+    line-height: 1.5;
+    font-size: 16px;
+  ">
+            Status changed from <strong>${oldStatus || 'NEW'}</strong> to <strong>${newStatus}</strong>
+          </p>
+          ${notes ? `<p style="
+    margin: 10px 0;
+    line-height: 1.5;
+  ">
+            <strong>Notes:</strong> ${notes}
+          </p>` : ''}
+          <p style="
+    margin: 10px 0;
+    line-height: 1.5;
+    font-size: 14px;
+    color: #666;
+  ">
+            Updated by: ${user?.firstName || ''} ${user?.lastName || ''} at ${new Date().toLocaleString()}
+          </p>
+        </div>
+
+        <div style="
+    margin-bottom: 30px;
+  ">
+          <h3 style="
+    color: #444;
+    margin-bottom: 15px;
+  ">PR Details</h3>
+         
+    <table style="
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 30px;
+  ">
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>PR Number</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${prNumber}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Requestor</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.requestor?.firstName || ''} ${pr.requestor?.lastName || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Department</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${pr.department || ''}</td>
+        </tr>
+     
+        <tr>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  "><strong>Total Amount</strong></td>
+          <td style="
+    padding: 8px;
+    border: 1px solid #ddd;
+  ">${formattedAmount}</td>
+        </tr>
+     
+    </table>
+ 
+        </div>
+
+        <div style="
+    margin-top: 30px;
+    text-align: center;
+  ">
+          <a href="${window.location.origin}/pr/${pr.id}" style="
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #4CAF50;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: bold;
+  ">View Purchase Request</a>
+        </div>
+      </div>
+        `;
       }
 
-      if (!emailContent) {
-        throw new Error('Failed to generate email content');
-      }
+      let emailContent = {
+        subject,
+        text: plainText,
+        html: htmlContent,
+        headers: {}
+      };
 
+      // Get recipients - always include procurement email and requestor email
+      const recipients = [this.PROCUREMENT_EMAIL];
+      
+      // Set up CC list for proper email formatting
+      const ccList = [];
+      
+      // Add requestor email to CC list if available
+      if (pr.requestorEmail) {
+        ccList.push(pr.requestorEmail);
+      } else if (pr.requestor?.email) {
+        ccList.push(pr.requestor.email);
+      }
+      
+      // Add submitter email to CC if available and different from requestor
+      if (user?.email && 
+          user.email !== pr.requestorEmail && 
+          user.email !== pr.requestor?.email) {
+        ccList.push(user.email);
+      }
+      
+      console.log('Notification recipients:', recipients);
+      console.log('CC list:', ccList);
+      
       // Log the notification
-      const notification: Notification = {
+      const notification: any = {
         id: '',
         type: 'STATUS_CHANGE',
         prId: pr.id,
         prNumber,
-        oldStatus,
+        oldStatus: oldStatus || undefined,
         newStatus,
         timestamp: new Date().toISOString(),
         user: user || '',
         notes: notes || '',
-        emailContent
+        emailContent,
+        recipients: recipients // Set the recipients here
       };
 
-      await this.logNotification(notification.type, notification.prId, notification.recipients, 'pending');
+      // Log notification to Firestore
+      const notificationId = await this.logNotification(notification.type, notification.prId, notification.recipients || [], 'pending');
+      
+      // Directly call the Cloud Function to send the email
+      try {
+        const sendPRNotificationV2 = httpsCallable(functions, 'sendPRNotificationV2');
+        const result = await sendPRNotificationV2({
+          notification: {
+            prId: pr.id,
+            prNumber,
+            oldStatus: oldStatus || 'NEW',
+            newStatus,
+            user: user ? {
+              email: user.email || '',
+              name: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email || ''
+            } : {
+              email: '',
+              name: 'System'
+            },
+            notes: notes || '',
+            metadata: {
+              description: pr.description || '',
+              amount: pr.estimatedAmount || 0,
+              currency: pr.currency || 'USD',
+              department: pr.department || '',
+              requiredDate: pr.requiredDate || '',
+              isUrgent: pr.isUrgent || false
+            }
+          },
+          recipients,
+          cc: ccList, // Pass the CC list
+          emailBody: emailContent
+        });
+        
+        console.log('Email notification sent successfully:', result);
+        
+        // Update notification status in Firestore
+        await this.updateNotificationStatus(notificationId, 'sent');
+      } catch (error) {
+        console.error('Error sending email notification:', error);
+        
+        // Update notification status in Firestore
+        await this.updateNotificationStatus(notificationId, 'error', { error: error instanceof Error ? error.message : String(error) });
+      }
 
       return notification;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating notification:', error);
       throw new Error(`Failed to create notification: ${error.message}`);
     }
   }
 
-  private generateEmailContent(
-    pr: any,
-    oldStatus: PRStatus,
-    newStatus: PRStatus,
-    user: User | null,
-    notes?: string,
-    baseUrl?: string
-  ): EmailContent {
+  /**
+   * Updates the status of a notification in Firestore
+   * 
+   * @param notificationId ID of the notification to update
+   * @param status New status of the notification
+   * @param metadata Additional metadata to include in the update
+   */
+  async updateNotificationStatus(notificationId: string, status: string, metadata?: Record<string, any>): Promise<void> {
     try {
-      const prUrl = `${baseUrl}/pr/${pr.id}`;
-      const isUrgent = pr.isUrgent || false;
-
-      // Get the template based on the status transition
-      const transitionKey = `${oldStatus || 'NEW'}->${newStatus}`;
-      let emailContent: EmailContent;
-
-      switch (transitionKey) {
-        case 'SUBMITTED->REVISION_REQUIRED':
-          emailContent = generateRevisionRequiredEmail({
-            pr,
-            prNumber: pr.prNumber,
-            user,
-            notes,
-            baseUrl: baseUrl || '',
-            isUrgent
-          });
-          break;
-        case 'REVISION_REQUIRED->SUBMITTED':
-          emailContent = generateResubmittedEmail({
-            pr,
-            prNumber: pr.prNumber,
-            user,
-            notes,
-            baseUrl: baseUrl || '',
-            isUrgent
-          });
-          break;
-        case 'SUBMITTED->PENDING_APPROVAL':
-          emailContent = generatePendingApprovalEmail({
-            pr,
-            prNumber: pr.prNumber,
-            user,
-            notes,
-            baseUrl: baseUrl || '',
-            isUrgent
-          });
-          break;
-        case 'PENDING_APPROVAL->APPROVED':
-          emailContent = generateApprovedEmail({
-            pr,
-            prNumber: pr.prNumber,
-            user,
-            notes,
-            baseUrl: baseUrl || '',
-            isUrgent
-          });
-          break;
-        case 'PENDING_APPROVAL->REJECTED':
-          emailContent = generateRejectedEmail({
-            pr,
-            prNumber: pr.prNumber,
-            user,
-            notes,
-            baseUrl: baseUrl || '',
-            isUrgent
-          });
-          break;
-        case 'NEW->SUBMITTED':
-          emailContent = generateNewPREmail({
-            pr,
-            prNumber: pr.prNumber,
-            user,
-            notes,
-            baseUrl: baseUrl || '',
-            isUrgent
-          });
-          break;
-        default:
-          emailContent = {
-            subject: `${isUrgent ? 'URGENT: ' : ''}PR ${pr.prNumber} Status Changed: ${oldStatus} → ${newStatus}`,
-            text: `PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}\n${notes ? `Notes: ${notes}\n` : ''}`,
-            html: `
-              <p>PR ${pr.prNumber} status has changed from ${oldStatus} to ${newStatus}</p>
-              ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-              <p><a href="${prUrl}">View PR</a></p>
-            `
-          };
-      }
-
-      console.log('Generated email content:', emailContent);
-      return emailContent;
+      const notificationRef = doc(db, 'notificationLogs', notificationId);
+      
+      await updateDoc(notificationRef, {
+        status,
+        updatedAt: serverTimestamp(),
+        ...(metadata || {})
+      });
+      
+      console.log(`Notification ${notificationId} status updated to ${status}`);
     } catch (error) {
-      console.error('Error generating email content:', error);
-      throw new Error(`Failed to generate email content: ${error.message}`);
+      console.error(`Error updating notification ${notificationId} status:`, error);
     }
-  }
-
-  private async getNotificationRecipients(pr: PR): Promise<string[]> {
-    // Always include procurement team
-    const recipients = [this.PROCUREMENT_EMAIL];
-
-    // Add requestor to recipients
-    if (pr.requestor?.email) {
-      recipients.push(pr.requestor.email);
-    }
-
-    return recipients;
   }
 }
 

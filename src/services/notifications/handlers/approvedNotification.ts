@@ -5,8 +5,25 @@ import { generateApprovedEmail } from '../templates/approvedTemplate';
 import { NotificationLog } from '@/types/notification';
 import { getEnvironmentConfig } from '@/config/environment';
 import { User } from '@/types/user';
+import { NotificationUser } from '../templates/types';
 
 const functions = getFunctions();
+
+/**
+ * Converts a User object to a NotificationUser object
+ * @param user User object to convert
+ * @returns NotificationUser object or null if user is undefined
+ */
+function convertToNotificationUser(user?: User): NotificationUser | null {
+  if (!user) return null;
+  
+  return {
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    email: user.email || '',
+    name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown User'
+  };
+}
 
 export class ApprovedNotificationHandler {
   private readonly notificationsCollection = 'purchaseRequestsNotifications';
@@ -44,29 +61,50 @@ export class ApprovedNotificationHandler {
         pr,
         prNumber,
         baseUrl,
-        user: approver,
+        user: convertToNotificationUser(approver),
         notes,
         isUrgent: pr.isUrgent
       });
 
       // Prepare recipients - notify requestor and procurement
-      const recipients = [
-        pr.requestorEmail,
-        this.PROCUREMENT_EMAIL
-      ].filter(Boolean);
+      // Use a Set to avoid duplicates and normalize email addresses to lowercase
+      const recipientsSet = new Set<string>();
+      
+      // Add requestor email if available
+      if (pr.requestorEmail) {
+        recipientsSet.add(pr.requestorEmail.toLowerCase());
+      }
+      
+      // Add procurement email
+      recipientsSet.add(this.PROCUREMENT_EMAIL.toLowerCase());
+      
+      // Convert Set to array for the notification
+      const recipients = Array.from(recipientsSet).filter(Boolean);
 
       // Log the notification
       const notificationId = await this.logNotification(pr.id, recipients);
 
       // Send email via cloud function
-      const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
-      await sendPRNotification({
+      const sendPRNotificationV2 = httpsCallable(functions, 'sendPRNotificationV2');
+      
+      // Extract requestor name from PR document
+      const requestorName = pr.requestor?.name || 
+        (pr.requestor?.firstName && pr.requestor?.lastName ? `${pr.requestor.firstName} ${pr.requestor.lastName}`.trim() : null) ||
+        'Unknown Requestor';
+      
+      await sendPRNotificationV2({
         notification: {
-          type: 'STATUS_CHANGE',
+          type: 'PR_APPROVED',
           prId: pr.id,
           prNumber,
           oldStatus: 'PENDING_APPROVAL',
-          newStatus: 'APPROVED'
+          newStatus: 'APPROVED',
+          metadata: {
+            isUrgent: pr.isUrgent,
+            requestorEmail: pr.requestorEmail,
+            requestorName: requestorName,
+            approverEmail: approver.email
+          }
         },
         recipients,
         emailBody: {
@@ -84,8 +122,8 @@ export class ApprovedNotificationHandler {
       });
 
     } catch (error) {
-      console.error('Error creating PR approved notification:', error);
-      throw new Error(`Failed to create PR approved notification: ${error.message}`);
+      console.error('Error creating approved notification:', error);
+      throw new Error(`Failed to create approved notification: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

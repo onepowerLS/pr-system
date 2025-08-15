@@ -45,12 +45,12 @@ export function generatePendingApprovalEmail(context: NotificationContext): Emai
           
           <div style="${styles.section}">
             <h2 style="${styles.sectionTitle}">Requestor Information</h2>
-            ${generateTable(requestorDetails)}
+            ${generateTable(requestorDetails.map(item => ({ label: item[0], value: item[1] })))}
           </div>
           
           <div style="${styles.section}">
             <h2 style="${styles.sectionTitle}">Purchase Requisition Summary</h2>
-            ${generateTable(prSummary)}
+            ${generateTable(prSummary.map(item => ({ label: item[0], value: item[1] })))}
           </div>
           
           ${notes ? `

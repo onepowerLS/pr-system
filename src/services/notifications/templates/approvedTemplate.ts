@@ -48,12 +48,12 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
 
         <div style="${styles.section}">
           <h3 style="${styles.subHeader}">Requestor Information</h3>
-          ${generateTable(requestorDetails)}
+          ${generateTable(requestorDetails.map(item => ({ label: item[0], value: item[1] })))}
         </div>
 
         <div style="${styles.section}">
           <h3 style="${styles.subHeader}">PR Details</h3>
-          ${generateTable(prSummary)}
+          ${generateTable(prSummary.map(item => ({ label: item[0], value: item[1] })))}
         </div>
 
         <div style="${styles.buttonContainer}">

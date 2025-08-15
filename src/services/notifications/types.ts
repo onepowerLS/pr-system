@@ -1,5 +1,5 @@
 import { User } from '../../types/user';
-import { PR, PRStatus } from '../../types/pr';
+import { PRRequest, PRStatus } from '../../types/pr';
 import { EmailHeaders } from './types/emailHeaders';
 
 export interface Recipients {
@@ -8,28 +8,42 @@ export interface Recipients {
 }
 
 export interface EmailContent {
-  headers: EmailHeaders;
+  headers?: EmailHeaders;
   subject: string;
   text: string;
   html: string;
   boundary?: string;
+  context?: NotificationContext;
 }
 
 export interface NotificationContext {
   prId: string;
-  pr: PR;
+  pr?: PRRequest;
   prNumber: string;
-  oldStatus: PRStatus;
-  newStatus: PRStatus;
+  oldStatus?: PRStatus;
+  newStatus?: PRStatus;
   isUrgent?: boolean;
   user?: {
+    id?: string;
     email: string;
     firstName?: string;
     lastName?: string;
+    name?: string;
   };
+  approver?: {
+    id?: string;
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+    name?: string;
+  };
+  requestorInfo?: {
+    name: string;
+    email: string;
+  };
+  baseUrl?: string;
   notes?: string;
   metadata?: Record<string, any>;
-  baseUrl: string;
 }
 
 export interface StatusTransitionHandler {

@@ -12,7 +12,9 @@
     "seed-reference-data": "tsx src/scripts/seedReferenceData.ts",
     "initialize-permissions": "tsx src/scripts/initializePermissions.ts",
     "test": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:emails": "tsx src/scripts/testEmails.ts",
+    "test:mock-emails": "tsx src/scripts/mockTestEmails.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

@@ -42,21 +42,25 @@ export interface User {
   /** Email address */
   email: string;
   /** User's first name */
-  firstName: string;
+  firstName?: string;
   /** User's last name */
-  lastName: string;
+  lastName?: string;
   /** User's role */
-  role: UserRole;
+  role: string;
+  /** User's department */
+  department?: string;
   /** Associated organization */
-  organization: string;
+  organization?: string;
   /** Whether user is active */
-  isActive: boolean;
+  isActive?: boolean;
   /** Permission level */
-  permissionLevel: number;
+  permissionLevel?: number;
   /** Additional organizations */
   additionalOrganizations?: string[];
   /** User permissions */
-  permissions: UserPermissions;
+  permissions?: string[];
+  /** User's name */
+  name?: string;
 }
 
 /**

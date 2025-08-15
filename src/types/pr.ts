@@ -24,13 +24,59 @@
  * - Firestore: Database schema mirrors these types
  */
 
-import { UploadedFile } from '../services/storage';
+// Define a simplified User interface to avoid circular dependencies
+export interface UserReference {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  displayName?: string;
+  role?: string;
+  organization?: string;
+  department?: string;
+  isActive?: boolean;
+  permissionLevel?: number;
+  permissions?: any;
+}
+
+/**
+ * Vendor Interface
+ * Represents a vendor in the system
+ */
+export interface Vendor {
+  id?: string;
+  name?: string;
+  code?: string;
+  email?: string;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+}
+
+/**
+ * Vendor Details Interface
+ * Represents detailed vendor information
+ */
+export interface VendorDetails {
+  id?: string;
+  name?: string;
+  code?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  taxId?: string;
+  paymentTerms?: string;
+}
 
 /**
  * Purchase Request Status Enum
  * Defines all possible states a PR can be in
  */
 export enum PRStatus {
+  /** Initial draft state before submission */
+  DRAFT = 'DRAFT',
   /** Initial state when PR is first created */
   SUBMITTED = 'SUBMITTED',
   /** PR has been resubmitted after revision */
@@ -91,7 +137,7 @@ export interface PRRequest {
   /** Email of requestor */
   requestorEmail: string;
   /** Full user object of requestor */ 
-  requestor: User;
+  requestor: UserReference;
   /** Current approver for this PR - single source of truth */
   approver?: string;
   /**
@@ -99,14 +145,26 @@ export interface PRRequest {
    * Will be removed in a future version. 
    */
   approvers?: string[];
+  /** Vendor information */
+  vendor?: Vendor;
+  /** Detailed vendor information */
+  vendorDetails?: VendorDetails;
+  /** Whether this PR is urgent */
+  isUrgent?: boolean;
+  /** Approval workflow information */
+  approvalWorkflow?: ApprovalWorkflow;
+  /** Status history of the PR */
+  statusHistory?: StatusHistoryItem[];
+  /** Workflow history of the PR */
+  workflowHistory?: WorkflowHistoryItem[];
+  /** General history events */
+  history?: HistoryItem[];
   /** Individual items being requested */
   lineItems: LineItem[];
   /** Vendor quotes received */
   quotes: Quote[];
   /** Current status of the PR */
   status: PRStatus;
-  /** Approval workflow tracking - mirrors the approver field */
-  approvalWorkflow?: ApprovalWorkflow;
   /** Creation timestamp */
   createdAt: string;
   /** Last update timestamp */
@@ -114,9 +172,11 @@ export interface PRRequest {
   /** User who submitted the PR */
   submittedBy?: string;
   /** Calculated metrics */
-  metrics: PRMetrics;
-  /** Whether PR needs urgent processing */
-  isUrgent: boolean;
+  metrics?: PRMetrics;
+  /** Category of the purchase request */
+  category?: string;
+  /** Vendor name */
+  vendorName?: string;
   /** Supporting documents */
   attachments?: Attachment[];
   /** Workflow information */
@@ -149,6 +209,31 @@ export interface PRRequest {
   rejectedAt?: string;
   /** When PR was canceled */
   canceledAt?: string;
+  /** Additional notes */
+  notes?: string;
+}
+
+/**
+ * Attachment Interface
+ * Represents a file attached to a PR or line item
+ */
+export interface Attachment {
+  /** Unique identifier for the attachment */
+  id: string;
+  /** Name of the attachment */
+  name: string;
+  /** URL of the attachment */
+  url: string;
+  /** Path of the attachment */
+  path?: string;
+  /** Type of the attachment */
+  type: string;
+  /** Size of the attachment */
+  size: number;
+  /** Timestamp when the attachment was uploaded */
+  uploadedAt: string; 
+  /** User who uploaded the attachment */
+  uploadedBy: UserReference;
 }
 
 /**
@@ -195,7 +280,7 @@ export interface LineItem {
   /** Additional notes about the item */
   notes?: string;
   /** Supporting documents for the item */
-  attachments: UploadedFile[];
+  attachments: Attachment[];
 }
 
 /**
@@ -204,8 +289,8 @@ export interface LineItem {
  */
 export interface Quote {
   /** Unique identifier for the quote */
-  id: string;
-  /** Vendor ID */
+  id?: string;
+  /** Vendor ID providing the quote */
   vendorId: string;
   /** Name of the vendor */
   vendorName: string;
@@ -226,77 +311,12 @@ export interface Quote {
 }
 
 /**
- * User Interface
- * Represents a user in the system
- */
-export interface User {
-  /** Unique identifier for the user */
-  id: string;
-  /** Full name of the user */
-  name: string;
-  /** Email address of the user */
-  email: string;
-  /** Role of the user in the system */
-  role: UserRole;
-  /** Department the user belongs to (if applicable) */
-  department?: string;
-  /** Organization the user belongs to */
-  organization: string;
-  /** Whether the user is active */
-  isActive: boolean;
-  /** Approval limit for the user (if applicable) */
-  approvalLimit?: number;
-  /** Unique ID for the user (if applicable) */
-  uid?: string;
-}
-
-/**
- * User Role Enum
- * Defines all possible roles a user can have
- */
-export enum UserRole {
-  /** Administrator role */
-  ADMIN = 'ADMIN',
-  /** Finance approver role */
-  FINANCE_APPROVER = 'FINANCE_APPROVER',
-  /** Procurement role */
-  PROCUREMENT = 'PROCUREMENT',
-  /** Standard user role */
-  USER = 'USER',
-  /** Approver role */
-  APPROVER = 'APPROVER'
-}
-
-/**
- * Attachment Interface
- * Represents a file attached to a PR or line item
- */
-export interface Attachment {
-  /** Unique identifier for the attachment */
-  id: string;
-  /** Name of the attachment */
-  name: string;
-  /** URL of the attachment */
-  url: string;
-  /** Path of the attachment */
-  path?: string;
-  /** Type of the attachment */
-  type: string;
-  /** Size of the attachment */
-  size: number;
-  /** Timestamp when the attachment was uploaded */
-  uploadedAt: string; 
-  /** User who uploaded the attachment */
-  uploadedBy: User;
-}
-
-/**
  * Approval Info Interface
  * Represents approval information for a PR
  */
 export interface ApprovalInfo {
   /** User who approved the PR */
-  approver: User;
+  approver: UserReference;
   /** Timestamp when the PR was approved */
   approvedAt?: string;
   /** Notes about the approval */
@@ -330,7 +350,7 @@ export interface AdjudicationInfo {
   /** Notes about the adjudication */
   notes: string;
   /** User who added the adjudication information */
-  addedBy: User;
+  addedBy: UserReference;
   /** Timestamp when the adjudication information was added */
   addedAt: string;
   /** Supporting documents for the adjudication */
@@ -351,7 +371,7 @@ export interface WorkflowHistory {
   /** Timestamp when the step was taken */
   timestamp: any; // Firestore Timestamp
   /** User who took the step */
-  user: User;
+  user: UserReference;
   /** Notes about the step */
   notes?: string;
 }
@@ -385,12 +405,12 @@ export enum WorkflowStep {
 
 /**
  * PR Metrics Interface
- * Represents performance and status metrics for a PR
+ * Represents calculated metrics for a PR
  */
 export interface PRMetrics {
   /** Number of days the PR has been open */
   daysOpen: number;
-  /** Whether the PR needs urgent processing */
+  /** Whether the PR is marked as urgent */
   isUrgent: boolean;
   /** Whether the PR is overdue */
   isOverdue: boolean;
@@ -402,22 +422,78 @@ export interface PRMetrics {
   financeApprovalRequired: boolean;
   /** Whether customs clearance is required for the PR */
   customsClearanceRequired: boolean;
-  /** Expected delivery date for the PR */
-  expectedDeliveryDate?: string;
-  /** Expected landing date for the PR */
-  expectedLandingDate?: string;
-  /** Completion percentage for the PR */
+  /** Percentage of completion for the PR workflow */
   completionPercentage: number;
-  /** Queue position for the PR */
-  queuePosition?: number;
-  /** Number of days since last resubmission */
-  daysResubmission?: number;
-  /** Number of days since PO was placed */
+  /** Number of days in the current status */
+  daysInCurrentStatus?: number;
+  /** Expected delivery date */
+  expectedDeliveryDate?: string | null;
+  /** Expected landing date */
+  expectedLandingDate?: string | null;
+  /** Position in the queue */
+  queuePosition?: number | null;
+  /** Number of days since the PR was ordered */
   daysOrdered?: number;
   /** Number of days the PR is overdue */
   daysOverdue?: number;
   /** Time to close the PR */
   timeToClose?: number;
+}
+
+/**
+ * PR Update Parameters Interface
+ * Represents parameters for updating a PR
+ */
+export interface PRUpdateParams extends Partial<PRRequest> {
+  /** Notes about the update */
+  notes?: string;
+}
+
+/**
+ * Status History Item Interface
+ * Represents a single status change in the PR history
+ */
+export interface StatusHistoryItem {
+  /** Status that the PR was changed to */
+  status: PRStatus;
+  /** Timestamp when the status was changed */
+  timestamp: string;
+  /** User who changed the status */
+  user: UserReference;
+  /** Notes about the status change */
+  notes?: string;
+}
+
+/**
+ * Workflow History Item Interface
+ * Represents a single workflow step in the PR history
+ */
+export interface WorkflowHistoryItem {
+  /** Step in the workflow */
+  step: string;
+  /** Status of the step */
+  status: string;
+  /** Timestamp of the step */
+  timestamp: string;
+  /** User who performed the step */
+  user: UserReference;
+  /** Notes about the step */
+  notes?: string;
+}
+
+/**
+ * History Item Interface
+ * Represents a general history event in the PR lifecycle
+ */
+export interface HistoryItem {
+  /** Action performed */
+  action: string;
+  /** Timestamp of the action */
+  timestamp: string;
+  /** User who performed the action */
+  user: UserReference;
+  /** Comment about the action */
+  comment?: string;
 }
 
 /**

@@ -1,5 +1,166 @@
 # 1PWR Procurement System Specifications
 
+> **Last Updated: 2025-01-15**
+> **Consolidated from SPECIFICATION.md and Specifications.md**
+
+## Authentication Flow
+### Login Screen
+- Required Fields:
+  - Email Address (text input with email validation)
+  - Password (password input)
+- Actions:
+  - SIGN IN button (primary action)
+- Validation:
+  - Email format must be valid
+  - Both fields must be non-empty
+
+## Dashboard
+### Header
+- Organization selector (dropdown, supports multiple organizations)
+- NEW PR button (top right)
+- User profile icon (top right)
+
+### Key Metrics Display
+- Total PRs (numeric)
+- Urgent PRs (numeric)
+- Avg Days Open (decimal)
+- Overdue PRs (numeric)
+- Quotes Required (numeric)
+- Adjudication Required (numeric)
+- Customs Required (numeric)
+- Completion Rate (percentage)
+
+### Purchase Requests Table
+- Status Filters:
+  - SUBMITTED (default)
+  - IN_QUEUE
+  - PENDING_APPROVAL
+  - APPROVED
+  - ORDERED
+  - PARTIALLY_RECEIVED
+  - COMPLETED
+  - REVISION_REQUIRED
+  - CANCELED
+  - REJECTED
+
+- Columns:
+  - PR Number (auto-generated, format: ORG-YYYYMM-XXX)
+  - Description
+  - Submitted By
+  - Created Date
+  - Days Open
+  - Resubmitted Date
+  - Actions (delete/edit)
+
+## Purchase Request Creation
+### Step 1: Basic Information
+- Required Fields (*):
+  - Organization (dropdown, multi-organization support)
+  - Requestor (text input, pre-populated with user's name)
+  - Email (text input, pre-populated with user's email)
+  - Department (dropdown)
+  - Project Category (dropdown)
+  - Description (text area)
+  - Site (dropdown)
+  - Expense Type (dropdown)
+  - Estimated Amount (number input, must be > 0)
+  - Currency (dropdown: LSL, USD, ZAR)
+  - Urgency Level (dropdown: Normal, Urgent)
+  - Approvers (based on threshold and level rules)
+
+- Optional Fields:
+  - Preferred Vendor (dropdown)
+
+- Field Dependencies:
+  - When Expense Type is "4 -Vehicle", an additional required Vehicle field (dropdown) appears
+
+### Step 2: Line Items
+- Table with columns:
+  - Description* (text input)
+  - Quantity* (number input)
+  - UOM* (Unit of Measure, dropdown)
+  - Notes (text input)
+  - Attachments (file upload)
+  - Actions (save, delete)
+
+- Features:
+  - ADD LINE ITEM button
+  - File attachment support
+  - Multiple line items allowed
+  - At least one line item required
+
+### Step 3: Review
+- Read-only display sections:
+  - Requestor Information
+    - Name
+    - Email
+    - Department
+    - Organization
+
+  - Project Details
+    - Project Category
+    - Site
+    - Description
+
+  - Financial Details
+    - Estimated Amount with Currency
+    - Expense Type
+
+  - Approval Details
+    - Required Date
+    - Approvers with roles
+
+  - Line Items Table
+    - Description
+    - Quantity
+    - Unit of Measure
+    - Notes
+    - Attachments
+
+## Data Validation Rules
+- Email must be valid format
+- Estimated Amount must be > 0
+- At least one approver required (based on threshold rules)
+- At least one line item required
+- All required fields must be filled before proceeding to next step
+- File attachments must be valid file types
+- Currency must match organization's allowed currencies
+- Approvers cannot approve their own PRs
+
+## Navigation
+- Sidebar Menu:
+  - Dashboard
+  - New PR
+  - My PRs
+
+## Project Directory Structure
+
+This section outlines the main directories and their purpose within the `pr-system` repository.
+
+-   `/` (Root): Contains configuration files (`package.json`, `vite.config.ts`, `tsconfig.json`, etc.), `Specifications.md`, `.windsurfrules`, and top-level project directories.
+-   `/e2e-tests`: Contains end-to-end tests for the application.
+-   `/functions`: Contains Firebase Cloud Functions used by the application.
+    -   `/functions/src`: Source code for the cloud functions (TypeScript).
+-   `/prsystem`: (Purpose unclear - possibly a related sub-project or older version? Contains `src` and `node_modules`).
+    -   `/prsystem/src`: Source code for the `prsystem` component.
+-   `/public`: Static assets served directly by the web server.
+-   `/src`: Main source code for the React frontend application.
+    -   `/src/assets`: Static assets like images, fonts, etc., bundled with the application.
+    -   `/src/components`: Reusable React components.
+    -   `/src/config`: Application configuration files (e.g., Firebase config).
+    -   `/src/contexts`: React Context providers for global state.
+    -   `/src/hooks`: Custom React hooks (as per project rules).
+    -   `/src/lib`: Shared library code, potentially utilities or core logic.
+    -   `/src/scripts`: Utility scripts related to the frontend application.
+    -   `/src/services`: Modules for interacting with backend APIs or external services (e.g., Firebase).
+    -   `/src/store`: State management setup (e.g., Redux toolkit).
+    -   `/src/styles`: Global styles or styling utilities.
+    -   `/src/types`: TypeScript type definitions and interfaces for the frontend.
+    -   `/src/utils`: General utility functions for the frontend.
+    -   `/src/__tests__`: Unit and integration tests for the frontend code.
+
+*Note: Directories like `node_modules`, `dist`, `archive`, `.git`, `.bak` are omitted as they are typically excluded from source control or contain build artifacts/backups.*
+
 ## Reference Data Management
 
 ### Collection Structure
@@ -65,7 +226,7 @@
 1. Rule 1 (Lower Threshold):
    - Below threshold:
      - Requires 1 quote
-     - Can be approved by Level 6 or Level 2 approvers
+     - Can be approved by Level 4 or Level 2 approvers
      - If using approved vendor, quote attachment optional
      - If using non-approved vendor, quote must have attachment
    - Above threshold:
@@ -111,7 +272,7 @@
   - Required for PRs above Rule 1 threshold
   - Required for all PRs above Rule 2 threshold
   
-- Level 6 Approvers:
+- Level 4 Approvers:
   - Can only approve PRs below Rule 1 threshold
   - Cannot approve PRs above Rule 1 threshold
   - Must follow standard quote requirements
@@ -141,6 +302,7 @@
   - Can approve PRs of any value
   - Required for high-value approvals
   - Organization assignment determines approval scope
+  
 - Level 3: Procurement Officer (PROC)
   - Can manage the procurement process
   - Can view Admin Dashboard
@@ -152,6 +314,7 @@
   - Can view (but not edit) Admin Dashboard
   - Access to financial aspects of PRs
   - Can review and process financial details
+  - Can approve PRs below Rule 1 threshold
 
 - Level 5: Requester (REQ)
   - Can create and submit PRs
@@ -159,10 +322,10 @@
   - Basic access level for regular users
   - No administrative access
 
-- Level 6: Junior Approver
-  - Can approve PRs below Rule 1 threshold
-  - Organization assignment determines approval scope
-  - Cannot approve high-value PRs
+- ~~Level 6: Junior Approver~~ [DEPRECATED]
+  - ~~Can approve PRs below Rule 1 threshold~~
+  - ~~Organization assignment determines approval scope~~
+  - ~~Cannot approve high-value PRs~~
 
 ### Organization Assignment
 - Users can be assigned to one primary organization
@@ -228,6 +391,7 @@
 - **requestorId**: ID of user making request
 - **requestorEmail**: Email of requestor
 - **requestor**: Full user object of requestor
+- **approver**: Designated approver's user ID - SINGLE SOURCE OF TRUTH
 
 ### Line Items Structure
 - Each PR contains an array of line items with:
@@ -239,25 +403,31 @@
   - **attachments**: Array of file attachments
 
 ### Approval Workflow Structure
-- PRs use the `approvalWorkflow` field as the single source of truth for approval information:
+- PRs use the `approver` field as the single source of truth for the designated approver:
+  ```typescript
+  interface PRRequest {
+    approver: string;  // Current approver's user ID - SINGLE SOURCE OF TRUTH
+    // other fields...
+  }
+  ```
+- The `approvalWorkflow` field is used to track the history of approver changes:
   ```typescript
   interface ApprovalWorkflow {
-    currentApprover: string;  // Current approver's user ID
+    currentApprover: string;  // Mirror of the PR.approver field
     approvalHistory: ApprovalHistoryItem[];
     lastUpdated: string;
   }
   ```
-- Legacy fields should be deprecated:
-  - `pr.approver` - Deprecated, use `approvalWorkflow.currentApprover`
-  - `pr.approvers` - Deprecated, approval history is in `approvalWorkflow.approvalHistory`
+- All code must respect the `pr.approver` field as the single source of truth:
+  - The `pr.approver` field must never be automatically overridden
+  - The `approvalWorkflow.currentApprover` should always mirror `pr.approver`
+  - The `approvalWorkflow.approvalHistory` tracks the history of approver changes
 
-- All code should be updated to use `approvalWorkflow.currentApprover` as the single source of truth.
-
-- Migration plan:
-  1. Update all PR documents to use `approvalWorkflow`
-  2. Update all code to read from `approvalWorkflow.currentApprover`
-  3. Add validation to ensure `approvalWorkflow` is always present
-  4. Remove legacy fields after migration
+- Implementation requirements:
+  1. Ensure all PR documents maintain `approver` as the single source of truth
+  2. Update all code to respect the manually set `approver` field
+  3. Ensure `approvalWorkflow.currentApprover` always mirrors `pr.approver`
+  4. Track all approver changes in `approvalWorkflow.approvalHistory`
 
 ### PR Status Workflow
 - PRs follow a defined status flow:

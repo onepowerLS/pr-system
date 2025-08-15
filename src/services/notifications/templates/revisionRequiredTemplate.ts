@@ -13,19 +13,22 @@ interface RevisionRequiredDetails {
   isUrgent?: boolean;
   category?: string;
   expenseType?: string;
+  vendorName?: string;
 }
 
 function extractRevisionDetails(context: NotificationContext): RevisionRequiredDetails {
   const { pr, prNumber, user, notes, isUrgent } = context;
   return {
     prNumber,
-    reviewerName: user ? `${user.firstName} ${user.lastName}`.trim() : 'System',
+    reviewerName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.name || 'System' : 'System',
     revisionNotes: notes || '',
-    baseUrl: context.baseUrl,
-    prId: pr.id,
+    baseUrl: context.baseUrl || '',
+    prId: pr?.id || '',
     isUrgent,
-    category: pr.category,
-    expenseType: pr.expenseType
+    // Use optional chaining to safely access properties that might not exist
+    category: pr?.category || '',
+    expenseType: pr?.expenseType || '',
+    vendorName: pr?.vendorName || ''
   };
 }
 
@@ -81,48 +84,32 @@ function getRequestorEmail(requestor: any): string {
   return requestor.email || 'Not specified';
 }
 
+/**
+ * Gets the vendor name from the PR
+ */
 async function getVendorName(pr: any): Promise<string> {
+  if (!pr) return 'Not specified';
+  
   try {
-    // First check vendorDetails
-    if (pr?.vendorDetails) {
-      if (pr.vendorDetails.name) {
-        return pr.vendorDetails.name;
-      }
-      if (pr.vendorDetails.companyName) {
-        return pr.vendorDetails.companyName;
-      }
+    // Try to get from vendorDetails first
+    if (pr.vendorDetails && pr.vendorDetails.name) {
+      return pr.vendorDetails.name;
     }
     
-    // Then check vendor field
-    if (pr?.vendor) {
-      if (typeof pr.vendor === 'string') {
-        // If vendor is a string, it's likely an ID - try to fetch from reference data
-        const vendorData = await referenceDataService.getVendorById(pr.vendor);
-        if (vendorData?.name) {
-          return vendorData.name;
-        }
-      }
-      if (pr.vendor.name) {
-        return pr.vendor.name;
-      }
-      if (pr.vendor.companyName) {
-        return pr.vendor.companyName;
-      }
+    // Then try vendor
+    if (pr.vendor && pr.vendor.name) {
+      return pr.vendor.name;
     }
     
-    // Finally check preferredVendor
-    if (pr?.preferredVendor) {
-      const vendorData = await referenceDataService.getVendorById(pr.preferredVendor);
-      if (vendorData?.name) {
-        return vendorData.name;
-      }
+    // Then try preferred vendor
+    if (pr.preferredVendor) {
       return pr.preferredVendor;
     }
     
     return 'Not specified';
   } catch (err) {
     console.error('Error getting vendor name:', err);
-    return pr?.vendorDetails?.code || pr?.vendor?.code || pr?.preferredVendor || 'Not specified';
+    return pr.vendorDetails?.code || pr.vendor?.code || pr.preferredVendor || 'Not specified';
   }
 }
 
@@ -133,40 +120,40 @@ function formatAmount(amount?: number | null, currency?: string): string {
 export async function generateRevisionRequiredEmail(context: NotificationContext): Promise<EmailContent> {
   try {
     const { pr, prNumber, user, notes, baseUrl, isUrgent } = context;
-    const prUrl = `${baseUrl}/pr/${pr.id}`;
+    const prUrl = `${baseUrl}/pr/${pr?.id || context.prId}`;
     
     const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Status Changed: SUBMITTED → REVISION_REQUIRED`;
     
     // Get requestor name and details
-    const requestorName = getRequestorName(pr.requestor);
+    const requestorName = getRequestorName(pr?.requestor);
     const vendorName = await getVendorName(pr);
     
     console.log('Template data:', { 
-      requestor: pr.requestor,
+      requestor: pr?.requestor,
       requestorName,
-      vendor: pr.vendorDetails || pr.vendor,
+      vendor: pr?.vendorDetails || pr?.vendor,
       vendorName,
-      preferredVendor: pr.preferredVendor,
-      vendorCode: pr.vendorDetails?.code || pr.vendor?.code
+      preferredVendor: pr?.preferredVendor,
+      vendorCode: pr?.vendorDetails?.code || pr?.vendor?.code || 'Not specified'
     });
 
     const requestorDetails = [
       { label: 'Name', value: requestorName },
-      { label: 'Email', value: getRequestorEmail(pr.requestor) },
-      { label: 'Department', value: pr.department || 'Not specified' },
-      { label: 'Site', value: pr.site || 'Not specified' }
+      { label: 'Email', value: getRequestorEmail(pr?.requestor) },
+      { label: 'Department', value: pr?.department || 'Not specified' },
+      { label: 'Site', value: pr?.site || 'Not specified' }
     ];
 
     const prDetails = [
       { label: 'PR Number', value: prNumber },
-      { label: 'Category', value: pr.projectCategory || 'Not specified' },
-      { label: 'Expense Type', value: pr.expenseType || 'Not specified' },
-      { label: 'Total Amount', value: pr.estimatedAmount ? pr.estimatedAmount.toLocaleString('en-US', { 
+      { label: 'Category', value: pr?.projectCategory || 'Not specified' },
+      { label: 'Expense Type', value: pr?.expenseType || 'Not specified' },
+      { label: 'Total Amount', value: pr?.estimatedAmount ? pr?.estimatedAmount.toLocaleString('en-US', { 
         style: 'currency', 
-        currency: pr.currency || 'USD' 
+        currency: pr?.currency || 'USD' 
       }) : 'Not specified' },
-      { label: 'Vendor', value: pr.preferredVendor || 'Not specified' },
-      { label: 'Required Date', value: formatDate(pr.requiredDate) },
+      { label: 'Vendor', value: pr?.preferredVendor || 'Not specified' },
+      { label: 'Required Date', value: formatDate(pr?.requiredDate) },
       { label: 'PR Link', value: prUrl }
     ];
 
@@ -207,12 +194,18 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
       subject,
       text: `PR ${prNumber} Requires Revision\n\nReviewer: ${user?.name || 'System'}\n${notes ? `Notes: ${notes}\n` : ''}\n\nRequestor Information:\n${requestorDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nPR Details:\n${prDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nView PR: ${prUrl}`,
       html,
-      headers: generateEmailHeaders(),
+      headers: generateEmailHeaders({
+        to: pr?.requestorEmail || '',
+        subject,
+        prNumber,
+        isHtml: true
+      }),
       context: {
         ...context,
-        pr: {
-          ...pr,
-          vendorName // Include resolved vendor name in context
+        pr,
+        metadata: {
+          ...context.metadata,
+          vendorName
         }
       }
     };

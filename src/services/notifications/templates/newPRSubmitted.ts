@@ -5,7 +5,7 @@ import { UserReference } from '../../../types/pr';
 import { referenceDataService } from '@/services/referenceData';
 import { logger } from '@/utils/logger';
 import { db } from '@/config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, query, collection, where, getDocs } from 'firebase/firestore';
 
 // Helper function to format currency
 function formatCurrency(amount?: number): string {
@@ -27,13 +27,40 @@ function formatDate(dateString?: string): string {
   }
 }
 
+// Helper function to format reference data (e.g., department_name to Department Name)
+function formatReferenceData(value: string): string {
+  if (!value) return 'Not specified';
+  
+  // Handle underscore format (e.g., department_name)
+  if (value.includes('_')) {
+    return value.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  }
+  
+  return value;
+}
+
 // Helper function to resolve reference data IDs to names
 async function resolveReferenceData(id: string, type: string, organization?: string): Promise<string> {
   if (!id) return 'Not specified';
   
   try {
+    logger.debug(`Resolving ${type} ID: ${id} for organization: ${organization || 'Not specified'}`);
+    
+    // If it looks like a code with underscores (like "7_administrative_overhead"), format it for display
+    if (id.includes('_')) {
+      const readableName = id
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      logger.debug(`Formatted ${type} ID with underscores: ${id} to: ${readableName}`);
+      return readableName;
+    }
+    
     // If it doesn't look like an ID (no special characters, just plain text), return as is
-    if (!/[^a-zA-Z0-9_]/.test(id) && id.length < 20) {
+    if (!/[^a-zA-Z0-9_]/.test(id) && !/^[a-zA-Z0-9]{20}$/.test(id)) {
+      logger.debug(`ID ${id} appears to be a plain text value, returning as is`);
       return id;
     }
     
@@ -42,30 +69,78 @@ async function resolveReferenceData(id: string, type: string, organization?: str
     
     switch (type) {
       case 'category':
+        logger.debug(`Fetching project categories for organization: ${organization || 'Not specified'}`);
         items = await referenceDataService.getProjectCategories(organization || '');
         break;
       case 'expenseType':
+        logger.debug(`Fetching expense types for organization: ${organization || 'Not specified'}`);
         items = await referenceDataService.getExpenseTypes(organization || '');
         break;
+      case 'vendor':
+        logger.debug(`Fetching vendors for organization: ${organization || 'Not specified'}`);
+        try {
+          // Get vendors through the reference data service
+          items = await referenceDataService.getVendors(organization || '');
+          logger.debug(`Got ${items.length} vendors from referenceDataService`);
+        } catch (e) {
+          logger.error(`Error getting vendors: ${e instanceof Error ? e.message : String(e)}`);
+          // Try a direct Firestore query as fallback
+          try {
+            logger.debug('Attempting direct Firestore query to vendors collection');
+            const vendorsQuery = query(collection(db, 'vendors'), where('organizationId', '==', organization || ''));
+            const vendorDocs = await getDocs(vendorsQuery);
+            items = vendorDocs.docs.map(doc => ({
+              id: doc.id,
+              vendorId: doc.data().vendorId || doc.id,
+              name: doc.data().name
+            }));
+            logger.debug(`Got ${items.length} vendors directly from Firestore`);
+          } catch (firestoreError) {
+            logger.error(`Firestore fallback also failed: ${firestoreError instanceof Error ? firestoreError.message : String(firestoreError)}`);
+          }
+        }
+        break;
       case 'site':
+        logger.debug(`Fetching sites for organization: ${organization || 'Not specified'}`);
         items = await referenceDataService.getSites(organization || '');
         break;
       default:
+        logger.warn(`Unknown reference data type: ${type}`);
         return id;
     }
     
-    // Find the item with matching ID
-    const item = items.find(item => item.id === id);
+    logger.debug(`Got ${items.length} items for ${type}`);
     
-    if (item && item.name) {
-      logger.debug(`Resolved ${type} ID ${id} to name: ${item.name}`);
+    // Special handling for numeric vendor IDs
+    if (type === 'vendor' && /^\d+$/.test(id)) {
+      const numericId = id;
+      const vendor = items.find(item => 
+        item.vendorId === numericId || 
+        item.id === numericId || 
+        (item.vendorId && item.vendorId.toString() === numericId)
+      );
+      
+      if (vendor) {
+        logger.debug(`Found vendor with ID ${numericId}: ${vendor.name}`);
+        return vendor.name;
+      } else {
+        // For numeric vendor IDs, make it clear this is a vendor code
+        logger.debug(`Vendor ID ${numericId} not found in reference data`);
+        return `Vendor #${numericId}`;
+      }
+    }
+    
+    // For other reference data types, look for a match by id
+    const item = items.find(item => item.id === id);
+    if (item) {
+      logger.debug(`Found ${type} with ID ${id}: ${item.name}`);
       return item.name;
     }
     
-    // If not found, return the original ID
+    logger.debug(`${type} with ID ${id} not found in reference data`);
     return id;
   } catch (error) {
-    logger.error(`Error resolving ${type} ID ${id}:`, error);
+    logger.error(`Error resolving ${type} reference data for ID ${id}:`, error);
     return id;
   }
 }
@@ -97,11 +172,21 @@ async function fetchUserDetails(userId: string): Promise<UserReference | null> {
 }
 
 export async function generateNewPREmail(context: NotificationContext): Promise<EmailContent> {
-  const { pr, prNumber, isUrgent, notes, baseUrl, user } = context;
+  const { pr, prNumber, isUrgent, notes, baseUrl, user, requestorInfo } = context;
   
   if (!pr) {
     throw new Error('PR object is required');
   }
+
+  // Debug logs to see exactly what data we have
+  logger.debug('Email template data - full context:', {
+    prId: pr.id,
+    prNumber,
+    requestorInfoFromContext: requestorInfo,
+    userFromContext: user,
+    prRequestor: pr.requestor,
+    requestorEmail: pr.requestorEmail
+  });
 
   const prUrl = `${baseUrl || 'https://1pwr.firebaseapp.com'}/pr/${pr.id}`;
   const subject = `${isUrgent ? 'URGENT: ' : ''}New PR ${prNumber} Submitted`;
@@ -138,96 +223,55 @@ export async function generateNewPREmail(context: NotificationContext): Promise<
     
     approverEmail = context.approver.email || 'Not specified';
   } else if (pr.approvalWorkflow?.currentApprover) {
+    // Basic fallback if only currentApprover string is available
     approverName = pr.approvalWorkflow.currentApprover;
     approverEmail = pr.approvalWorkflow.currentApprover;
   }
 
-  // Get requestor information
-  let requestorName = 'Not specified';
-  let requestorEmail = 'Not specified';
-  let requestorDept = pr.department || 'Not specified';
+  // Get requestor information - Directly use the pre-processed requestor object from context.
+  // getEmailContent now ensures context.pr.requestor is populated.
+  const requestorName = context.pr!.requestor?.name || 'Unknown Requestor'; 
+  const requestorEmail = context.pr!.requestor?.email || pr.requestorEmail || 'unknown@example.com'; // Fallback to pr.requestorEmail if needed
+  const requestorDept = pr.department || 'Not specified';
   
-  // First try to get user information from the context
-  if (user) {
-    // First try to use the name field directly if available
-    if (user.name) {
-      requestorName = user.name;
-    } else if (user.firstName || user.lastName) {
-      requestorName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-    } else if (user.email) {
-      requestorName = user.email;
-    }
-    
-    requestorEmail = user.email || 'Not specified';
-  }
-  
-  // If we don't have user info from context, try PR fields
-  if (requestorName === 'Not specified' && pr.requestor) {
-    // If requestor is an object with user details
-    if (typeof pr.requestor === 'object' && pr.requestor !== null) {
-      const requestorObj = pr.requestor as UserReference;
-      // First try to use the name field directly if available
-      if (requestorObj.name) {
-        requestorName = requestorObj.name;
-      } else if (requestorObj.firstName || requestorObj.lastName) {
-        requestorName = `${requestorObj.firstName || ''} ${requestorObj.lastName || ''}`.trim();
-      } else if (requestorObj.email) {
-        requestorName = requestorObj.email;
-      }
-      
-      requestorEmail = requestorObj.email || 'Not specified';
-    } else if (typeof pr.requestor === 'string') {
-      // If requestor is just a string (email or ID), try to fetch user details
-      const userId = pr.requestor;
-      const userDetails = await fetchUserDetails(userId);
-      
-      if (userDetails) {
-        requestorName = userDetails.name || `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim();
-        requestorEmail = userDetails.email || userId;
-      } else {
-        // Fallback to using the string directly
-        requestorName = userId;
-        requestorEmail = userId;
-      }
-    }
-  } else if (requestorName === 'Not specified' && pr.requestorId) {
-    // Fallback to requestorId if available - try to fetch user details
-    const userId = pr.requestorId;
-    const userDetails = await fetchUserDetails(userId);
-    
-    if (userDetails) {
-      requestorName = userDetails.name || `${userDetails.firstName || ''} ${userDetails.lastName || ''}`.trim();
-      requestorEmail = userDetails.email || userId;
-    } else {
-      // Fallback to using the ID directly
-      requestorName = userId;
-    }
-  } else if (requestorName === 'Not specified' && pr.requestorEmail) {
-    // Fallback to requestorEmail if available
-    requestorName = pr.requestorEmail;
-    requestorEmail = pr.requestorEmail;
-  }
-  
-  // Resolve reference data IDs to human-readable names
-  const requestorSite = await resolveReferenceData(pr.site || '', 'site', pr.organization);
-  const categoryName = await resolveReferenceData(pr.category || '', 'category', pr.organization);
-  const expenseTypeName = await resolveReferenceData(pr.expenseType || '', 'expenseType', pr.organization);
+  logger.debug('Using pre-processed requestor details:', { requestorName, requestorEmail, requestorDept });
 
-  // Get vendor name
-  const vendorName = pr.preferredVendor || 'Not specified';
+  // Resolve reference data IDs to human-readable names with additional logging
+  const requestorSite = await resolveReferenceData(pr.site || '', 'site', pr.organization);
+  logger.debug(`Resolved site '${pr.site}' to '${requestorSite}'`);
+  
+  const categoryName = await resolveReferenceData(pr.category || '', 'category', pr.organization);
+  logger.debug(`Resolved category '${pr.category}' to '${categoryName}'`);
+  
+  const expenseTypeName = await resolveReferenceData(pr.expenseType || '', 'expenseType', pr.organization);
+  logger.debug(`Resolved expenseType '${pr.expenseType}' to '${expenseTypeName}'`);
+
+  // For vendor name, use enhanced resolution
+  let vendorName = 'Not specified';
+  if (pr.preferredVendor) {
+    vendorName = await resolveReferenceData(pr.preferredVendor, 'vendor', pr.organization);
+    logger.debug(`Resolved vendor '${pr.preferredVendor}' to '${vendorName}'`);
+  }
 
   const html = `
     <div style="${styles.container}">
-      ${isUrgent ? `
-        <div style="${styles.urgentHeader}">
-          URGENT
-        </div>
-      ` : ''}
-      
+      ${isUrgent ? `<div style="${styles.urgentBadge}">URGENT</div>` : ''}
       <h2 style="${styles.header}">New Purchase Request #${prNumber} Submitted</h2>
       
       <div style="${styles.section}">
-        <h3 style="${styles.subheading}">Requestor Information</h3>
+        <h3 style="${styles.subHeader}">Submission Details</h3>
+        <p style="${styles.paragraph}">
+          <strong>Submitted By:</strong> ${requestorName}</p>
+      ${notes ? `
+        <div style="${styles.notesContainer}">
+          <h4 style="${styles.notesHeader}">Notes:</h4>
+          <p style="${styles.notesParagraph}">${notes}</p>
+        </div>
+      ` : ''}
+      </div>
+
+      <div style="${styles.section}">
+        <h3 style="${styles.subHeader}">Requestor Information</h3>
         
         <table style="${styles.table}">
           <tr>
@@ -240,17 +284,17 @@ export async function generateNewPREmail(context: NotificationContext): Promise<
           </tr>
           <tr>
             <td style="${styles.tableCell}"><strong>Department</strong></td>
-            <td style="${styles.tableCell}">${requestorDept}</td>
+            <td style="${styles.tableCell}">${formatReferenceData(requestorDept)}</td>
           </tr>
           <tr>
             <td style="${styles.tableCell}"><strong>Site</strong></td>
-            <td style="${styles.tableCell}">${requestorSite}</td>
+            <td style="${styles.tableCell}">${pr.site || 'Not specified'}</td>
           </tr>
         </table>
       </div>
 
       <div style="${styles.section}">
-        <h3 style="${styles.subheading}">PR Details</h3>
+        <h3 style="${styles.subHeader}">PR Details</h3>
         
         <table style="${styles.table}">
           <tr>
@@ -292,7 +336,7 @@ export async function generateNewPREmail(context: NotificationContext): Promise<
 
       ${pr.lineItems?.length ? `
         <div style="${styles.section}">
-          <h3 style="${styles.subheading}">Line Items</h3>
+          <h3 style="${styles.subHeader}">Line Items</h3>
           <table style="${styles.table}">
             <tr>
               <th style="${styles.tableHeader}">Description</th>
@@ -319,11 +363,14 @@ export async function generateNewPREmail(context: NotificationContext): Promise<
   const text = `
 New PR ${prNumber} Submitted
 
+Submission Details:
+Submitted By: ${requestorName}
+
 Requestor Information:
 Name: ${requestorName}
 Email: ${requestorEmail}
-Department: ${requestorDept}
-Site: ${requestorSite}
+Department: ${formatReferenceData(requestorDept)}
+Site: ${pr.site || 'Not specified'}
 
 PR Details:
 PR Number: ${prNumber}

@@ -33,142 +33,319 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendSubmissionEmail = exports.sendPRNotification = void 0;
-const functions = __importStar(require("firebase-functions"));
+exports.processNotifications = exports.sendRevisionRequiredNotification = void 0;
+const admin = __importStar(require("firebase-admin"));
 const nodemailer = __importStar(require("nodemailer"));
-const firebase_1 = require("./config/firebase");
-// Create transporter
-const transporter = nodemailer.createTransport({
-    host: 'mail.1pwrafrica.com',
-    port: 587,
-    secure: false,
-    auth: {
-        user: 'noreply@1pwrafrica.com',
-        pass: '1PWR00'
-    },
-    tls: {
-        rejectUnauthorized: false
+const functions = __importStar(require("firebase-functions"));
+// Initialize Firebase
+admin.initializeApp();
+const db = admin.firestore();
+const serverTimestamp = admin.firestore.FieldValue.serverTimestamp;
+// Helper function to ensure requestor name is properly set
+function ensureRequestorName(user, requestorEmail) {
+    var _a, _b;
+    console.log('ensureRequestorName input:', { user, requestorEmail });
+    // Check if user object has requestor property (from the PR form)
+    if (user === null || user === void 0 ? void 0 : user.requestor) {
+        if (typeof user.requestor === 'string' && user.requestor) {
+            console.log('Using user.requestor string:', user.requestor);
+            return user.requestor;
+        }
+        else if (typeof user.requestor === 'object' && ((_a = user.requestor) === null || _a === void 0 ? void 0 : _a.name)) {
+            console.log('Using user.requestor.name:', user.requestor.name);
+            return user.requestor.name;
+        }
     }
-});
-// Helper function to generate appropriate email subject
+    // Check metadata for requestorName
+    if (((_b = user === null || user === void 0 ? void 0 : user.metadata) === null || _b === void 0 ? void 0 : _b.requestorName) && user.metadata.requestorName !== 'PR Requestor' && user.metadata.requestorName !== 'Unknown Requestor') {
+        console.log('Using user.metadata.requestorName:', user.metadata.requestorName);
+        return user.metadata.requestorName;
+    }
+    // First check if user object has a name property that's not the default
+    if ((user === null || user === void 0 ? void 0 : user.name) && user.name !== 'PR Requestor' && user.name !== 'Unknown Requestor') {
+        console.log('Using user.name:', user.name);
+        return user.name;
+    }
+    // If we have a requestor email but no name, try to format it
+    if (requestorEmail) {
+        const formattedName = requestorEmail.split('@')[0].replace(/\./g, ' ').replace(/^(.)|\s+(.)/g, (match) => match.toUpperCase());
+        console.log('Using formatted email name:', formattedName);
+        return formattedName;
+    }
+    console.log('No valid requestor name found, using default');
+    return 'PR Requestor';
+}
+// Helper function to format reference data
+function formatReferenceData(rawValue) {
+    if (!rawValue)
+        return '';
+    // Handle vendor IDs (convert to names)
+    // Format category IDs (underscore format)
+    if (rawValue.includes('_')) {
+        return rawValue.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    }
+    return rawValue;
+}
+// Helper function to generate email subject
 function getEmailSubject(notification, emailBody) {
-    // If a subject is provided in the emailBody, use that
     if (emailBody.subject) {
         return emailBody.subject;
     }
-    const { prNumber, oldStatus, newStatus, metadata } = notification;
-    const isUrgent = (metadata === null || metadata === void 0 ? void 0 : metadata.isUrgent) || false;
-    const urgentPrefix = isUrgent ? 'URGENT: ' : '';
-    // New PR submission
-    if (oldStatus === '' && newStatus === 'SUBMITTED') {
-        return `${urgentPrefix}New Purchase Request: PR #${prNumber}`;
-    }
-    // Status changes
-    return `${urgentPrefix}${newStatus}: PR #${prNumber}`;
+    const statusText = notification.newStatus
+        ? notification.newStatus.charAt(0).toUpperCase() + notification.newStatus.slice(1).toLowerCase()
+        : 'Updated';
+    return `PR #${notification.prNumber} ${statusText}`;
 }
-// Function to send PR notification
-exports.sendPRNotification = functions.https.onCall(async (data, context) => {
+// New function to handle revision required notifications with CORS support
+exports.sendRevisionRequiredNotification = functions.https.onCall(
+// Explicitly type context and safely assert data type
+async (data, context) => {
     var _a, _b, _c, _d;
-    console.log('Starting sendPRNotification with data:', JSON.stringify(data, null, 2));
-    if (!context.auth) {
+    // First cast to unknown, then to the desired type
+    const notificationData = data;
+    console.log('Starting sendRevisionRequiredNotification with data:', JSON.stringify(notificationData, null, 2));
+    // Check authentication using context (type is now explicit)
+    if (!context || !context.auth) {
         console.error('Authentication missing');
         throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to send notifications');
     }
     // Validate required fields
-    if (!((_a = data.notification) === null || _a === void 0 ? void 0 : _a.prId) || !((_b = data.notification) === null || _b === void 0 ? void 0 : _b.prNumber) || !Array.isArray(data.recipients) || data.recipients.length === 0) {
+    if (!((_a = notificationData.notification) === null || _a === void 0 ? void 0 : _a.prId) || !((_b = notificationData.notification) === null || _b === void 0 ? void 0 : _b.prNumber) || !Array.isArray(notificationData.recipients) || notificationData.recipients.length === 0) {
         console.error('Invalid arguments:', {
-            prId: (_c = data.notification) === null || _c === void 0 ? void 0 : _c.prId,
-            prNumber: (_d = data.notification) === null || _d === void 0 ? void 0 : _d.prNumber,
-            recipients: data.recipients
+            prId: (_c = notificationData.notification) === null || _c === void 0 ? void 0 : _c.prId,
+            prNumber: (_d = notificationData.notification) === null || _d === void 0 ? void 0 : _d.prNumber,
+            recipients: notificationData.recipients
         });
         throw new functions.https.HttpsError('invalid-argument', 'The function must be called with valid prId, prNumber, and recipients array.');
     }
-    const { notification, recipients, cc = [], emailBody, metadata = { requestorEmail: '' } } = data;
-    console.log('Preparing to send emails to:', { recipients, cc });
+    const { notification, recipients, cc = [], emailBody, metadata = { requestorEmail: '' } } = notificationData;
+    console.log('Preparing to send revision required emails to:', { recipients, cc });
+    // Ensure requestor name is properly set
+    const requestorName = ensureRequestorName(notification.user, metadata.requestorEmail);
+    console.log('Using requestor name:', requestorName);
+    // Format email body to ensure human-readable values
+    const formattedHtml = emailBody.html
+        .replace(/>(\s*)<\/td>/g, '>$1</td>') // Preserve existing empty cells
+        .replace(/(\w+)_(\w+)/g, (match) => formatReferenceData(match)) // Format reference data with underscores
+        .replace(/>(\d{4})<\/td>/g, (match, id) => `>${formatReferenceData(id)}</td>`); // Format numeric vendor IDs
+    // Update requestor name in the email
+    const finalHtml = formattedHtml.replace(/<strong>Name<\/strong><\/td>\s*<td[^>]*>\s*<\/td>/g, `<strong>Name</strong></td><td style="padding: 8px; border: 1px solid #ddd">${requestorName}</td>`);
     try {
-        // Send email to each recipient
-        const emailPromises = recipients.map(async (recipient) => {
-            console.log('Sending email to:', recipient);
-            const mailOptions = {
-                from: '"1PWR System" <noreply@1pwrafrica.com>',
-                to: recipient,
-                cc: cc.filter(email => email !== recipient).filter(Boolean),
-                subject: getEmailSubject(notification, emailBody),
-                text: emailBody.text,
-                html: emailBody.html
-            };
-            console.log('Mail options:', JSON.stringify(mailOptions, null, 2));
-            try {
-                const result = await transporter.sendMail(mailOptions);
-                console.log('Email sent successfully to:', recipient, 'Result:', result);
-                return result;
-            }
-            catch (error) {
-                console.error('Failed to send email to:', recipient, 'Error:', error);
-                throw error;
+        // Set up email transport
+        const transporter = nodemailer.createTransport({
+            host: 'mail.1pwrafrica.com',
+            port: 465,
+            secure: true,
+            auth: {
+                user: 'noreply@1pwrafrica.com',
+                pass: process.env.EMAIL_PASSWORD
             }
         });
-        // Wait for all emails to be sent
-        const results = await Promise.all(emailPromises);
-        console.log('All emails sent successfully:', results);
-        // Log successful notification
+        // Prepare email options
+        const mailOptions = {
+            from: '"1PWR System" <noreply@1pwrafrica.com>',
+            to: recipients.join(','),
+            subject: getEmailSubject(notification, emailBody),
+            text: emailBody.text,
+            html: finalHtml
+        };
+        // Add CC if present
+        if (cc.length > 0) {
+            mailOptions.cc = cc.join(',');
+        }
+        console.log('Sending email with options:', {
+            to: mailOptions.to,
+            cc: mailOptions.cc,
+            subject: mailOptions.subject
+        });
+        // Send emails
+        const failedEmails = [];
+        try {
+            const info = await transporter.sendMail(mailOptions);
+            console.log('Email sent successfully:', info.messageId);
+        }
+        catch (error) {
+            console.error('Failed to send email:', error);
+            failedEmails.push({
+                recipient: recipients.join(','),
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+        // Log the notification
         const logData = {
-            type: 'STATUS_CHANGE',
-            status: 'sent',
-            timestamp: firebase_1.FieldValue.serverTimestamp(),
+            type: 'REVISION_REQUIRED',
+            status: failedEmails.length > 0 ? 'partial' : 'sent',
+            timestamp: serverTimestamp(),
             notification,
             recipients,
             cc,
             emailBody,
-            metadata
+            metadata,
+            failedRecipients: failedEmails.length > 0 ? failedEmails.map(f => f.recipient) : []
         };
-        console.log('Logging notification:', logData);
-        await firebase_1.db.collection('notificationLogs').add(logData);
-        console.log('Notification logged successfully');
-        return { success: true };
+        console.log('Logging revision required notification:', logData);
+        await db.collection('notificationLogs').add(logData);
+        console.log('Revision required notification logged successfully');
+        return {
+            success: failedEmails.length === 0,
+            partialSuccess: failedEmails.length > 0 && failedEmails.length < recipients.length,
+            failedRecipients: failedEmails.length > 0 ? failedEmails.map(f => f.recipient) : []
+        };
     }
     catch (error) {
-        console.error('Error in sendPRNotification:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to send notification: ' + (error instanceof Error ? error.message : String(error)));
+        console.error('Error in sendRevisionRequiredNotification:', error);
+        throw new functions.https.HttpsError('internal', 'Failed to send revision required notification: ' + (error instanceof Error ? error.message : String(error)));
     }
 });
-exports.sendSubmissionEmail = functions.https.onRequest(async (req, res) => {
-    // Handle preflight requests
-    if (req.method === 'OPTIONS') {
-        res.status(204).send('');
-        return;
-    }
-    const { email, name, prNumber, oldStatus, newStatus, notes } = req.body;
-    if (!email || !name || !prNumber || !oldStatus || !newStatus) {
-        res.status(400).json({ error: 'Missing required fields' });
-        return;
+// Firestore trigger to send emails for new notifications
+exports.processNotifications = functions.firestore
+    .document('notifications/{notificationId}')
+    .onCreate(async (snapshot, context) => {
+    var _a;
+    const notificationData = snapshot.data(); // Assume data matches the interface
+    console.log('Processing new notification:', JSON.stringify(notificationData, null, 2));
+    // Validate essential parts of the payload
+    if (!notificationData ||
+        !notificationData.recipients || notificationData.recipients.length === 0 ||
+        !notificationData.notification ||
+        !notificationData.notification.prId ||
+        !notificationData.notification.prNumber ||
+        !notificationData.emailBody) {
+        console.error('Invalid notification data structure:', notificationData);
+        // Optionally update the doc status to 'invalid'
+        try {
+            await snapshot.ref.update({ status: 'invalid', error: 'Invalid data structure', updatedAt: new Date().toISOString() });
+        }
+        catch (updateError) {
+            console.error('Failed to update notification status to invalid:', updateError);
+        }
+        return null;
     }
     try {
-        const info = await transporter.sendMail({
-            from: '"1PWR System" <noreply@1pwrafrica.com>',
-            to: email,
-            subject: `PR ${prNumber} Status Changed to ${newStatus}`,
-            html: `
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h2>Purchase Request Status Change</h2>
-                    <p>Dear ${name},</p>
-                    <p>The status of PR #${prNumber} has been changed:</p>
-                    <ul>
-                        <li>From: ${oldStatus}</li>
-                        <li>To: ${newStatus}</li>
-                    </ul>
-                    ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-                    <p>Please log in to the system to view more details.</p>
-                    <p>Best regards,<br>1PWR System</p>
-                </div>
-            `
+        // Extract data based on NotificationPayload interface
+        const { recipients, cc = [], notification, emailBody, metadata // Keep metadata for potential future use or fallback
+         } = notificationData;
+        const { prId, prNumber, user, type } = notification; // Destructure from notification object
+        const { subject, text, html } = emailBody; // Destructure from emailBody object
+        // Use the helper function to determine the requestor name
+        const requestorName = ensureRequestorName(user, (_a = notification.metadata) === null || _a === void 0 ? void 0 : _a.requestorEmail);
+        console.log('Determined requestor name via helper:', requestorName);
+        // Modify HTML to include the correct requestor name
+        // Ensure these replacements are robust enough for different email templates
+        let finalHtml = html;
+        // Example replacement targets (adjust based on actual HTML templates)
+        finalHtml = finalHtml.replace(/(<strong>Name<\/strong><\/td>\s*<td[^>]*>)(?:Unknown|PR Requestor|Submitter)?(<\/td>)/gi, `$1${requestorName}$2`);
+        finalHtml = finalHtml.replace(/(<strong>Submitted By:<\/strong>\s*)(?:Unknown|PR Requestor|Submitter)?(<\/p>)/gi, `$1${requestorName}$2`);
+        // Add more specific replacements if needed
+        // Set up email transport
+        const transporter = nodemailer.createTransport({
+            host: 'mail.1pwrafrica.com',
+            port: 465,
+            secure: true,
+            auth: {
+                user: 'noreply@1pwrafrica.com',
+                pass: process.env.EMAIL_PASSWORD
+            }
         });
-        console.log('Status change email sent:', info.messageId);
-        res.status(200).json({ success: true });
+        // Prepare email options
+        const mailOptions = {
+            from: '"1PWR System" <noreply@1pwrafrica.com>',
+            to: recipients.join(','),
+            subject: subject || `PR #${prNumber} Notification`, // Use subject from emailBody
+            text: text, // Use text from emailBody
+            html: finalHtml // Use modified html from emailBody
+        };
+        // Add CC if present
+        if (cc.length > 0) {
+            mailOptions.cc = cc.join(',');
+        }
+        console.log('Sending email with options:', {
+            to: mailOptions.to,
+            cc: mailOptions.cc,
+            subject: mailOptions.subject
+        });
+        // Send the email
+        try {
+            const info = await transporter.sendMail(mailOptions);
+            console.log('Email sent successfully:', info.messageId);
+            // Update the notification status in Firestore
+            await snapshot.ref.update({
+                status: 'sent',
+                sentAt: new Date().toISOString()
+            });
+            // Also log to notificationLogs for tracking
+            // Use the structure derived from NotificationPayload
+            await db.collection('notificationLogs').add({
+                type: type || 'PR_NOTIFICATION', // Use type from notification object
+                status: 'sent',
+                timestamp: serverTimestamp(),
+                notification: {
+                    prId,
+                    prNumber,
+                    type: type || 'PR_NOTIFICATION',
+                    user, // Include the user object that was used
+                    metadata: notification.metadata // Include notification metadata
+                },
+                recipients,
+                cc: cc,
+                emailBody: {
+                    subject: mailOptions.subject,
+                    text: mailOptions.text,
+                    // Log finalHtml to see what was actually sent
+                    html: finalHtml
+                },
+                metadata: metadata || {} // Log top-level metadata if present
+            });
+            return { success: true };
+        }
+        catch (error) {
+            console.error('Failed to send email:', error);
+            // Update the notification status to indicate failure
+            await snapshot.ref.update({
+                status: 'failed',
+                error: error instanceof Error ? error.message : String(error),
+                updatedAt: new Date().toISOString()
+            });
+            // Log failure to notificationLogs
+            await db.collection('notificationLogs').add({
+                type: type || 'PR_NOTIFICATION',
+                status: 'failed',
+                timestamp: serverTimestamp(),
+                error: error instanceof Error ? error.message : String(error),
+                notification: {
+                    prId,
+                    prNumber,
+                    type: type || 'PR_NOTIFICATION',
+                    user,
+                    metadata: notification.metadata
+                },
+                recipients,
+                cc: cc,
+                emailBody: {
+                    subject: mailOptions.subject,
+                    text: mailOptions.text,
+                    html: finalHtml
+                },
+                metadata: metadata || {}
+            });
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            };
+        }
     }
     catch (error) {
-        console.error('Error sending email:', error);
-        res.status(500).json({ error: 'Failed to send email' });
+        console.error('Error processing notification:', error);
+        // Update the notification status to indicate processing error
+        await snapshot.ref.update({
+            status: 'error',
+            error: error instanceof Error ? error.message : String(error),
+            updatedAt: new Date().toISOString()
+        });
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+        };
     }
 });
 //# sourceMappingURL=index.js.map

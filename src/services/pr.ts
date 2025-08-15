@@ -1,36 +1,3 @@
-/**
- * @fileoverview Purchase Request Service
- * @version 2.0.0
- * 
- * Description:
- * Core service for managing purchase requests in the system. Handles CRUD operations,
- * status transitions, approval routing, and file attachments.
- * 
- * Architecture Notes:
- * - Uses Firebase Firestore for data persistence
- * - Integrates with Cloud Storage for attachments
- * - Implements complex business logic for approver routing
- * - Manages PR status transitions and validations
- * 
- * Business Rules:
- * - PR approval thresholds are configured in the Rules collection and managed by administrators
- * - Approval levels are determined dynamically based on PR amount and configured thresholds
- * - Multiple quotes may be required based on thresholds in Rules collection
- * - Finance approval requirements are defined in Rules collection
- * - Preferred vendors may bypass quote requirements
- * - Department heads must be in approval chain
- * 
- * Related Modules:
- * - src/services/storage.ts: File handling
- * - src/services/notification.ts: PR notifications
- * - src/types/pr.ts: PR type definitions
- * 
- * Error Handling:
- * - Network errors are caught and reported
- * - Validation errors trigger user feedback
- * - Failed operations are logged for debugging
- */
-
 import { 
   doc, 
   getDoc, 
@@ -39,1560 +6,492 @@ import {
   collection, 
   query, 
   where,
-  limit,
-  Timestamp, 
-  arrayUnion,
   addDoc,
-  deleteDoc,
-  writeBatch,
-  serverTimestamp,
-  DocumentData,
-  DocumentSnapshot,
-  QuerySnapshot
+  deleteDoc, 
+  serverTimestamp, 
+  Timestamp,
+  DocumentData, 
+  Query, 
+  QueryConstraint,
+  orderBy, 
+  limit,
+  FieldValue,
+  setDoc,
 } from 'firebase/firestore';
-import { getFirestore } from 'firebase/firestore';
-import { app } from '../config/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { 
-  PRRequest, 
-  PRStatus, 
-  LineItem, 
-  Quote, 
-  ApprovalWorkflow,
-  ApprovalHistoryItem,
-  PR_AMOUNT_THRESHOLDS,
-  UserReference,
-  HistoryItem,
-  PRMetrics,
-  PRUpdateParams
-} from '../types/pr';
-import { User } from '../types/user';
-import { Rule } from '../types/referenceData';
-import { calculateDaysOpen } from '../utils/formatters';
-import { StorageService } from './storage';
-import { notificationService } from './notification';
-import { auth } from '../config/firebase';
-import { UserRole } from '../types/user';
-import { PERMISSION_LEVELS } from '../config/permissions';
-import { submitPRNotification } from './notifications/handlers/submitPRNotification';
-import { mapFirebaseUserToUserReference, mapFirebaseUserToPartialUser } from '../utils/userMapper';
-import { NotificationService } from './notifications/notificationService';
-import { NotificationType } from '../types/notification';
+import { getFirestore } from 'firebase/firestore'; 
+import { app, auth } from '@/config/firebase'; 
+import { logger } from '@/utils/logger';
+import { PRRequest, PRStatus, UserReference, HistoryItem, LineItem, ApprovalWorkflow, StatusHistoryItem, ApprovalHistoryItem } from '@/types/pr'; 
+import { User } from '@/types/user'; 
+import { mapFirebaseUserToUserReference } from '@/utils/userMapper';
+import { Notification } from '@/types/notification'; 
 
 const PR_COLLECTION = 'purchaseRequests';
-const functions = getFunctions();
-const sendPRNotificationV2 = httpsCallable(functions, 'sendPRNotificationV2');
+const COUNTER_COLLECTION = 'counters';
+const APPROVAL_RULES_COLLECTION = 'approvalRules'; 
+const NOTIFICATION_COLLECTION = 'notifications'; 
+const db = getFirestore(app);
+
+interface ApprovalRule {
+  id: string;
+  organization: string;
+  minAmount: number;
+  approverLevel: number; 
+  // Add other relevant fields from your DB structure
+}
+
+interface PRUpdateData {
+  [key: string]: any; 
+  history?: HistoryItem[]; 
+  statusHistory?: StatusHistoryItem[]; 
+  status?: PRStatus;
+  approvalWorkflow?: Partial<ApprovalWorkflow>;
+  updatedAt?: FieldValue; 
+}
+
+interface PRCreateData extends Omit<PRRequest, 'id' | 'prNumber' | 'createdAt' | 'updatedAt' | 'history' | 'totalAmount'> {
+  requestor: UserReference;
+  vehicle?: string; // Make optional
+  preferredVendor?: string; // Make optional
+  // Ensure other required fields are present
+}
 
 /**
- * Converts Firestore timestamp to ISO string for Redux
- * @param {any} data - Data to convert
- * @returns {any} Converted data
+ * Function to safely convert Firestore Timestamps or existing ISO strings to ISO strings.
+ * Returns undefined if the input is invalid or missing.
  */
-function convertTimestamps(obj: any): any {
-  if (!obj) return obj;
-
-  if (obj instanceof Timestamp) {
-    return obj.toDate().toISOString();
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map(item => convertTimestamps(item));
-  }
-
-  if (typeof obj === 'object') {
-    const converted: any = {};
-    for (const key in obj) {
-      if (key === 'timestamp' && obj[key] instanceof Timestamp) {
-        converted[key] = obj[key].toDate().toISOString();
-      } else if (key === 'statusHistory' && Array.isArray(obj[key])) {
-        converted[key] = obj[key].map((historyItem: any) => ({
-          ...historyItem,
-          timestamp: historyItem.timestamp instanceof Timestamp 
-            ? historyItem.timestamp.toDate().toISOString()
-            : historyItem.timestamp
-        }));
-      } else if (key === 'workflowHistory' && Array.isArray(obj[key])) {
-        converted[key] = obj[key].map((historyItem: any) => ({
-          ...historyItem,
-          timestamp: historyItem.timestamp instanceof Timestamp 
-            ? historyItem.timestamp.toDate().toISOString()
-            : historyItem.timestamp
-        }));
-      } else {
-        converted[key] = convertTimestamps(obj[key]);
-      }
+function safeTimestampToISO(timestamp: Timestamp | string | undefined | null): string | undefined {
+  if (timestamp instanceof Timestamp) {
+    try {
+      return timestamp.toDate().toISOString();
+    } catch (e) {
+       logger.error("Failed to convert Firestore Timestamp to Date:", e);
+       return undefined;
     }
-    return converted;
   }
+  if (typeof timestamp === 'string') {
+    // Basic validation if it's already an ISO string
+    try {
+      // Attempt to parse; Date.parse returns NaN for invalid strings
+      if (!isNaN(Date.parse(timestamp))) {
+        // Check if it roughly looks like an ISO string to avoid converting random strings
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|([+-]\d{2}:\d{2}))$/.test(timestamp)) {
+            return timestamp;
+        }
+      }
+    } catch(e) {
+       logger.error("Failed during string timestamp parsing/validation:", e);
+       return undefined;
+    }
+  }
+  // Return undefined for null, undefined, or invalid/non-ISO strings
+  return undefined;
+}
 
-  return obj;
-};
-
-/**
- * Calculates metrics for a PR
- * @param {PRRequest} pr - The purchase request
- * @param {Partial<PRMetrics>} existingMetrics - Existing metrics (optional)
- * @returns {PRMetrics} Updated metrics
- */
-const calculatePRMetrics = (pr: PRRequest, existingMetrics: Partial<PRMetrics> = {}): PRMetrics => {
-  console.log('Calculating metrics for PR:', JSON.stringify({
-    id: pr.id,
-    isUrgent: pr.isUrgent
-  }, null, 2));
-  
-  const metrics: PRMetrics = {
-    daysOpen: calculateDaysOpen(pr.createdAt),
-    isUrgent: pr.isUrgent || false,
-    isOverdue: existingMetrics.isOverdue || false,
-    quotesRequired: existingMetrics.quotesRequired || false,
-    adjudicationRequired: existingMetrics.adjudicationRequired || false,
-    financeApprovalRequired: existingMetrics.financeApprovalRequired || false,
-    customsClearanceRequired: existingMetrics.customsClearanceRequired || false,
-    completionPercentage: existingMetrics.completionPercentage || 0,
-    // Preserve other metrics if they exist
-    daysInCurrentStatus: existingMetrics.daysInCurrentStatus || 0,
-    expectedDeliveryDate: existingMetrics.expectedDeliveryDate || null,
-    expectedLandingDate: existingMetrics.expectedLandingDate || null,
-    queuePosition: existingMetrics.queuePosition || null,
-    daysOrdered: existingMetrics.daysOrdered || 0,
-    daysOverdue: existingMetrics.daysOverdue || 0,
-    timeToClose: existingMetrics.timeToClose || 0
+// Renamed and corrected History Item creation for status changes
+function createStatusHistoryItem(
+  status: PRStatus,
+  user: UserReference,
+  notes?: string
+): Omit<StatusHistoryItem, 'id'> { 
+  return {
+    status, 
+    timestamp: new Date().toISOString(), 
+    user: user, 
+    notes: notes || `Status changed to ${status}`,
   };
-
-  return metrics;
-};
+}
 
 /**
- * Purchase Request Service
+ * Fetches a single Purchase Request by its ID.
+ * @param prId - The ID of the PR to fetch.
+ * @returns A promise resolving to the PRRequest object or null if not found.
  */
-// Define PR service object
-export const prService = {
-  /**
-   * Creates a new purchase request
-   * @param {Partial<PRRequest>} prData - Purchase request data
-   * @returns {Promise<string>} ID of the created purchase request
-   */
-  async createPR(prData: Partial<PRRequest>): Promise<string> {
-    try {
-      console.log('Creating PR with data:', JSON.stringify({
-        organization: prData.organization,
-        requestorId: prData.requestorId,
-        isUrgent: prData.isUrgent
-      }, null, 2));
-
-      // Validate required fields
-      if (!prData.organization) {
-        throw new Error('organization is required');
-      }
-      if (!prData.requestorId) {
-        throw new Error('requestorId is required');
-      }
-
-      // Get current user for audit fields
-      const firebaseUser = auth.currentUser;
-      if (!firebaseUser) {
-        throw new Error('No authenticated user');
-      }
-      
-      // Map Firebase user to UserReference
-      const userRef = mapFirebaseUserToUserReference(firebaseUser);
-      if (!userRef) {
-        throw new Error('Failed to map user data');
-      }
-
-      // Create PR document
-      const pr = {
-        ...prData,
-        status: PRStatus.SUBMITTED,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        submittedBy: userRef.id,
-        requestorId: userRef.id,
-        requestorEmail: userRef.email,
-        requestor: {
-          id: userRef.id,
-          email: userRef.email,
-          name: userRef.name
-        },
-        approver: prData.approver || null,
-        history: [] as HistoryItem[],
-        attachments: [],
-        metrics: {
-          daysOpen: 0,
-          isUrgent: prData.isUrgent || false,
-          isOverdue: false,
-          quotesRequired: false,
-          adjudicationRequired: false,
-          financeApprovalRequired: false,
-          customsClearanceRequired: false,
-          completionPercentage: 0
-        }
-      };
-
-      // Add to history
-      pr.history.push({
-        action: 'CREATED',
-        timestamp: new Date().toISOString(),
-        user: userRef,
-        comment: 'Purchase request created'
-      });
-
-      // Create document
-      const docRef = await addDoc(collection(getFirestore(app), PR_COLLECTION), pr);
-      console.log('PR created with ID:', JSON.stringify(docRef.id, null, 2));
-
-      // Send notification via the dedicated notification service
-      try {
-        // Use the dedicated notification service instead of sending directly
-        await submitPRNotification.createNotification({ ...pr, id: docRef.id }, pr.prNumber);
-        console.log('PR creation notification sent successfully via notification service');
-      } catch (error) {
-        console.error('Failed to send PR creation notification:', error);
-        
-        // Log detailed error information for debugging
-        if (error && typeof error === 'object') {
-          if ('code' in error) console.error('Error code:', (error as any).code);
-          if ('message' in error) console.error('Error message:', (error as any).message);
-          if ('details' in error) console.error('Error details:', (error as any).details);
-        }
-        
-        // Create a notification log entry to track the failure
-        try {
-          const notificationService = new NotificationService();
-          await notificationService.logNotification(
-            'ERROR' as NotificationType,
-            docRef.id,
-            [prData.requestorEmail || '', 'procurement@1pwrafrica.com'].filter(Boolean),
-            'failed',
-            {
-              error: error ? JSON.stringify(error) : 'Unknown error',
-              errorTimestamp: new Date().toISOString(),
-              attemptedAction: 'PR_CREATION_NOTIFICATION'
-            }
-          );
-        } catch (logError) {
-          console.error('Failed to log notification error:', logError);
-        }
-        
-        // Don't throw error, as PR is already created
-      }
-
-      // Log notification in Firestore
-      const prWithId = { 
-        ...pr, 
-        id: docRef.id,
-        // Ensure all required fields are present
-        approvalWorkflow: {
-          currentApprover: prData.approver || '', // Mirror of pr.approver (single source of truth)
-          approvalHistory: [],
-          lastUpdated: new Date().toISOString()
-        }
-      } as PRRequest;
-      
-      await notificationService.createNotification(
-        prWithId,
-        null,  // No previous status for new PR
-        PRStatus.SUBMITTED,
-        {
-          id: prData.requestorId!,
-          email: prData.requestorEmail!,
-          name: prData.requestor?.name || 'Unknown',
-          organization: prData.organization!
-        } as User,
-        `PR ${pr.prNumber || docRef.id} created`
-      );
-
-      return docRef.id;
-    } catch (error) {
-      console.error('Error creating PR:', JSON.stringify(error, null, 2));
-      throw error;
-    }
-  },
-
-  /**
-   * Generates a unique PR number for the given organization
-   * @param {string} organization - Organization name
-   * @returns {Promise<string>} Unique PR number
-   */
-  async generatePRNumber(organization: string, attempt: number = 1): Promise<string> {
-    try {
-      // Get current year and month in YYYYMM format
-      const now = new Date();
-      const yearMonth = now.getFullYear().toString() + 
-                       (now.getMonth() + 1).toString().padStart(2, '0');
-      
-      console.log('Generating PR number for yearMonth:', yearMonth);
-
-      // Query for all PRs for this organization
-      const q = query(
-        collection(getFirestore(app), PR_COLLECTION),
-        where('organization', '==', organization)
-      );
-
-      const querySnapshot = await getDocs(q);
-      
-      // Filter for current month client-side
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-      
-      console.log('Filtering PRs between:', startOfMonth, 'and', endOfMonth);
-      
-      const thisMonthPRs = querySnapshot.docs.filter(doc => {
-        const data = doc.data();
-        if (!data.createdAt) return false;
-        
-        // Handle both Firestore Timestamp and Date objects
-        const createdAt = data.createdAt instanceof Date 
-          ? data.createdAt 
-          : data.createdAt.toDate?.() || new Date(data.createdAt);
-          
-        return createdAt >= startOfMonth && createdAt <= endOfMonth;
-      });
-
-      console.log('Found', thisMonthPRs.length, 'PRs for this month');
-
-      // Find the highest number used this month
-      let maxNumber = 0;
-      thisMonthPRs.forEach(doc => {
-        const prNumber = doc.data().prNumber;
-        if (prNumber && prNumber.startsWith(`PR-${yearMonth}-`)) {
-          const num = parseInt(prNumber.split('-')[2]);
-          if (!isNaN(num) && num > maxNumber) {
-            maxNumber = num;
-            console.log('Found higher PR number:', num);
-          }
-        }
-      });
-
-      // Use the next number after the highest found, plus any additional attempts
-      const nextNumber = maxNumber + attempt;
-      console.log('Next PR number:', nextNumber);
-
-      // Format: PR-YYYYMM-XXX where XXX is sequential number
-      const prNumber = `PR-${yearMonth}-${nextNumber.toString().padStart(3, '0')}`;
-      console.log('Generated PR number:', prNumber);
-
-      // Double-check uniqueness
-      const existingQ = query(
-        collection(getFirestore(app), PR_COLLECTION),
-        where('prNumber', '==', prNumber)
-      );
-      const existingDocs = await getDocs(existingQ);
-      
-      if (!existingDocs.empty) {
-        console.log('PR number collision detected:', prNumber, 'Attempt:', attempt);
-        // If there's a collision, try the next number by incrementing attempt
-        return this.generatePRNumber(organization, attempt + 1);
-      }
-
-      return prNumber;
-    } catch (error) {
-      console.error('Error generating PR number:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Creates a new purchase request with a generated PR number
-   * @param {Partial<PRRequest>} prData - Purchase request data
-   * @returns {Promise<string>} ID of the created purchase request
-   */
-  async createPRWithNumber(prData: Partial<PRRequest>): Promise<string> {
-    try {
-      console.log('Creating PR with data:', JSON.stringify({
-        organization: prData.organization,
-        requestorId: prData.requestorId,
-        isUrgent: prData.isUrgent
-      }, null, 2));
-
-      // Validate required fields
-      if (!prData.organization) {
-        throw new Error('organization is required');
-      }
-      if (!prData.requestorId) {
-        throw new Error('requestorId is required');
-      }
-
-      // Generate PR number
-      const prNumber = await this.generatePRNumber(prData.organization);
-      console.log('Generated PR number:', JSON.stringify(prNumber, null, 2));
-
-      // Get current user for audit fields
-      const firebaseUser = auth.currentUser;
-      if (!firebaseUser) {
-        throw new Error('No authenticated user');
-      }
-      
-      // Map Firebase user to UserReference
-      const userRef = mapFirebaseUserToUserReference(firebaseUser);
-      if (!userRef) {
-        throw new Error('Failed to map user data');
-      }
-
-      // Create PR document
-      const pr = {
-        ...prData,
-        prNumber,
-        status: PRStatus.SUBMITTED,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        submittedBy: userRef.id,
-        requestorId: userRef.id,
-        requestorEmail: userRef.email,
-        requestor: {
-          id: userRef.id,
-          email: userRef.email,
-          name: userRef.name
-        },
-        approver: prData.approver || null,
-        history: [] as HistoryItem[],
-        attachments: [],
-        metrics: {
-          daysOpen: 0,
-          isUrgent: prData.isUrgent || false,
-          isOverdue: false,
-          quotesRequired: false,
-          adjudicationRequired: false,
-          financeApprovalRequired: false,
-          customsClearanceRequired: false,
-          completionPercentage: 0
-        }
-      };
-
-      // Add to history
-      pr.history.push({
-        action: 'CREATED',
-        timestamp: new Date().toISOString(),
-        user: userRef,
-        comment: 'Purchase request created'
-      });
-
-      // Create document
-      const docRef = await addDoc(collection(getFirestore(app), PR_COLLECTION), pr);
-      console.log('PR created with ID:', JSON.stringify(docRef.id, null, 2));
-
-      // Send notification via the dedicated notification service
-      try {
-        // Use the dedicated notification service instead of sending directly
-        await submitPRNotification.createNotification({ ...pr, id: docRef.id }, pr.prNumber);
-        console.log('PR creation notification sent successfully via notification service');
-      } catch (error) {
-        console.error('Failed to send PR creation notification:', error);
-        
-        // Log detailed error information for debugging
-        if (error && typeof error === 'object') {
-          if ('code' in error) console.error('Error code:', (error as any).code);
-          if ('message' in error) console.error('Error message:', (error as any).message);
-          if ('details' in error) console.error('Error details:', (error as any).details);
-        }
-        
-        // Create a notification log entry to track the failure
-        try {
-          const notificationService = new NotificationService();
-          await notificationService.logNotification(
-            'ERROR' as NotificationType,
-            docRef.id,
-            [prData.requestorEmail || '', 'procurement@1pwrafrica.com'].filter(Boolean),
-            'failed',
-            {
-              error: error ? JSON.stringify(error) : 'Unknown error',
-              errorTimestamp: new Date().toISOString(),
-              attemptedAction: 'PR_CREATION_NOTIFICATION'
-            }
-          );
-        } catch (logError) {
-          console.error('Failed to log notification error:', logError);
-        }
-        
-        // Don't throw error, as PR is already created
-      }
-
-      // Log notification in Firestore
-      const prWithId = { 
-        ...pr, 
-        id: docRef.id,
-        // Ensure all required fields are present
-        approvalWorkflow: {
-          currentApprover: prData.approver || '', // Mirror of pr.approver (single source of truth)
-          approvalHistory: [],
-          lastUpdated: new Date().toISOString()
-        }
-      } as PRRequest;
-      
-      await notificationService.createNotification(
-        prWithId,
-        null,  // No previous status for new PR
-        PRStatus.SUBMITTED,
-        {
-          id: prData.requestorId!,
-          email: prData.requestorEmail!,
-          name: prData.requestor?.name || 'Unknown',
-          organization: prData.organization!
-        } as User,
-        `PR ${pr.prNumber || docRef.id} created`
-      );
-
-      return docRef.id;
-    } catch (error) {
-      console.error('Error creating PR:', JSON.stringify(error, null, 2));
-      throw error;
-    }
-  },
-
-  /**
-   * Updates an existing purchase request
-   * @param {string} prId - ID of the purchase request to update
-   * @param {PRUpdateParams} updates - Updated purchase request data
-   * @returns {Promise<void>}
-   */
-  async updatePR(prId: string, updates: PRUpdateParams): Promise<void> {
-    try {
-      console.log('Updating PR:', JSON.stringify({ prId, updates }, null, 2));
-      
-      const prRef = doc(getFirestore(app), PR_COLLECTION, prId);
-      
-      // Get current PR data
-      const prSnapshot = await getDoc(prRef);
-      if (!prSnapshot.exists()) {
-        throw new Error('PR not found');
-      }
-      
-      const prData = prSnapshot.data();
-      
-      // Initialize or update approval workflow
-      let approvalWorkflow = prData.approvalWorkflow || {
-        currentApprover: prData.approver || null, // Initialize with current approver
-        approvalHistory: [],
-        lastUpdated: Timestamp.fromDate(new Date())
-      };
-
-      // Check for discrepancies between approver field and approval workflow
-      if (prData.approver && approvalWorkflow.currentApprover && 
-          prData.approver !== approvalWorkflow.currentApprover) {
-        console.warn('PR Service: Discrepancy detected between PR approver and approvalWorkflow', {
-          prId,
-          prApprover: prData.approver,
-          workflowApprover: approvalWorkflow.currentApprover
-        });
-        
-        // Fix the discrepancy by updating workflow to match PR approver (single source of truth)
-        approvalWorkflow.currentApprover = prData.approver;
-        console.log('PR Service: Corrected approvalWorkflow.currentApprover to match PR.approver (single source of truth)');
-      }
-      
-      // If approver is being updated, update the workflow and add to history
-      if (updates.approver) {
-        const newApproverId = updates.approver;
-        const currentApproverId = prData.approver; // Use PR.approver as source of truth
-        
-        console.log('PR Service: Updating approver', {
-          prId,
-          currentApproverId: currentApproverId || 'Not set',
-          newApproverId,
-          previousApprovers: prData.approvers || []
-        });
-        
-        // Add to approval history if the approver is changing
-        if (currentApproverId !== newApproverId) {
-          // Get approver names for better history tracking
-          let previousApproverName = 'Unknown';
-          let newApproverName = 'Unknown';
-          
-          // Try to get approver names from users collection
-          try {
-            // Get previous approver name if available
-            if (currentApproverId) {
-              const prevApproverRef = doc(getFirestore(app), 'users', currentApproverId);
-              const prevApproverSnap = await getDoc(prevApproverRef);
-              if (prevApproverSnap.exists()) {
-                const userData = prevApproverSnap.data();
-                previousApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
-              }
-            }
-            
-            // Get new approver name
-            const newApproverRef = doc(getFirestore(app), 'users', newApproverId);
-            const newApproverSnap = await getDoc(newApproverRef);
-            if (newApproverSnap.exists()) {
-              const userData = newApproverSnap.data();
-              newApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
-            }
-          } catch (error) {
-            console.warn('Could not fetch approver names:', error);
-            // Continue with unknown names
-          }
-          
-          const newHistoryItem = {
-            approverId: newApproverId,
-            timestamp: new Date().toISOString(),
-            approved: false,
-            notes: typeof updates.notes === 'string' 
-              ? updates.notes 
-              : `Approver changed from ${previousApproverName} to ${newApproverName}`
-          };
-          
-          approvalWorkflow = {
-            ...approvalWorkflow,
-            currentApprover: newApproverId, // Mirror PR.approver in approval workflow
-            approvalHistory: [...approvalWorkflow.approvalHistory, newHistoryItem],
-            lastUpdated: Timestamp.fromDate(new Date())
-          };
-          
-          console.log('PR Service: Added approver change to history', {
-            previousApprover: currentApproverId,
-            previousApproverName,
-            newApprover: newApproverId,
-            newApproverName
-          });
-        } else {
-          // Just update the timestamp if the approver didn't change
-          approvalWorkflow = {
-            ...approvalWorkflow,
-            currentApprover: newApproverId, // Still mirror PR.approver
-            lastUpdated: Timestamp.fromDate(new Date())
-          };
-        }
-      }
-      
-      // Merge updates with current data
-      const finalUpdates = {
-        ...updates,
-        approvalWorkflow,
-        updatedAt: Timestamp.fromDate(new Date()),
-        isUrgent: updates.isUrgent ?? prData.isUrgent ?? false
-      };
-      
-      console.log('Final updates:', JSON.stringify(finalUpdates, null, 2));
-      
-      // Filter out undefined values which Firestore doesn't support
-      const cleanedUpdates = Object.entries(finalUpdates).reduce((acc, [key, value]) => {
-        // Skip undefined values
-        if (value !== undefined) {
-          acc[key] = value;
-        } else {
-          console.log(`Removing undefined field from update: ${key}`);
-        }
-        return acc;
-      }, {} as Record<string, any>);
-      
-      await updateDoc(prRef, cleanedUpdates);
-    } catch (error) {
-      console.error('Error updating PR:', JSON.stringify(error, null, 2));
-      throw error;
-    }
-  },
-
-  /**
-   * Updates multiple purchase requests
-   * @param {string[]} prIds - IDs of the purchase requests to update
-   * @param {PRUpdateParams} updates - Updated purchase request data
-   * @returns {Promise<void>}
-   */
-  async updatePRs(prIds: string[], updates: PRUpdateParams): Promise<void> {
-    try {
-      console.log('Updating PRs:', JSON.stringify({ prIds, updates }, null, 2));
-      
-      const batch = writeBatch(getFirestore(app));
-      
-      // Get all PR refs and current data
-      const prRefs = await Promise.all(prIds.map(async (prId) => {
-        const ref = doc(getFirestore(app), PR_COLLECTION, prId);
-        const snapshot = await getDoc(ref);
-        if (!snapshot.exists()) {
-          throw new Error(`PR not found: ${prId}`);
-        }
-        return { ref, data: snapshot.data() };
-      }));
-      
-      // Add updates to batch
-      prRefs.forEach(({ ref, data }) => {
-        const finalUpdates = {
-          ...updates,
-          updatedAt: Timestamp.fromDate(new Date()),
-          isUrgent: updates.isUrgent ?? data.isUrgent ?? false
-        };
-        
-        // Filter out undefined values which Firestore doesn't support
-        const cleanedUpdates = Object.entries(finalUpdates).reduce((acc, [key, value]) => {
-          // Skip undefined values
-          if (value !== undefined) {
-            acc[key] = value;
-          } else {
-            console.log(`Removing undefined field from update: ${key}`);
-          }
-          return acc;
-        }, {} as Record<string, any>);
-        
-        batch.update(ref, cleanedUpdates);
-      });
-      
-      // Commit all updates
-      await batch.commit();
-      
-      console.log('Successfully updated PRs:', JSON.stringify(prIds, null, 2));
-    } catch (error) {
-      console.error('Error updating PRs:', JSON.stringify(error, null, 2));
-      throw error;
-    }
-  },
-
-  /**
-   * Get PRs for a specific user in an organization
-   * @param userId User ID
-   * @param organization Organization name
-   * @param filterToUser Optional, if true only show PRs created by or assigned to the user
-   */
-  async getUserPRs(userId: string, organization: string, filterToUser: boolean = false): Promise<PRRequest[]> {
-    try {
-      console.log('PR Service: Fetching PRs:', { userId, organization, filterToUser });
-      
-      // Get user permissions from auth
-      const firebaseUser = auth.currentUser;
-      if (!firebaseUser) {
-        throw new Error('User not authenticated');
-      }
-      
-      // Map Firebase user to UserReference
-      const userRef = mapFirebaseUserToUserReference(firebaseUser);
-      if (!userRef) {
-        throw new Error('Failed to map user data');
-      }
-
-      // Get user details and permission level
-      const userDoc = await getDoc(doc(getFirestore(app), 'users', userId));
-      if (!userDoc.exists()) {
-        console.error('User document not found:', userId);
-        return [];
-      }
-
-      const userData = userDoc.data();
-      console.log('User data loaded:', { userId, permissionLevel: userData?.permissionLevel });
-
-      // If filterToUser is true, show only PRs created by or assigned to the user
-      // This applies to ALL users, regardless of permission level
-      if (filterToUser) {
-        console.log('Filtering to user PRs and approvals');
-        
-        // We need to do multiple queries and combine results
-        const [createdPRs, assignedPRs, workflowPRs] = await Promise.all([
-          // Query for PRs created by user
-          getDocs(query(
-            collection(getFirestore(app), PR_COLLECTION),
-            where('organization', '==', organization),
-            where('createdBy.id', '==', userId)
-          )),
-          // Query for PRs where user is in approvers array
-          getDocs(query(
-            collection(getFirestore(app), PR_COLLECTION),
-            where('organization', '==', organization),
-            where('approvers', 'array-contains', userId)
-          )),
-          // Query for PRs where user is the workflow approver
-          getDocs(query(
-            collection(getFirestore(app), PR_COLLECTION),
-            where('organization', '==', organization),
-            where('workflow.procurementReview.approver.id', '==', userId)
-          ))
-        ]);
-
-        // Combine results, removing duplicates by PR ID
-        const prMap = new Map();
-        [...createdPRs.docs, ...assignedPRs.docs, ...workflowPRs.docs].forEach(doc => {
-          if (!prMap.has(doc.id)) {
-            const data = doc.data();
-            prMap.set(doc.id, {
-              id: doc.id,
-              ...convertTimestamps(data)
-            });
-          }
-        });
-
-        // Convert map to array and sort
-        const prs = Array.from(prMap.values()) as PRRequest[];
-        return prs.sort((a, b) => {
-          if (a.isUrgent !== b.isUrgent) {
-            return a.isUrgent ? -1 : 1;
-          }
-          return (b.createdAt || '').localeCompare(a.createdAt || '');
-        });
-      }
-
-      // If not filtering to user, show all PRs in the organization
-      console.log('Showing all PRs');
-      const q = query(
-        collection(getFirestore(app), PR_COLLECTION),
-        where('organization', '==', organization)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      console.log('PR Service: Found PRs:', {
-        count: querySnapshot.size,
-        organization,
-        prs: querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          prNumber: doc.data().prNumber,
-          organization: doc.data().organization,
-          status: doc.data().status,
-          createdBy: doc.data().createdBy
-        }))
-      });
-
-      // Convert to array and sort
-      const prs = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...convertTimestamps(data)
-        };
-      });
-
-      return prs.sort((a, b) => {
-        if (a.isUrgent !== b.isUrgent) {
-          return a.isUrgent ? -1 : 1;
-        }
-        return (b.createdAt || '').localeCompare(a.createdAt || '');
-      });
-    } catch (error) {
-      console.error('Error fetching user PRs:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Retrieves pending approvals for a given approver
-   * @param {string} approverId - ID of the approver
-   * @param {string} organization - Organization name
-   * @returns {Promise<PRRequest[]>} List of pending approvals for the approver
-   */
-  getPendingApprovals: async (approverId: string, organization?: string): Promise<PRRequest[]> => {
-    try {
-      console.log('PR Service: Fetching pending approvals:', { approverId, organization });
-      
-      // Build query conditions
-      const conditions: any[] = [
-        where('status', '==', PRStatus.SUBMITTED),
-        where('approver', '==', approverId)
-      ];
-      
-      // Add organization filter if provided
-      if (organization) {
-        conditions.push(where('organization', '==', organization));
-      }
-      
-      const q = query(collection(getFirestore(app), PR_COLLECTION), ...conditions);
-      const querySnapshot = await getDocs(q);
-      
-      console.log('PR Service: Found pending approvals:', {
-        count: querySnapshot.size,
-        organization,
-        prs: querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          prNumber: doc.data().prNumber,
-          organization: doc.data().organization
-        }))
-      });
-      
-      // Convert to array and sort
-      const prs = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...convertTimestamps(doc.data())
-      })) as PRRequest[];
-
-      // Sort by urgency first, then by creation date
-      return prs.sort((a, b) => {
-        if (a.isUrgent !== b.isUrgent) {
-          return a.isUrgent ? -1 : 1;
-        }
-        return (b.createdAt || '').localeCompare(a.createdAt || '');
-      });
-    } catch (error) {
-      console.error('Error fetching pending approvals:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Updates the status of a purchase request
-   * @param {string} prId - ID of the purchase request
-   * @param {PRStatus} status - New status of the purchase request
-   * @param {string} notes - Optional notes about the status change
-   * @param {User | UserReference} user - User who updated the status
-   * @returns {Promise<void>}
-   */
-  async updatePRStatus(
-    prId: string, 
-    newStatus: PRStatus,
-    notes?: string,
-    user?: User | UserReference
-  ): Promise<void> {
-    try {
-      const prRef = doc(getFirestore(app), PR_COLLECTION, prId);
-      const prDoc = await getDoc(prRef);
-
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
-      }
-
-      const prData = prDoc.data();
-      const oldStatus = prData.status;
-
-      // Check permissions for status change
-      if (!user) {
-        throw new Error('User is required to update PR status');
-      }
-
-      // Only procurement (level 2,3) can move POs between statuses
-      const isProcurement = user.permissionLevel === 2 || user.permissionLevel === 3;
-      const isPO = prData.type === 'PO' || oldStatus === PRStatus.ORDERED || oldStatus === PRStatus.PARTIALLY_RECEIVED;
-      
-      if (isPO && !isProcurement) {
-        throw new Error('Only procurement team members can update PO status');
-      }
-
-      // Only requestor can cancel their own PR
-      if (newStatus === PRStatus.CANCELED) {
-        const isRequestor = user.id === prData.requestor?.id;
-        if (!isRequestor && !isProcurement) {
-          throw new Error('Only the requestor or procurement team can cancel a PR');
-        }
-      }
-
-      // Only procurement can push to approval
-      if (newStatus === PRStatus.PENDING_APPROVAL && !isProcurement) {
-        throw new Error('Only procurement team members can push PRs to approval');
-      }
-
-      // Only approver or procurement can move from PENDING_APPROVAL to IN_QUEUE
-      if (oldStatus === PRStatus.PENDING_APPROVAL && newStatus === PRStatus.IN_QUEUE) {
-        const isApprover = prData.approver === user.id;
-        
-        if (!isApprover && !isProcurement) {
-          throw new Error('Only the current approver or procurement team can return a PR to queue');
-        }
-      }
-
-      let updates: any = {
-        status: newStatus,
-        lastModifiedBy: user?.email || 'system@1pwrafrica.com',
-        lastModifiedAt: serverTimestamp(),
-      };
-
-      if (oldStatus === PRStatus.IN_QUEUE && newStatus === PRStatus.PENDING_APPROVAL && prData.type === 'PR') {
-        updates.type = 'PO';
-        console.log('Converting PR to PO:', { prId, oldStatus, newStatus });
-      }
-
-      // Create workflow history entry
-      const workflowEntry = {
-        type: 'STATUS_CHANGE',
-        fromStatus: oldStatus,
-        toStatus: newStatus,
-        step: newStatus,
-        timestamp: Timestamp.now(),
-        user: {
-          id: user?.id || 'system',
-          email: user?.email || 'system@1pwrafrica.com',
-          name: user?.firstName && user?.lastName 
-            ? `${user.firstName} ${user.lastName}`
-            : user?.email?.split('@')[0] || 'System'
-        },
-        notes: notes || ''
-      };
-
-      console.log('PR status updated:', {
-        prId,
-        oldStatus,
-        newStatus,
-        workflowEntry,
-        user: user?.email,
-        type: updates.type || prData.type
-      });
-      
-      // Special handling for DRAFT to SUBMITTED transition to ensure approver is set
-      if (oldStatus === PRStatus.DRAFT && newStatus === PRStatus.SUBMITTED) {
-        // Ensure approvalWorkflow structure exists
-        let approvalWorkflow = prData.approvalWorkflow || {
-          currentApprover: null,
-          approvalHistory: [],
-          lastUpdated: Timestamp.fromDate(new Date())
-        };
-        
-        // Ensure approvalWorkflow.currentApprover mirrors PR.approver (source of truth)
-        if (approvalWorkflow.currentApprover !== prData.approver) {
-          console.log('Synchronizing approvalWorkflow.currentApprover with PR.approver:', {
-            prId,
-            prApprover: prData.approver || 'Not set',
-            workflowApprover: approvalWorkflow.currentApprover || 'Not set'
-          });
-          
-          approvalWorkflow.currentApprover = prData.approver;
-          updates.approvalWorkflow = approvalWorkflow;
-        }
-        
-        // Make sure submittedAt is set
-        updates.submittedAt = Timestamp.now();
-      }
-
-      // Update PR status and add to workflow history
-      updates.workflowHistory = arrayUnion(workflowEntry);
-      await updateDoc(prRef, updates);
-
-      // Reload the PR with updated data for notification
-      const updatedPrDoc = await getDoc(prRef);
-      const updatedPrData = updatedPrDoc.data();
-      
-      // Send notification if we have the updated PR data
-      if (updatedPrData) {
-        await notificationService.createNotification(
-          {
-            id: prId,
-            ...updatedPrData,
-            prNumber: updatedPrData.prNumber,
-            organization: updatedPrData.organization || '',
-            department: updatedPrData.department || '',
-            projectCategory: updatedPrData.projectCategory || '',
-            description: updatedPrData.description || '',
-            site: updatedPrData.site || '',
-            expenseType: updatedPrData.expenseType || '',
-            estimatedAmount: updatedPrData.estimatedAmount || 0,
-            currency: updatedPrData.currency || '',
-            requiredDate: updatedPrData.requiredDate || '',
-            requestorId: updatedPrData.requestorId || '',
-            requestorEmail: updatedPrData.requestorEmail || '',
-            requestor: updatedPrData.requestor || { id: '', email: '' },
-            lineItems: updatedPrData.lineItems || []
-          } as unknown as PRRequest,
-          oldStatus,
-          newStatus,
-          user,
-          notes || ''
-        );
-      } else {
-        console.error(`Failed to send notification: Could not retrieve updated PR data for PR ${prId}`);
-      }
-    } catch (error) {
-      console.error('Error updating PR status:', error);
-      throw new Error(`Failed to update PR status: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  },
-
-  /**
-   * Deletes a purchase request
-   * @param {string} prId - ID of the purchase request to delete
-   * @returns {Promise<void>}
-   */
-  async deletePR(prId: string): Promise<void> {
-    try {
-      // Get PR data to get line item IDs
-      const prRef = doc(getFirestore(app), PR_COLLECTION, prId);
-      const prDoc = await getDoc(prRef);
-      
-      if (!prDoc.exists()) {
-        console.log(`PR ${prId} not found, nothing to delete`);
-        return;
-      }
-      
-      const pr = {
-        id: prId,
-        ...prDoc.data()
-      } as PRRequest;
-
-      // Delete line item attachments
-      if (pr.lineItems && pr.lineItems.length > 0) {
-        await Promise.all(pr.lineItems.map(async (lineItem: LineItem) => {
-          if (lineItem.attachments && lineItem.attachments.length > 0) {
-            await Promise.all(lineItem.attachments.map(async (file) => {
-              if (file.url && typeof file.url === 'string') {
-                try {
-                  await StorageService.deleteFile(file.url);
-                  console.log('Deleted line item attachment:', file.url);
-                } catch (attachmentError) {
-                  console.error('Error deleting line item attachment:', 
-                    JSON.stringify({
-                      url: file.url,
-                      error: attachmentError instanceof Error ? attachmentError.message : String(attachmentError)
-                    }, null, 2)
-                  );
-                }
-              } else {
-                console.error('Invalid file URL:', JSON.stringify(file.url, null, 2));
-              }
-            }));
-          }
-        }));
-      }
-
-      // Delete PR document
-      await deleteDoc(doc(getFirestore(app), PR_COLLECTION, prId));
-      console.log(`PR ${prId} deleted successfully`);
-    } catch (error) {
-      console.error('Error deleting PR:', error instanceof Error ? error.message : String(error));
-      throw new Error(`Failed to delete PR: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  },
-
-  /**
-   * Retrieves a purchase request by ID or PR number
-   * @param {string} prId - ID or PR number of the purchase request
-   * @returns {Promise<PRRequest | null>} Purchase request data or null if not found
-   */
-  async getPR(prId: string): Promise<PRRequest | null> {
-    try {
-      // First try to get PR by ID
-      let prRef = doc(getFirestore(app), PR_COLLECTION, prId);
-      let prDoc = await getDoc(prRef);
-
-      if (!prDoc.exists()) {
-        // If not found by ID, try to find by PR number
-        const q = query(
-          collection(getFirestore(app), PR_COLLECTION),
-          where('prNumber', '==', prId)
-        );
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          prDoc = querySnapshot.docs[0];
-          prId = prDoc.id;
-        } else {
-          return null;
-        }
-      }
-
-      let prData = {
-        id: prId,
-        ...prDoc.data(),
-        workflowHistory: prDoc.data()?.workflowHistory || [],
-        statusHistory: prDoc.data()?.statusHistory || []
-      } as unknown as PRRequest;
-
-      // Initialize approver if missing
-      if (!prData.approver) {
-        console.log("No approver assigned to PR");
-        console.log("Checking for approver - PR data:", {
-          approver: prData.approver || 'Not set',
-          approvalWorkflow: prData.approvalWorkflow ? 
-            `currentApprover: ${prData.approvalWorkflow.currentApprover}` : 'Not set'
-        });
-        
-        // If no approver is assigned but we have an approval workflow with a current approver,
-        // use that as the approver for backward compatibility
-        if (prData.approvalWorkflow?.currentApprover) {
-          prData.approver = prData.approvalWorkflow.currentApprover;
-          console.log('Using approval workflow current approver:', prData.approver);
-        }
-      }
-
-      // Convert timestamps to ISO strings
-      return convertTimestamps(prData) as PRRequest;
-    } catch (error) {
-      console.error('Error getting PR:', JSON.stringify(error, null, 2));
-      throw error;
-    }
-  },
-
-  /**
-   * Deletes a quote from a PR
-   * @param {string} prId - ID of the PR
-   * @param {string} quoteId - ID of the quote to delete
-   * @returns {Promise<void>}
-   */
-  async deleteQuote(prId: string, quoteId: string): Promise<void> {
-    try {
-      if (!prId || !quoteId) {
-        throw new Error('PR ID and Quote ID are required');
-      }
-
-      const db = getFirestore(app);
-      if (!db) {
-        throw new Error('Firestore instance not available');
-      }
-
-      const prRef = doc(db, PR_COLLECTION, prId);
-      const prDoc = await getDoc(prRef);
-      
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
-      }
-
-      const pr = prDoc.data() as PRRequest;
-      if (pr.status !== PRStatus.IN_QUEUE) {
-        throw new Error('Quotes can only be deleted when PR is in queue');
-      }
-
-      // Ensure quotes array exists and is properly typed
-      const quotes: Quote[] = Array.isArray(pr.quotes) ? pr.quotes : [];
-      
-      // Filter out the quote to delete
-      const updatedQuotes: Quote[] = quotes.filter(q => q && q.id !== quoteId);
-
-      // Create a timestamp manually to avoid any undefined issues
-      const timestamp = Timestamp.now();
-      
-      // Update the document with the filtered quotes array
-      await updateDoc(prRef, {
-        quotes: updatedQuotes,
-        updatedAt: timestamp
-      });
-
-      console.log('Quote deleted successfully:', { prId, quoteId });
-    } catch (error) {
-      console.error('Error deleting quote:', error instanceof Error ? error.message : String(error));
-      throw error;
-    }
-  },
-
-  /**
-   * Updates a quote in a PR
-   * @param {string} prId - ID of the PR
-   * @param {Quote} quote - Updated quote data
-   * @returns {Promise<void>}
-   */
-  async updateQuote(prId: string, quote: Quote): Promise<void> {
-    try {
-      // Input validation
-      if (!prId) {
-        throw new Error('PR ID is required');
-      }
-      
-      if (!quote || !quote.id) {
-        throw new Error('Valid quote with ID is required');
-      }
-
-      const db = getFirestore(app);
-      if (!db) {
-        throw new Error('Firestore instance not available');
-      }
-
-      // Get PR document
-      const prRef = doc(db, PR_COLLECTION, prId);
-      const prDoc = await getDoc(prRef);
-      
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
-      }
-
-      // Validate PR status
-      const pr = prDoc.data() as PRRequest;
-      if (pr.status !== PRStatus.IN_QUEUE) {
-        throw new Error('Quotes can only be modified when PR is in queue');
-      }
-
-      // Ensure quotes array exists
-      const quotes: Quote[] = Array.isArray(pr.quotes) ? pr.quotes : [];
-      
-      // Create new quotes array with the updated quote
-      const updatedQuotes: Quote[] = [];
-      let quoteFound = false;
-      
-      for (const q of quotes) {
-        if (q && q.id === quote.id) {
-          updatedQuotes.push(quote);
-          quoteFound = true;
-        } else if (q) {
-          updatedQuotes.push(q);
-        }
-      }
-      
-      // If quote wasn't found, add it
-      if (!quoteFound) {
-        updatedQuotes.push(quote);
-      }
-
-      // Create timestamp for update
-      const timestamp = Timestamp.now();
-
-      // Update the document
-      await updateDoc(prRef, {
-        quotes: updatedQuotes,
-        updatedAt: timestamp
-      });
-
-      console.log('Quote updated successfully:', { prId, quoteId: quote.id });
-    } catch (error) {
-      console.error('Error updating quote:', error instanceof Error ? error.message : String(error));
-      throw error;
-    }
-  },
-
-  /**
-   * Adds a quote to a PR
-   * @param {string} prId - ID of the PR
-   * @param {Quote} quote - Quote data to add
-   * @returns {Promise<void>}
-   */
-  async addQuote(prId: string, quote: Quote): Promise<void> {
-    try {
-      if (!prId) {
-        throw new Error('PR ID is required');
-      }
-      
-      if (!quote || !quote.id) {
-        throw new Error('Valid quote with ID is required');
-      }
-
-      const db = getFirestore(app);
-      if (!db) {
-        throw new Error('Firestore instance not available');
-      }
-
-      const prRef = doc(db, PR_COLLECTION, prId);
-      const prDoc = await getDoc(prRef);
-      
-      if (!prDoc.exists()) {
-        throw new Error('PR not found');
-      }
-
-      const pr = prDoc.data() as PRRequest;
-      if (pr.status !== PRStatus.IN_QUEUE) {
-        throw new Error('Quotes can only be added when PR is in queue');
-      }
-
-      // Create a timestamp manually to avoid any undefined issues
-      const timestamp = Timestamp.now();
-
-      await updateDoc(prRef, {
-        quotes: arrayUnion(quote),
-        updatedAt: timestamp,
-      });
-
-      console.log('Quote added successfully:', { prId, quoteId: quote.id });
-    } catch (error) {
-      console.error('Error adding quote:', error instanceof Error ? error.message : String(error));
-      throw error;
-    }
-  },
-
-  /**
-   * Fetches organization-specific rules
-   * @param {string} organizationId - ID of the organization
-   * @param {number} amount - Amount to check against rules
-   * @returns {Promise<Rule[]>} Organization rules array
-   */
-  async getRuleForOrganization(organizationId: string, amount?: number): Promise<Rule[]> {
-    try {
-      const db = getFirestore(app);
-      const rulesRef = collection(db, 'referenceData_rules');
-      
-      // Convert organization ID to lowercase format
-      const normalizedOrgId = organizationId.toLowerCase().replace(/\s+/g, '_');
-      
-      // Get all rules for the organization
-      const q = query(rulesRef, where('organizationId', '==', normalizedOrgId));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        console.warn(`No rules found for organization: ${organizationId} (normalized: ${normalizedOrgId})`);
-        return []; // Return empty array to indicate no rules
-      }
-
-      // Convert all documents to Rule objects
-      const rules: Rule[] = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        // Use the default PR_AMOUNT_THRESHOLDS as fallback
-        const adminThreshold = PR_AMOUNT_THRESHOLDS.ADMIN_APPROVAL;
-        
-        return {
-          id: doc.id,
-          type: data.threshold <= (data.adminThreshold || adminThreshold) ? 'RULE_1' : 'RULE_2', // Set type based on threshold
-          number: data.number || '1',
-          description: data.description || '',
-          threshold: Number(data.threshold) || 0,
-          // Only include currency if it exists and makes sense for this rule type
-          ...(data.currency && { currency: data.currency }),
-          active: data.active ?? true,
-          organization: data.organization || {
-            id: normalizedOrgId,
-            name: organizationId
-          },
-          organizationId: data.organizationId || normalizedOrgId,
-          approverThresholds: {
-            procurement: data.approverThresholds?.procurement || 100000,
-            financeAdmin: data.approverThresholds?.financeAdmin || 500000,
-            ceo: data.approverThresholds?.ceo || null
-          },
-          quoteRequirements: {
-            aboveThreshold: data.quoteRequirements?.aboveThreshold || 3,
-            belowThreshold: {
-              approved: data.quoteRequirements?.belowThreshold?.approved || 1,
-              default: data.quoteRequirements?.belowThreshold?.default || 1
-            }
-          },
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString()
-        };
-      });
-
-      // Sort rules by threshold in ascending order
-      rules.sort((a, b) => a.threshold - b.threshold);
-
-      // Log the rules we're returning
-      console.log('Returning rules:', {
-        organizationId,
-        normalizedOrgId,
-        rulesCount: rules.length,
-        rules: rules.map(r => ({
-          id: r.id,
-          type: r.type,
-          threshold: r.threshold,
-          currency: r.currency
-        }))
-      });
-
-      return rules;
-    } catch (error) {
-      console.error('Error fetching organization rules:', error instanceof Error ? error.message : String(error));
-      throw new Error('Failed to fetch organization rules');
-    }
-  },
-  /**
-   * Gets the assigned approver for a PR
-   * @param pr PR to get approver for
-   * @returns Promise<User | null> User object of the approver, or null if none found or inactive
-   */
-  async getApproverForPR(pr: PRRequest): Promise<User | null> {
-    try {
-      // pr.approver is the single source of truth for the designated approver
-      if (!pr.approver) {
-        console.warn("No approver assigned to PR");
-        return null;
-      }
-
-      console.log("PR Service: Getting assigned approver for PR with data:", {
-        id: pr.id,
-        prNumber: pr.prNumber,
-        approver: pr.approver,
-        approvalWorkflow: pr.approvalWorkflow ? 
-          `currentApprover: ${pr.approvalWorkflow.currentApprover}` : "Not set"
-      });
-
-      // Check for discrepancy between approver and approvalWorkflow.currentApprover
-      if (pr.approvalWorkflow?.currentApprover && pr.approver !== pr.approvalWorkflow.currentApprover) {
-        console.warn("PR Service: Discrepancy detected between PR approver and approvalWorkflow", {
-          prId: pr.id,
-          prApprover: pr.approver,
-          workflowApprover: pr.approvalWorkflow.currentApprover
-        });
-      }
-
-      const db = getFirestore(app);
-      const userRef = doc(db, "users", pr.approver);
-      const userSnap = await getDoc(userRef);
-      
-      if (userSnap.exists()) {
-        const user = { id: userSnap.id, ...userSnap.data() } as User;
-        if (user.isActive !== false) {
-          console.log("PR Service: Found assigned approver:", {
-            id: user.id,
-            name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-            permissionLevel: user.permissionLevel
-          });
-          return user;
-        } else {
-          console.warn(`Assigned approver ${pr.approver} is inactive`);
-          return null;
-        }
-      } else {
-        console.warn(`Assigned approver ${pr.approver} not found`);
-        return null;
-      }
-    } catch (error) {
-      console.error("Error getting approver for PR:", error instanceof Error ? error.message : String(error));
+export async function getPR(prId: string): Promise<PRRequest | null> {
+  logger.info(`Fetching PR with ID: ${prId}`);
+  if (!prId) {
+    logger.warn('getPR called with no prId.');
+    return null;
+  }
+
+  try {
+    const prDocRef = doc(db, PR_COLLECTION, prId);
+    const docSnap = await getDoc(prDocRef);
+
+    if (!docSnap.exists()) {
+      logger.warn(`PR with ID ${prId} not found.`);
       return null;
     }
-  },
-  /**
-   * Updates the approver for a PR
-   * @param {string} prId - PR ID
-   * @param {string} approverId - New approver ID
-   * @param {string} notes - Notes about the approver change
-   * @returns {Promise<void>}
-   */
-  async updateApprover(prId: string, approverId: string, notes: string = 'Approver reassigned'): Promise<void> {
+
+    const data = docSnap.data();
+    const pr: PRRequest = {
+      id: docSnap.id,
+      prNumber: data.prNumber || `TEMP-${docSnap.id.substring(0,6)}`,
+      organization: data.organization,
+      department: data.department,
+      projectCategory: data.projectCategory,
+      site: data.site,
+      description: data.description,
+      status: data.status as PRStatus,
+      expenseType: data.expenseType,
+      estimatedAmount: data.estimatedAmount || 0,
+      currency: data.currency,
+      totalAmount: data.totalAmount || 0,
+      requestor: data.requestor as UserReference,
+      requestorId: data.requestorId,
+      requestorEmail: data.requestorEmail,
+      submittedBy: data.submittedBy,
+      approver: data.approver, 
+      requiredDate: safeTimestampToISO(data.requiredDate) || '', 
+      createdAt: safeTimestampToISO(data.createdAt) || new Date().toISOString(),
+      updatedAt: safeTimestampToISO(data.updatedAt) || new Date().toISOString(),
+      lineItems: (data.lineItems || []).map((item: any): LineItem => ({ ...item })),
+      quotes: data.quotes || [],
+      attachments: data.attachments || [],
+      history: (data.history || []).map((item: any): HistoryItem => ({
+          ...item,
+          timestamp: safeTimestampToISO(item.timestamp) || new Date().toISOString(), 
+      })),
+      approvalWorkflow: { 
+          ...data.approvalWorkflow,
+          lastUpdated: safeTimestampToISO(data.approvalWorkflow?.lastUpdated),
+          approvalHistory: (data.approvalWorkflow?.approvalHistory || []).map((item: any) => ({
+              ...item,
+              timestamp: safeTimestampToISO(item.timestamp),
+          })),
+      },
+      statusHistory: (data.statusHistory || []).map((item: any): StatusHistoryItem => ({
+          ...item,
+          timestamp: safeTimestampToISO(item.timestamp),
+      })),
+      isUrgent: data.isUrgent || false,
+      metrics: data.metrics || undefined, 
+    };
+    logger.info(`Successfully fetched PR with ID: ${prId}`);
+    return pr;
+
+  } catch (error) {
+    logger.error(`Failed to fetch PR with ID ${prId}:`, error);
+    throw new Error(`Failed to fetch purchase request: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Updates the status of a PR and adds a status history record.
+ * @param prId - The ID of the PR to update.
+ * @param status - The new status.
+ * @param notes - Optional notes for the history record.
+ * @param user - The user performing the action.
+ * @returns A promise that resolves when the update is complete.
+ */
+export async function updatePRStatus(
+  prId: string, 
+  status: PRStatus, 
+  notes?: string, 
+  user?: UserReference 
+): Promise<void> {
+    logger.info(`Updating status for PR ${prId} to ${status} by user ${user?.id || 'System'}`);
+    if (!prId || !status || !user) {
+        const missing = [!prId && 'prId', !status && 'status', !user && 'user'].filter(Boolean).join(', ');
+        logger.error(`updatePRStatus called with missing arguments: ${missing}`);
+        throw new Error(`Missing required arguments for status update: ${missing}`);
+    }
+
     try {
-      console.log('Updating approver:', { prId, approverId, notes });
-      
-      // Get current PR data
-      const prRef = doc(getFirestore(app), PR_COLLECTION, prId);
-      const prSnap = await getDoc(prRef);
-      
-      if (!prSnap.exists()) {
-        throw new Error(`PR not found: ${prId}`);
-      }
-      
-      const prData = prSnap.data() as PRRequest;
-      const currentApproverId = prData.approver;
-      
-      // Get approver names for better history tracking
-      let previousApproverName = 'Unknown';
-      let newApproverName = 'Unknown';
-      
-      // Try to get approver names from users collection
-      try {
-        // Get previous approver name if available
-        if (currentApproverId) {
-          const prevApproverRef = doc(getFirestore(app), 'users', currentApproverId);
-          const prevApproverSnap = await getDoc(prevApproverRef);
-          if (prevApproverSnap.exists()) {
-            const userData = prevApproverSnap.data();
-            previousApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
-          }
+        const prDocRef = doc(db, PR_COLLECTION, prId);
+        
+        // Fetch current PR to get existing status history
+        const currentPRSnap = await getDoc(prDocRef);
+        if (!currentPRSnap.exists()) {
+            throw new Error(`PR with ID ${prId} not found for status update.`);
+        }
+        const currentData = currentPRSnap.data();
+        // Use statusHistory array
+        const currentStatusHistory: StatusHistoryItem[] = currentData.statusHistory || []; 
+
+        // Create new status history item using the renamed function
+        const statusHistoryEntry = createStatusHistoryItem(status, user, notes);
+
+        // Prepare update data
+        const updateData: PRUpdateData = {
+            status: status,
+            // Append to statusHistory
+            statusHistory: [...currentStatusHistory, statusHistoryEntry], 
+            updatedAt: serverTimestamp(), 
+        };
+        
+        // If status indicates final approval or rejection, potentially update workflow
+        if (status === PRStatus.APPROVED || status === PRStatus.REJECTED) {
+           // Add logic here if workflow state needs specific updates on final states
+           // e.g., update approvalWorkflow.currentApprover to null or set a final timestamp
+        }
+
+        await updateDoc(prDocRef, updateData);
+        logger.info(`Successfully updated status for PR ${prId} to ${status}`);
+        
+        // Add notification creation logic here if needed upon status change
+        // Example: await createNotificationForStatusChange(prId, status, user, currentData);
+
+    } catch (error) {
+        logger.error(`Failed to update status for PR ${prId}:`, error);
+        throw new Error(`Failed to update PR status: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Updates arbitrary fields of a PR document (except status, which should use updatePRStatus).
+ * @param prId - The ID of the PR to update.
+ * @param updateData - An object containing the fields to update.
+ * @returns A promise that resolves when the update is complete.
+ */
+export async function updatePR(prId: string, updateData: Partial<PRRequest>): Promise<void> {
+  logger.info(`Updating PR ${prId} with data:`, updateData);
+  if (!prId || !updateData || Object.keys(updateData).length === 0) {
+    logger.error('updatePR called with invalid arguments.');
+    throw new Error('Missing required arguments for PR update.');
+  }
+  try {
+    const prDocRef = doc(db, PR_COLLECTION, prId);
+    // Remove status if present (should use updatePRStatus for status updates)
+    if ('status' in updateData) {
+      delete (updateData as any).status;
+    }
+    await updateDoc(prDocRef, { ...updateData, updatedAt: serverTimestamp() });
+    logger.info(`Successfully updated PR ${prId}`);
+  } catch (error) {
+    logger.error(`Failed to update PR ${prId}:`, error);
+    throw new Error(`Failed to update PR: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Finds the relevant approval rule for a given organization and amount.
+ * @param organization - The organization name or ID.
+ * @param amount - The estimated or total amount of the PR.
+ * @returns A promise resolving to the matching ApprovalRule or null.
+ */
+export async function getRuleForOrganization(
+    organization: string, 
+    amount: number
+): Promise<ApprovalRule | null> {
+    logger.info(`Fetching approval rule for org: ${organization}, amount: ${amount}`);
+    if (!organization) {
+        logger.warn('getRuleForOrganization called with missing organization.');
+        return null;
+    }
+
+    try {
+        const rulesCollectionRef = collection(db, APPROVAL_RULES_COLLECTION);
+        
+        // Query for rules matching the organization, where amount is >= minAmount,
+        // ordered by minAmount descending to get the highest applicable rule first.
+        const q = query(
+            rulesCollectionRef, 
+            where('organization', '==', organization),
+            where('minAmount', '<=', amount),
+            orderBy('minAmount', 'desc'), 
+            limit(1) 
+        );
+
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            logger.warn(`No applicable approval rule found for org ${organization} and amount ${amount}.`);
+            return null;
+        }
+
+        const docSnap = querySnapshot.docs[0];
+        const ruleData = docSnap.data();
+        
+        const rule: ApprovalRule = {
+            id: docSnap.id,
+            organization: ruleData.organization,
+            minAmount: ruleData.minAmount,
+            approverLevel: ruleData.approverLevel, 
+            // Map other fields...
+        };
+
+        logger.info(`Found matching approval rule ID: ${rule.id} with level ${rule.approverLevel}`);
+        return rule;
+
+    } catch (error) {
+        logger.error(`Failed to fetch approval rule for org ${organization}:`, error);
+        throw new Error(`Failed to fetch approval rule: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Creates a new Purchase Request.
+ * Automatically assigns PR number and sets initial status.
+ * @param prData - Data for the new PR, excluding id, prNumber, createdAt, updatedAt.
+ * @returns A promise that resolves with the new PR's ID and number.
+ */
+export async function createPR(
+  prData: PRCreateData
+): Promise<{ prId: string; prNumber: string }> {
+   logger.info('Attempting to create PR with data:', prData);
+   if (!prData || !prData.requestorId) {
+     logger.error('createPR called with invalid prData or missing requestorId.');
+     throw new Error('Invalid PR data provided.');
+   }
+
+   try {
+     const prNumber = await generatePRNumber(prData.organization || 'UNK'); // Pass organization
+
+     const finalPRData: Omit<PRRequest, 'id'> = {
+       ...prData,
+       prNumber,
+       status: PRStatus.SUBMITTED,
+       totalAmount: prData.estimatedAmount, // Add totalAmount, using estimatedAmount initially
+       createdAt: new Date().toISOString(), // Set server-side or consistent client-side
+       updatedAt: new Date().toISOString(),
+       history: [], // Initialize history
+       statusHistory: [], // Initialize status history
+       // approvalWorkflow initialization might be needed here
+     };
+
+     // Use addDoc to create a new document with an auto-generated ID
+     const docRef = await addDoc(collection(db, PR_COLLECTION), finalPRData);
+     logger.info(`Successfully created PR ${prNumber} with ID ${docRef.id}`);
+     return { prId: docRef.id, prNumber: prNumber };
+
+   } catch (error) {
+     logger.error('Failed to create PR:', error);
+     throw new Error(`Failed to create purchase request: ${error instanceof Error ? error.message : String(error)}`);
+   }
+}
+
+/**
+ * Fetches all PRs for a specific user, optionally filtered by organization.
+ * @param userId - The ID of the user whose PRs to fetch.
+ * @param organization - Optional organization name to filter by.
+ * @param showOnlyMyPRs - If true, only show PRs where the user is the requestor.
+ * @returns A promise that resolves with an array of PRs.
+ */
+export async function getUserPRs(
+    userId: string, 
+    organization?: string, 
+    showOnlyMyPRs: boolean = true
+): Promise<PRRequest[]> {
+    logger.info(`Fetching PRs for user ${userId}, org: ${organization}, onlyMine: ${showOnlyMyPRs}`);
+    if (!userId) {
+        logger.error('getUserPRs called without userId');
+        throw new Error('User ID is required to fetch PRs.');
+    }
+
+    try {
+        const prCollectionRef = collection(db, PR_COLLECTION);
+        const constraints: QueryConstraint[] = [];
+
+        if (showOnlyMyPRs) {
+            constraints.push(where('requestorId', '==', userId));
+        } else {
+            // If not only showing my PRs, maybe fetch all PRs the user can *see*?
+            // This might involve checking roles/permissions or if they are an approver.
+            // For now, let's assume it means all PRs in their org if org is provided,
+            // or all PRs if no org is provided (requires appropriate Firestore rules).
+            // If showing all PRs user can *act on* is needed, more complex logic is required.
+            logger.warn('Fetching non-owned PRs - current logic might need refinement based on visibility rules.');
+            // Example: Fetching all PRs (adjust constraints based on actual requirements)
+             if (organization) {
+                 constraints.push(where('organization', '==', organization));
+             } 
+            // If no organization and not showOnlyMyPRs, fetch all? Might be too broad.
+            // Consider adding permission checks here or ensuring Firestore rules handle this.
         }
         
-        // Get new approver name
-        const newApproverRef = doc(getFirestore(app), 'users', approverId);
-        const newApproverSnap = await getDoc(newApproverRef);
-        if (newApproverSnap.exists()) {
-          const userData = newApproverSnap.data();
-          newApproverName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
+        if (organization && constraints.length === 0) { // Add org filter if not added by showOnlyMyPRs logic
+           constraints.push(where('organization', '==', organization));
         }
-      } catch (error) {
-        console.warn('Could not fetch approver names:', error);
-        // Continue with unknown names
-      }
-      
-      console.log('PR Service: Adding approver change to history', {
-        previousApprover: currentApproverId,
-        previousApproverName,
-        newApprover: approverId,
-        newApproverName
-      });
-      
-      // Update approver and approval workflow
-      const updates: Partial<PRRequest> = {
-        approver: approverId, // Single source of truth for the designated approver
-        updatedAt: new Date().toISOString(),
-        approvalWorkflow: {
-          currentApprover: approverId, // Mirror of pr.approver
-          approvalHistory: [
-            ...(prData.approvalWorkflow?.approvalHistory || []),
-            {
-              approverId,
-              timestamp: new Date().toISOString(),
-              approved: false,
-              notes: notes === 'Approver reassigned' 
-                ? `Approver changed from ${previousApproverName} to ${newApproverName}`
-                : notes
-            }
-          ],
-          lastUpdated: new Date().toISOString()
-        }
-      };
-      
-      // Filter out undefined values which Firestore doesn't support
-      const cleanedUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
-        // Skip undefined values
-        if (value !== undefined) {
-          acc[key] = value;
-        } else {
-          console.log(`Removing undefined field from update: ${key}`);
-        }
-        return acc;
-      }, {} as Record<string, any>);
-      
-      await updateDoc(prRef, cleanedUpdates);
-      console.log('Approver updated successfully:', { prId, approverId });
+
+        constraints.push(orderBy('createdAt', 'desc')); // Order by creation date
+
+        const q = query(prCollectionRef, ...constraints);
+        const querySnapshot = await getDocs(q);
+
+        const prs: PRRequest[] = [];
+        querySnapshot.forEach((docSnapshot) => {
+            const data = docSnapshot.data();
+            prs.push({
+                id: docSnapshot.id,
+                ...data,
+                createdAt: safeTimestampToISO(data.createdAt),
+                updatedAt: safeTimestampToISO(data.updatedAt),
+                requiredDate: safeTimestampToISO(data.requiredDate),
+                lastModifiedAt: safeTimestampToISO(data.lastModifiedAt), // Ensure lastModifiedAt is serializable
+                // Ensure nested timestamps are also converted
+                history: (data.history || []).map((item: any): HistoryItem => ({
+                    ...item,
+                    timestamp: safeTimestampToISO(item.timestamp),
+                })),
+                statusHistory: (data.statusHistory || []).map((item: any): StatusHistoryItem => ({
+                    ...item,
+                    timestamp: safeTimestampToISO(item.timestamp),
+                })),
+                approvalWorkflow: data.approvalWorkflow ? {
+                    ...data.approvalWorkflow,
+                    lastUpdated: safeTimestampToISO(data.approvalWorkflow.lastUpdated),
+                    approvalHistory: (data.approvalWorkflow.approvalHistory || []).map((item: any): ApprovalHistoryItem => ({
+                      ...item,
+                      timestamp: safeTimestampToISO(item.timestamp),
+                  })),
+                } : undefined,
+            } as PRRequest);
+        });
+
+        logger.info(`Fetched ${prs.length} PRs for user ${userId}`);
+        return prs;
+
     } catch (error) {
-      console.error('Error updating approver:', error instanceof Error ? error.message : String(error));
-      throw error;
+        logger.error(`Failed to fetch PRs for user ${userId}:`, error);
+        throw new Error(`Failed to retrieve purchase requests: ${error instanceof Error ? error.message : String(error)}`);
     }
+}
+
+/**
+ * Generates a new PR number based on the organization and current date.
+ * @param organization - The organization code.
+ * @returns The next PR number
+ */
+export async function generatePRNumber(organization: string = 'UNK'): Promise<string> {
+  const orgPrefix = organization.substring(0, 3).toUpperCase();
+  const currentYear = new Date().getFullYear();
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+  const prNumber = `${orgPrefix}-${currentYear}${String(new Date().getMonth() + 1).padStart(2, '0')}-${randomSuffix}`;
+  logger.info(`Generated PR Number: ${prNumber}`);
+  return prNumber;
+}
+
+/**
+ * Deletes a Purchase Request.
+ * @param prId - The ID of the PR to delete.
+ * @returns A promise that resolves when the deletion is complete.
+ */
+export async function deletePR(prId: string): Promise<void> {
+  logger.info(`Attempting to delete PR ${prId}`);
+  if (!prId) {
+      logger.error('deletePR called without prId');
+      throw new Error('PR ID is required to delete.');
   }
+  try {
+      const prDocRef = doc(db, PR_COLLECTION, prId);
+      await deleteDoc(prDocRef); 
+      logger.info(`Successfully deleted PR ${prId}`);
+  } catch (error) {
+      logger.error(`Failed to delete PR ${prId}:`, error);
+      throw new Error(`Failed to delete purchase request: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+// Aggregated service object for legacy compatibility
+export const prService = {
+  getPR,
+  updatePR,
+  updatePRStatus,
+  getRuleForOrganization,
+  createPR,
+  getUserPRs,
+  generatePRNumber,
+  deletePR
 };

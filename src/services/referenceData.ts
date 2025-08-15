@@ -201,6 +201,10 @@ class ReferenceDataService {
   async getSites(organization: string): Promise<ReferenceData[]> {
     return this.getItemsByType('sites', organization);
   }
+  
+  async getVendors(organization?: string): Promise<ReferenceData[]> {
+    return this.getItemsByType('vendors', organization || '');
+  }
 
   async getExpenseTypes(organization: string): Promise<ReferenceData[]> {
     return this.getItemsByType('expenseTypes', organization);
@@ -208,10 +212,6 @@ class ReferenceDataService {
 
   async getVehicles(organization: string): Promise<ReferenceData[]> {
     return this.getItemsByType('vehicles', organization);
-  }
-
-  async getVendors(): Promise<ReferenceData[]> {
-    return this.getItemsByType('vendors');
   }
 
   async getOrganizations(): Promise<ReferenceData[]> {

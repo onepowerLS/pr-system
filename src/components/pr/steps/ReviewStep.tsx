@@ -31,63 +31,72 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import DownloadIcon from '@mui/icons-material/Download';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 
+// Define the Approver interface since it's not exported from NewPRForm
+interface Approver {
+  id: string;
+  name: string;
+  department?: string;
+  email?: string;
+}
+
 interface ReviewStepProps {
   formState: FormState;
-  setFormState: React.Dispatch<React.SetStateAction<FormState>>;
+  setFormState?: React.Dispatch<React.SetStateAction<FormState>>;
   vendors: ReferenceDataItem[];
   projectCategories: ReferenceDataItem[];
   sites: ReferenceDataItem[];
-  approvers: Array<{
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    department?: string;
-    approvalLimit?: number;
-  }>;
+  approvers: Approver[];
   loading: boolean;
   onSubmit: () => void;
 }
 
 export const ReviewStep: React.FC<ReviewStepProps> = ({
   formState,
-  approvers,
+  setFormState,
   vendors,
   projectCategories,
   sites,
+  approvers,
   loading,
   onSubmit
 }) => {
   // Get approver names for display
   const getApproverNames = () => {
-    return formState.approvers
-      .map(id => {
-        const approver = approvers.find(a => a.id === id);
-        return approver ? `${approver.name} (${approver.department})` : '';
-      })
-      .filter(Boolean)
-      .join(', ');
+    if (!formState.approvers || formState.approvers.length === 0) return "Not specified";
+    
+    // Map through the approver IDs and find the corresponding approver objects
+    const approverNames = formState.approvers.map(approverId => {
+      const approverObj = approvers.find(a => a.id === approverId);
+      return approverObj ? `${approverObj.name}${approverObj.department ? ` (${approverObj.department})` : ''}` : approverId;
+    });
+    
+    return approverNames.join(', ');
   };
 
   // Get vendor name for display
   const getVendorName = () => {
-    if (!formState.preferredVendor) return null;
-    const vendor = vendors.find(v => v.id === formState.preferredVendor);
-    return vendor ? vendor.name : '';
+    if (!formState.preferredVendor) {
+      return formState.customVendorName || "Not specified";
+    }
+    
+    const vendorObj = vendors.find(v => v.id === formState.preferredVendor);
+    return vendorObj ? vendorObj.name : "Not specified";
   };
 
   // Get project category name for display
   const getProjectCategoryName = () => {
-    if (!formState.projectCategory) return '';
-    const category = projectCategories.find(c => c.id === formState.projectCategory);
-    return category ? category.name : '';
+    if (!formState.projectCategory) return 'Not specified';
+    
+    const categoryObj = projectCategories.find(pc => pc.id === formState.projectCategory);
+    return categoryObj ? categoryObj.name : formState.projectCategory;
   };
 
   // Get site name for display
   const getSiteName = () => {
-    if (!formState.site) return '';
-    const site = sites.find(s => s.id === formState.site);
-    return site ? site.name : '';
+    if (!formState.site) return 'Not specified';
+    
+    const siteObj = sites.find(s => s.id === formState.site);
+    return siteObj ? siteObj.name : formState.site;
   };
 
   // Format file size
@@ -100,8 +109,15 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   };
 
   // Helper functions to format display values
-  const formatDisplayValue = (value: string): string => {
+  const formatDisplayValue = (value: any): string => {
     if (!value) return 'Not specified';
+    
+    if (typeof value === 'object' && value !== null && 'name' in value) {
+      return value.name || 'Not specified';
+    }
+    
+    if (typeof value !== 'string') return String(value);
+    
     // Convert snake_case or lowercase to Title Case
     return value
       .split('_')
@@ -109,13 +125,27 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       .join(' ');
   };
 
-  const getDisplayName = (item: { id: string; name: string } | undefined): string => {
+  const getDisplayName = (item: any): string => {
     if (!item) return 'Not specified';
-    return item.name || formatDisplayValue(item.id);
+    
+    if (typeof item === 'object' && item !== null && 'name' in item) {
+      return item.name;
+    }
+    
+    if (typeof item === 'string') return item;
+    
+    return 'Not specified';
   };
 
   const handleViewFile = (file: any) => {
-    window.open(file.url, '_blank');
+    if (file && file.url) {
+      window.open(file.url, '_blank');
+    }
+  };
+
+  // Get user name from the form state
+  const getUserName = () => {
+    return formState.requestor || 'Current User';
   };
 
   return (
@@ -140,42 +170,19 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           </Typography>
           <Box sx={{ mt: 2 }}>
             <Typography variant="body1">
-              <strong>Name:</strong> {formState.requestor}
+              <strong>Name:</strong> {getUserName()}
             </Typography>
             <Typography variant="body1">
-              <strong>Email:</strong> {formState.email}
-            </Typography>
-            <Typography variant="body1">
-              <strong>Organization:</strong> {getDisplayName(formState.organization)}
+              <strong>Email:</strong> {formState.email || 'Not specified'}
             </Typography>
             <Typography variant="body1">
               <strong>Department:</strong> {formatDisplayValue(formState.department)}
             </Typography>
-          </Box>
-        </Paper>
-      </Grid>
-
-      {/* Project Details */}
-      <Grid item xs={12} md={6}>
-        <Paper sx={{ p: 3, height: '100%' }}>
-          <Typography variant="h6" gutterBottom>
-            Project Details
-          </Typography>
-          <Box sx={{ mt: 2 }}>
             <Typography variant="body1">
-              <strong>Project Category:</strong> {formatDisplayValue(formState.projectCategory)}
+              <strong>Project Category:</strong> {getProjectCategoryName()}
             </Typography>
             <Typography variant="body1">
-              <strong>Description:</strong> {formState.description}
-            </Typography>
-            <Typography variant="body1">
-              <strong>Site:</strong> {formatDisplayValue(formState.site)}
-            </Typography>
-            <Typography variant="body1">
-              <strong>Required Date:</strong> {formState.requiredDate}
-            </Typography>
-            <Typography variant="body1">
-              <strong>Urgency Level:</strong> {formState.isUrgent ? 'Urgent' : 'Normal'}
+              <strong>Site:</strong> {getSiteName()}
             </Typography>
             {formState.isUrgent && (
               <Box sx={{ mt: 1 }}>
@@ -199,21 +206,21 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           </Typography>
           <Box sx={{ mt: 2 }}>
             <Typography variant="body1">
-              <strong>Estimated Amount:</strong> {formState.estimatedAmount} {formState.currency}
+              <strong>Estimated Amount:</strong> {formState.estimatedAmount} {formatDisplayValue(formState.currency)}
             </Typography>
             <Typography variant="body1">
               <strong>Expense Type:</strong> {formatDisplayValue(formState.expenseType)}
             </Typography>
-            {formState.expenseType === 'Vehicle' && (
+            {formState.expenseType === '4' && (
               <Typography variant="body1">
                 <strong>Vehicle:</strong> {getDisplayName(formState.vehicle)}
               </Typography>
             )}
             <Typography variant="body1">
-              <strong>Preferred Vendor:</strong> {getVendorName() || 'Not specified'}
+              <strong>Preferred Vendor:</strong> {getVendorName()}
             </Typography>
             <Typography variant="body1">
-              <strong>Currency:</strong> {formState.currency}
+              <strong>Currency:</strong> {formatDisplayValue(formState.currency)}
             </Typography>
           </Box>
         </Paper>
@@ -258,14 +265,19 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
                     <TableCell>{item.uom}</TableCell>
                     <TableCell>{item.notes}</TableCell>
                     <TableCell>
-                      {item.attachments?.map((file, fileIndex) => (
-                        <Box key={fileIndex} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body2">{file.name}</Typography>
-                          <IconButton size="small" onClick={() => handleViewFile(file)}>
-                            <VisibilityIcon fontSize="small" />
-                          </IconButton>
+                      {item.attachments && item.attachments.length > 0 ? (
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          {item.attachments.map((file, fileIndex) => (
+                            <Tooltip key={fileIndex} title={file.name}>
+                              <IconButton size="small" onClick={() => handleViewFile(file)}>
+                                <AttachFileIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          ))}
                         </Box>
-                      ))}
+                      ) : (
+                        'None'
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -292,5 +304,3 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     </Grid>
   );
 };
-
-export default ReviewStep;

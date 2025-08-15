@@ -41,6 +41,7 @@ export class ResubmittedNotificationHandler {
       
       // Generate email content
       const emailContent = generateResubmittedEmail({
+        prId: pr.id,
         pr,
         prNumber,
         baseUrl,
@@ -60,14 +61,28 @@ export class ResubmittedNotificationHandler {
       const notificationId = await this.logNotification(pr.id, recipients);
 
       // Send email via cloud function
-      const sendPRNotification = httpsCallable(functions, 'sendPRNotification');
-      await sendPRNotification({
+      const sendPRNotificationV2 = httpsCallable(functions, 'sendPRNotificationV2');
+      
+      // Extract requestor name from user (who is resubmitting) or PR document
+      const requestorName = user?.name || 
+        (user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}`.trim() : null) ||
+        pr.requestor?.name || 
+        (pr.requestor?.firstName && pr.requestor?.lastName ? `${pr.requestor.firstName} ${pr.requestor.lastName}`.trim() : null) ||
+        (typeof pr.requestor === 'string' ? pr.requestor : null) ||
+        'Unknown Requestor';
+      
+      await sendPRNotificationV2({
         notification: {
-          type: 'STATUS_CHANGE',
+          type: 'PR_RESUBMITTED',
           prId: pr.id,
           prNumber,
           oldStatus: 'REVISION_REQUIRED',
-          newStatus: 'RESUBMITTED'
+          newStatus: 'RESUBMITTED',
+          metadata: {
+            isUrgent: pr.isUrgent,
+            requestorEmail: pr.requestorEmail || pr.requestor?.email,
+            requestorName: requestorName
+          }
         },
         recipients,
         emailBody: {
@@ -84,9 +99,9 @@ export class ResubmittedNotificationHandler {
         updatedAt: serverTimestamp()
       });
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating PR resubmitted notification:', error);
-      throw new Error(`Failed to create PR resubmitted notification: ${error.message}`);
+      throw new Error(`Failed to create PR resubmitted notification: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

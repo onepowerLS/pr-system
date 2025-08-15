@@ -5,28 +5,28 @@ import { styles } from './styles';
 
 export function generateResubmittedEmail(context: NotificationContext): EmailContent {
   const { pr, prNumber, user, notes, baseUrl, isUrgent } = context;
-  const prUrl = `${baseUrl}/pr/${pr.id}`;
+  const prUrl = `${baseUrl}/pr/${pr?.id || context.prId}`;
   
   const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Has Been Resubmitted`;
   
   const requestorDetails = [
-    ['Name', pr.requestor?.firstName && pr.requestor?.lastName ? 
+    ['Name', pr?.requestor?.firstName && pr?.requestor?.lastName ? 
       `${pr.requestor.firstName} ${pr.requestor.lastName}` : 'Not specified'],
-    ['Email', pr.requestor?.email || 'Not specified'],
-    ['Department', pr.requestor?.department || 'Not specified'],
-    ['Site', pr.site || 'Not specified'],
+    ['Email', pr?.requestor?.email || 'Not specified'],
+    ['Department', pr?.requestor?.department || 'Not specified'],
+    ['Site', pr?.site || 'Not specified'],
   ];
 
   const prSummary = [
     ['PR Number', prNumber || 'Not specified'],
-    ['Category', pr.category || 'Not specified'],
-    ['Expense Type', pr.expenseType || 'Not specified'],
-    ['Total Amount', pr.estimatedAmount ? pr.estimatedAmount.toLocaleString('en-US', { 
+    ['Category', pr?.category || 'Not specified'],
+    ['Expense Type', pr?.expenseType || 'Not specified'],
+    ['Total Amount', pr?.estimatedAmount ? pr.estimatedAmount.toLocaleString('en-US', { 
       style: 'currency', 
-      currency: pr.currency || 'USD' 
+      currency: pr?.currency || 'USD' 
     }) : 'Not specified'],
-    ['Vendor', pr.preferredVendor || 'Not specified'],
-    ['Required Date', pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'Not specified'],
+    ['Vendor', pr?.preferredVendor || 'Not specified'],
+    ['Required Date', pr?.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'Not specified'],
   ];
 
   const html = `
@@ -48,12 +48,12 @@ export function generateResubmittedEmail(context: NotificationContext): EmailCon
 
       <div style="${styles.section}">
         <h3 style="${styles.subHeader}">Requestor Information</h3>
-        ${generateTable(requestorDetails)}
+        ${generateTable(requestorDetails.map(item => ({ label: item[0], value: item[1] })))}
       </div>
 
       <div style="${styles.section}">
         <h3 style="${styles.subHeader}">PR Details</h3>
-        ${generateTable(prSummary)}
+        ${generateTable(prSummary.map(item => ({ label: item[0], value: item[1] })))}
       </div>
 
       <div style="${styles.buttonContainer}">
@@ -79,10 +79,10 @@ View PR: ${prUrl}
 
   return {
     headers: generateEmailHeaders({
-      prId: pr.id,
-      prNumber,
+      to: pr?.requestorEmail || '',
       subject,
-      notificationType: 'pr-resubmitted'
+      prNumber,
+      isHtml: true
     }),
     subject,
     html,

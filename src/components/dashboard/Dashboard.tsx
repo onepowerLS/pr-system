@@ -20,9 +20,9 @@ import {
 } from '@mui/material';
 import { Add as AddIcon, Delete as DeleteIcon, PriorityHigh as PriorityHighIcon } from '@mui/icons-material';
 import { RootState } from '../../store';
-import { prService } from '../../services/pr';
+import { getUserPRs, deletePR } from '@/services/pr';
 import { setUserPRs, setPendingApprovals, setLoading, removePR } from '../../store/slices/prSlice';
-import { UserRole, PRStatus } from '../../types/pr';
+import { PRStatus, PRRequest, StatusHistoryItem } from '../../types/pr';
 import { OrganizationSelector } from '../common/OrganizationSelector';
 import { MetricsPanel } from './MetricsPanel';
 import { ConfirmationDialog } from '../common/ConfirmationDialog';
@@ -31,7 +31,7 @@ import { referenceDataService } from '../../services/referenceData';
 
 interface StatusHistoryEntry {
   status: PRStatus;
-  timestamp: string | number | Date;
+  timestamp: string | number | Date | { seconds: number; nanoseconds?: number };
   updatedBy: {
     id: string;
     name: string;
@@ -39,8 +39,9 @@ interface StatusHistoryEntry {
   };
 }
 
+// Extend the PRRequest interface for our component
 interface PRWithHistory extends PRRequest {
-  statusHistory?: StatusHistoryEntry[];
+  statusHistory?: StatusHistoryItem[];
 }
 
 const UrgentTableRow = styled(TableRow)(({ theme }) => ({
@@ -61,13 +62,13 @@ export const Dashboard = () => {
   const [selectedOrg, setSelectedOrg] = useState<{ id: string; name: string } | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<PRStatus>(PRStatus.SUBMITTED);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [prToDelete, setPrToDelete] = useState<string | null>(null);
+  const [prToDelete, setPrToDelete] = useState<PRRequest | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    setUserId(user?.id);
+    setUserId(user?.id || null);
   }, [user]);
 
   // Load PRs when organization is selected or filter changes
@@ -81,7 +82,7 @@ export const Dashboard = () => {
       console.log('Dashboard: Loading data for user:', { userId, organization: selectedOrg, showOnlyMyPRs });
       try {
         setIsLoading(true);
-        const prs = await prService.getUserPRs(userId, selectedOrg.name, showOnlyMyPRs);
+        const prs = await getUserPRs(userId, selectedOrg.name, showOnlyMyPRs);
         dispatch(setUserPRs(prs));
       } catch (error) {
         console.error('Error loading PRs:', error);
@@ -111,9 +112,9 @@ export const Dashboard = () => {
 
         // Find matching organization
         const matchingOrg = orgs.find(org => {
-          const orgId = org.id.toLowerCase();
-          const orgCode = org.code.toLowerCase();
-          const orgName = org.name.toLowerCase();
+          const orgId = org.id?.toLowerCase() || '';
+          const orgCode = org.code?.toLowerCase() || '';
+          const orgName = org.name?.toLowerCase() || '';
           const userOrgId = user.organization.toLowerCase();
 
           console.log('Comparing organization:', { orgId, orgCode, orgName, userOrgId });
@@ -217,7 +218,7 @@ export const Dashboard = () => {
 
   // Get status counts for the sidebar
   const getStatusCounts = () => {
-    const counts: { [key in PRStatus]: number } = {
+    const counts: { [key in PRStatus]?: number } = {
       [PRStatus.SUBMITTED]: 0,
       [PRStatus.RESUBMITTED]: 0,
       [PRStatus.IN_QUEUE]: 0,
@@ -228,12 +229,13 @@ export const Dashboard = () => {
       [PRStatus.COMPLETED]: 0,
       [PRStatus.REVISION_REQUIRED]: 0,
       [PRStatus.CANCELED]: 0,
-      [PRStatus.REJECTED]: 0
+      [PRStatus.REJECTED]: 0,
+      [PRStatus.DRAFT]: 0
     };
 
     userPRs.forEach(pr => {
-      if (pr.status in counts) {
-        counts[pr.status]++;
+      if (pr.status in counts && counts[pr.status] !== undefined) {
+        counts[pr.status]!++;
       }
     });
 
@@ -265,7 +267,8 @@ export const Dashboard = () => {
   ];
 
   // Status display names and colors
-  const statusConfig: { [key in PRStatus]: { label: string; color: string } } = {
+  const statusConfig: { [key in PRStatus]?: { label: string; color: string } } = {
+    [PRStatus.DRAFT]: { label: 'Draft', color: '#9E9E9E' },
     [PRStatus.SUBMITTED]: { label: 'Submitted', color: '#4CAF50' },
     [PRStatus.RESUBMITTED]: { label: 'Resubmitted', color: '#8BC34A' },
     [PRStatus.IN_QUEUE]: { label: 'In Queue', color: '#2196F3' },
@@ -293,7 +296,23 @@ export const Dashboard = () => {
       if (statusChange?.timestamp) {
         // Handle both Date objects and Firestore Timestamps
         const timestamp = statusChange.timestamp;
-        endDate = timestamp instanceof Date ? timestamp : new Date(timestamp.seconds * 1000);
+        if (typeof timestamp === 'object' && timestamp !== null) {
+          if ('getTime' in timestamp) {
+            // It's a Date object
+            endDate = timestamp as Date;
+          } else if ('seconds' in timestamp) {
+            // It's a Firestore Timestamp-like object
+            endDate = new Date((timestamp as any).seconds * 1000);
+          } else {
+            // Default fallback
+            endDate = new Date();
+          }
+        } else if (typeof timestamp === 'string') {
+          endDate = new Date(timestamp);
+        } else {
+          // Default fallback
+          endDate = new Date();
+        }
       } else {
         endDate = new Date();
       }
@@ -338,9 +357,20 @@ export const Dashboard = () => {
     }
 
     try {
-      // Handle ISO string timestamps (converted from Firestore Timestamp)
-      const date = new Date(statusChange.timestamp);
-      return date.toLocaleDateString();
+      // Handle different timestamp formats
+      const timestamp = statusChange.timestamp;
+      if (typeof timestamp === 'object' && timestamp !== null) {
+        if ('getTime' in timestamp) {
+          // It's a Date object
+          return (timestamp as Date).toLocaleDateString();
+        } else if ('seconds' in timestamp) {
+          // It's a Firestore Timestamp-like object
+          return new Date((timestamp as any).seconds * 1000).toLocaleDateString();
+        }
+      } else if (typeof timestamp === 'string') {
+        return new Date(timestamp).toLocaleDateString();
+      }
+      return '-';
     } catch (error) {
       console.error('Error formatting status change date:', error);
       return '-';
@@ -349,10 +379,10 @@ export const Dashboard = () => {
 
   const statusPRs = getStatusPRs(selectedStatus);
 
-  const handleDeleteClick = (event: React.MouseEvent, prId: string) => {
+  const handleDeleteClick = (event: React.MouseEvent, pr: PRRequest) => {
     event.preventDefault();
     event.stopPropagation();
-    setPrToDelete(prId);
+    setPrToDelete(pr);
     setDeleteDialogOpen(true);
   };
 
@@ -360,13 +390,13 @@ export const Dashboard = () => {
     if (!prToDelete) return;
 
     try {
-      await prService.deletePR(prToDelete);
-      dispatch(removePR(prToDelete));
+      await deletePR(prToDelete.id);
+      dispatch(removePR(prToDelete.id));
       setDeleteDialogOpen(false);
       setPrToDelete(null);
+      console.log(`PR ${prToDelete.prNumber || prToDelete.id} deleted successfully.`);
     } catch (error) {
       console.error('Error deleting PR:', error);
-      // You might want to show an error message to the user here
     }
   };
 
@@ -420,12 +450,14 @@ export const Dashboard = () => {
 
             <Box sx={{ mb: 2 }}>
               <Box sx={{ display: 'flex', gap: 1 }}>
-                {Object.values(PRStatus).map((status) => {
+                {Object.values(PRStatus)
+                  .filter(status => status !== PRStatus.DRAFT) // Filter out DRAFT status
+                  .map((status) => {
                   const statusCount = getStatusCounts()[status];
                   return (
                     <Chip
                       key={status}
-                      label={`${statusConfig[status].label} (${statusCount})`}
+                      label={`${statusConfig[status]?.label} (${statusCount})`}
                       color={selectedStatus === status ? 'primary' : 'default'}
                       onClick={() => setSelectedStatus(status)}
                       sx={{ cursor: 'pointer' }}
@@ -481,9 +513,11 @@ export const Dashboard = () => {
                           {pr.requestor ? (
                             typeof pr.requestor === 'string' 
                               ? pr.requestor
-                              : pr.requestor.firstName && pr.requestor.lastName
-                                ? `${pr.requestor.firstName} ${pr.requestor.lastName}`
-                                : pr.requestor.email || 'Unknown'
+                              : pr.requestor.name 
+                                ? pr.requestor.name
+                                : pr.requestor.firstName && pr.requestor.lastName
+                                  ? `${pr.requestor.firstName} ${pr.requestor.lastName}`
+                                  : pr.requestor.name || pr.requestor.email || 'Unknown'
                           ) : 'Unknown'}
                         </TableCell>
                         <TableCell>
@@ -501,7 +535,7 @@ export const Dashboard = () => {
                         )}
                         <TableCell>
                           <IconButton
-                            onClick={(e) => handleDeleteClick(e, pr.id)}
+                            onClick={(e) => handleDeleteClick(e, pr)}
                             size="small"
                           >
                             <DeleteIcon />
@@ -520,7 +554,7 @@ export const Dashboard = () => {
       <ConfirmationDialog
         open={deleteDialogOpen}
         title="Delete PR"
-        content="Are you sure you want to delete this PR? This action cannot be undone."
+        message="Are you sure you want to delete this PR? This action cannot be undone."
         onConfirm={handleDeleteConfirm}
         onCancel={handleDeleteCancel}
       />

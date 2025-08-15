@@ -83,31 +83,25 @@ import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { PRStatus } from '../../types/pr';
 import { RootState } from '../../store/types';
 import { setUserPRs } from '../../store/slices/prSlice';
-import { prService } from '../../services/pr';
 import { referenceDataService } from '../../services/referenceData';
 import { approverService } from '../../services/approver';
-import { ReferenceDataItem } from '../../types/referenceData';
+import { Attachment } from '../../types/pr'; // Import Attachment
+import { ReferenceDataItem } from '../../types/referenceData'; // Re-add import
 import { BasicInformationStep } from './steps/BasicInformationStep';
 import { LineItemsStep } from './steps/LineItemsStep';
 import { ReviewStep } from './steps/ReviewStep';
+import { createPR, getUserPRs } from '../../services/pr'; // Updated import
 
 // Form steps definition
 const steps = ['Basic Information', 'Line Items', 'Review'];
 
 // Type definitions for form data structures
-interface ReferenceDataItem {
-  id: string;
-  name: string;
-  code?: string;
-  active: boolean;
-}
-
 interface LineItem {
   description: string;
   quantity: number;
   uom: string;
   notes: string;
-  attachments: UploadedFile[];
+  attachments: Attachment[]; // Use Attachment type
 }
 
 interface Quote {
@@ -121,7 +115,7 @@ interface Quote {
   contactPhone?: string;
   contactEmail?: string;
   notes?: string;
-  attachments?: UploadedFile[];
+  attachments?: Attachment[]; // Use Attachment type
 }
 
 // Main form state interface
@@ -332,7 +326,9 @@ export const NewPRForm = () => {
         requester: {
           id: user.id,
           name: `${user.firstName} ${user.lastName}`,
-          email: user.email
+          email: user.email,
+          role: user.role,
+          department: formState.department || '' // Use formState department
         }
       }));
     }
@@ -565,6 +561,13 @@ export const NewPRForm = () => {
         });
       }
 
+      // Check required date
+      if (!formState.requiredDate) {
+        console.log('No required date selected');
+        errors.push('Please select a required date');
+        enqueueSnackbar('Please select a required date', { variant: 'error' });
+      }
+
       // Update validation errors state
       setValidationErrors(errors);
       
@@ -691,13 +694,6 @@ export const NewPRForm = () => {
         return false;
       }
 
-      // Check that at least one approver is selected
-      if (!formState.approvers || formState.approvers.length === 0) {
-        console.log('No approvers selected');
-        enqueueSnackbar('Please select at least one approver', { variant: 'error' });
-        return false;
-      }
-
       console.log('All validations passed');
       return true;
     } catch (error) {
@@ -754,7 +750,20 @@ export const NewPRForm = () => {
   };
 
   const handleSubmit = async () => {
-    console.log('Submitting form...', formState);
+    console.log('Form submit triggered');
+    if (!user) {
+      console.error('Cannot submit PR: User is not authenticated.');
+      setError('You must be logged in to submit a Purchase Request.');
+      enqueueSnackbar('Authentication error. Please log in again.', { variant: 'error' });
+      return; // Prevent submission if user is null
+    }
+
+    // Validate form
+    if (!validateForm()) {
+      console.log('Form validation failed');
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
@@ -806,7 +815,7 @@ export const NewPRForm = () => {
           name: formState.requestor,
           email: user.email,
           role: user.role,
-          department: user.department || ''
+          department: formState.department || '' // Use formState department
         },
         organization: formState.organization?.name || '',
         department: formState.department,
@@ -855,15 +864,11 @@ export const NewPRForm = () => {
         }
       }
 
-      if (formState.approvers?.length > 0) {
-        prData.approvers = formState.approvers;
-      }
-
       console.log('Submitting PR data:', prData);
 
       // Create the PR
-      const prId = await prService.createPR(prData);
-      console.log('PR created successfully');
+      const { prId, prNumber } = await createPR(prData); // Removed 'as any' cast
+      console.log('PR created successfully with ID:', prId, 'and Number:', prNumber);
       
       // Show success message
       enqueueSnackbar('Purchase Request submitted successfully!', { 
@@ -874,7 +879,7 @@ export const NewPRForm = () => {
       // Refresh PR data before navigating
       if (user) {
         console.log('Refreshing PR data for user:', user.id);
-        const updatedPRs = await prService.getUserPRs(user.id, formState.organization?.id || '');
+        const updatedPRs = await getUserPRs(user.id, formState.organization?.id || '');
         console.log('Updated PRs:', updatedPRs);
         dispatch(setUserPRs(updatedPRs));
       }

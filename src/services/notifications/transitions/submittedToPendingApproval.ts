@@ -45,23 +45,26 @@ export class SubmittedToPendingApprovalHandler implements StatusTransitionHandle
     // Add requestor to CC - check multiple possible locations for the email
     // First try the requestor object structure
     if (pr.requestor?.email) {
-      recipients.cc.push(pr.requestor.email);
+      recipients.cc?.push(pr.requestor.email);
     } 
     // Then try the requestorEmail field directly
     else if (pr.requestorEmail) {
-      recipients.cc.push(pr.requestorEmail);
+      recipients.cc?.push(pr.requestorEmail);
     }
     
     // Ensure we always have the requestor email
-    if (recipients.cc.length === 0 && pr.requestor) {
+    if (recipients.cc?.length === 0 && pr.requestor) {
       // Last resort - try to extract email from the requestor string if it's an email format
       const requestorString = pr.requestor.toString();
       if (requestorString.includes('@')) {
-        recipients.cc.push(requestorString);
+        recipients.cc?.push(requestorString);
       }
     }
 
     // Add procurement to CC
+    if (!recipients.cc) {
+      recipients.cc = [];
+    }
     recipients.cc.push('procurement@1pwrafrica.com');
 
     // Log the recipients for debugging
@@ -69,8 +72,9 @@ export class SubmittedToPendingApprovalHandler implements StatusTransitionHandle
       to: recipients.to,
       cc: recipients.cc,
       pr: {
-        requestor: pr.requestor,
-        requestorEmail: pr.requestorEmail
+        id: prId,
+        approver: pr.approver,
+        requestor: pr.requestor
       }
     });
 
@@ -78,44 +82,34 @@ export class SubmittedToPendingApprovalHandler implements StatusTransitionHandle
   }
 
   async getEmailContent(context: NotificationContext): Promise<EmailContent> {
-    const { prNumber, user, notes, prId } = context;
-    const userName = user ? `${user.firstName} ${user.lastName}`.trim() : 'System';
+    const { pr } = context;
+    
+    if (!pr) {
+      throw new Error('PR data is missing in notification context');
+    }
+
     const baseUrl = getBaseUrl();
-
-    // Get PR details for the email
-    const prRef = doc(db, 'purchaseRequests', prId);
-    const prDoc = await getDoc(prRef);
-    const pr = prDoc.data();
-
-    const subject = `PR #${prNumber} Ready for Approval`;
-    const text = `PR #${prNumber} is ready for your approval.\n` +
-      `Submitted by: ${pr?.requestor?.name || 'Unknown'}\n` +
-      `Department: ${pr?.department || 'N/A'}\n` +
-      `Amount: ${pr?.estimatedAmount || 0} ${pr?.currency || 'USD'}\n` +
-      (notes ? `Notes: ${notes}\n` : '') +
-      `\nPlease review and approve/reject at: ${baseUrl}/pr/${prId}`;
-
-    const html = `
-      <h2>PR #${prNumber} Ready for Approval</h2>
-      <p>A purchase request requires your approval.</p>
-      <table style="border-collapse: collapse; width: 100%; max-width: 600px; margin: 20px 0;">
-        <tr>
-          <td style="padding: 8px; border: 1px solid #ddd;"><strong>Submitted by:</strong></td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${pr?.requestor?.name || 'Unknown'}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px; border: 1px solid #ddd;"><strong>Department:</strong></td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${pr?.department || 'N/A'}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px; border: 1px solid #ddd;"><strong>Amount:</strong></td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${pr?.estimatedAmount || 0} ${pr?.currency || 'USD'}</td>
-        </tr>
-      </table>
-      ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
-      <p><a href="${baseUrl}/pr/${prId}" style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">Review PR</a></p>
-    `;
-
-    return { subject, text, html };
+    const prViewUrl = `${baseUrl}/pr/${pr.id}`;
+    
+    return {
+      subject: `PR #${pr.prNumber} - Pending Your Approval`,
+      text: `A purchase request requires your approval. PR #${pr.prNumber} has been submitted and is pending your review. Please log in to the system to approve or request revisions: ${prViewUrl}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+          <h2>Purchase Request Pending Approval</h2>
+          <p>Dear Approver,</p>
+          <p>A purchase request requires your approval:</p>
+          <ul>
+            <li><strong>PR Number:</strong> ${pr.prNumber}</li>
+            <li><strong>Requestor:</strong> ${pr.requestor?.name || pr.requestor?.email || 'Unknown'}</li>
+            <li><strong>Department:</strong> ${pr.department || 'Not specified'}</li>
+            <li><strong>Description:</strong> ${pr.description || 'Not provided'}</li>
+            <li><strong>Total Amount:</strong> ${pr.currency || '$'} ${pr.totalAmount?.toFixed(2) || 'Not specified'}</li>
+          </ul>
+          <p>Please <a href="${prViewUrl}">click here</a> to review, approve, or request revisions for this purchase request.</p>
+          <p>Thank you,<br>1PWR System</p>
+        </div>
+      `
+    };
   }
 }
