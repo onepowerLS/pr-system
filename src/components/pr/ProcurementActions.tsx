@@ -148,46 +148,18 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
 
         case 'reject':
           newStatus = PRStatus.REJECTED;
-          await notificationService.handleStatusChange(
-            pr.id || prId,
-            pr.status,
-            newStatus,
-            currentUser,
-            notes || 'PR rejected'
-          );
           break;
 
         case 'revise':
           newStatus = PRStatus.REVISION_REQUIRED;
-          await notificationService.handleStatusChange(
-            pr.id || prId,
-            pr.status,
-            newStatus,
-            currentUser,
-            notes || 'PR requires revision'
-          );
           break;
 
         case 'cancel':
           newStatus = PRStatus.CANCELED;
-          await notificationService.handleStatusChange(
-            pr.id || prId,
-            pr.status,
-            newStatus,
-            currentUser,
-            notes || 'PR canceled by requestor'
-          );
           break;
 
         case 'queue':
           newStatus = PRStatus.IN_QUEUE;
-          await notificationService.handleStatusChange(
-            pr.id || prId,
-            pr.status,
-            newStatus,
-            currentUser,
-            notes || 'PR moved to queue'
-          );
           break;
 
         default:
@@ -200,7 +172,7 @@ export function ProcurementActions({ prId, currentStatus, requestorEmail, curren
         return;
       }
 
-      // Update PR status
+      // Update PR status and send notifications
       await prService.updatePRStatus(prId, newStatus, notes, currentUser);
 
       enqueueSnackbar(`PR status successfully updated to ${newStatus}`, { variant: 'success' });

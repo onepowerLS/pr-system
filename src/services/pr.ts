@@ -256,7 +256,13 @@ export async function updatePR(prId: string, updateData: Partial<PRRequest>): Pr
     if ('status' in updateData) {
       delete (updateData as any).status;
     }
-    await updateDoc(prDocRef, { ...updateData, updatedAt: serverTimestamp() });
+    
+    // Clean undefined values to prevent Firebase errors
+    const cleanedData = Object.fromEntries(
+      Object.entries(updateData).filter(([_, value]) => value !== undefined)
+    );
+    
+    await updateDoc(prDocRef, { ...cleanedData, updatedAt: serverTimestamp() });
     logger.info(`Successfully updated PR ${prId}`);
   } catch (error) {
     logger.error(`Failed to update PR ${prId}:`, error);

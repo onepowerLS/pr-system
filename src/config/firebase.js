@@ -39,7 +39,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
-import { getFunctions } from 'firebase/functions';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getAnalytics } from 'firebase/analytics';
 console.log('=== Firebase Initialization Starting ===');
 // Validate required environment variables
@@ -96,6 +96,17 @@ export const storage = getStorage(app);
 console.log('Firebase storage initialized successfully');
 // Initialize Firebase Functions with the correct region and custom domain
 export const functions = getFunctions(app);
+
+// Connect to local emulator in development
+if (import.meta.env.DEV) {
+    try {
+        connectFunctionsEmulator(functions, 'localhost', 5001);
+        console.log('Connected to Firebase Functions emulator at localhost:5001');
+    } catch (error) {
+        console.warn('Failed to connect to Functions emulator:', error);
+    }
+}
+
 console.log('Firebase functions initialized successfully');
 // Only initialize analytics in production
 export const analytics = import.meta.env.PROD ? getAnalytics(app) : null;

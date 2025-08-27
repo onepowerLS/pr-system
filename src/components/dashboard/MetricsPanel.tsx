@@ -9,44 +9,15 @@ interface MetricsPanelProps {
 export const MetricsPanel = ({ prs }: MetricsPanelProps) => {
   const calculateMetrics = () => {
     const totalPRs = prs.length;
-    console.log('MetricsPanel - PRs:', prs.map(pr => ({
-      id: pr.id,
-      prNumber: pr.prNumber,
-      isUrgent: pr.isUrgent,
-      status: pr.status,
-      createdAt: pr.createdAt
-    })));
-    
     const urgentPRs = prs.filter(pr => Boolean(pr.isUrgent)).length;
-    console.log('MetricsPanel - Urgent PRs count:', {
-      total: totalPRs,
-      urgent: urgentPRs,
-      urgentPRs: prs.filter(pr => Boolean(pr.isUrgent)).map(pr => ({
-        id: pr.id,
-        prNumber: pr.prNumber,
-        isUrgent: pr.isUrgent
-      }))
-    });
     
     // Calculate average days open dynamically
     const totalDaysOpen = prs.reduce((acc, pr) => {
       const daysOpen = calculateDaysOpen(pr.createdAt);
-      console.log('Days open for PR:', {
-        id: pr.id,
-        prNumber: pr.prNumber,
-        createdAt: pr.createdAt,
-        daysOpen
-      });
       return acc + daysOpen;
     }, 0);
     
     const avgDaysOpen = totalPRs > 0 ? totalDaysOpen / totalPRs : 0;
-    
-    console.log('Average days calculation:', {
-      totalPRs,
-      totalDaysOpen,
-      avgDaysOpen
-    });
     
     const overduePRs = prs.filter(pr => pr.metrics?.isOverdue).length;
     const quotesRequired = prs.filter(pr => pr.metrics?.quotesRequired).length;

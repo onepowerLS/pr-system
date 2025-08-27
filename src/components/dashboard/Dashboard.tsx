@@ -183,11 +183,6 @@ export const Dashboard = () => {
     const sortedPRs = statusPRs.sort((a, b) => {
       // First sort by urgency
       if (Boolean(a.isUrgent) !== Boolean(b.isUrgent)) {
-        console.log('Sorting by urgency:', {
-          a: { id: a.id, prNumber: a.prNumber, isUrgent: a.isUrgent },
-          b: { id: b.id, prNumber: b.prNumber, isUrgent: b.isUrgent },
-          result: Boolean(a.isUrgent) ? -1 : 1
-        });
         return Boolean(a.isUrgent) ? -1 : 1;
       }
       
