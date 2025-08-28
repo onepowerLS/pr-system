@@ -13,7 +13,7 @@ import {
   Stack,
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
-import { PRStatus } from '@/types/pr';
+import { PRRequest, PRStatus } from '@/types/pr';
 import { prService } from '@/services/pr';
 import { notificationService } from '@/services/notification';
 import { User } from '@/types/user';
