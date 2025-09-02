@@ -91,7 +91,7 @@ import { BasicInformationStep } from './steps/BasicInformationStep';
 import { LineItemsStep } from './steps/LineItemsStep';
 import { ReviewStep } from './steps/ReviewStep';
 import { createPR, getUserPRs } from '../../services/pr'; // Updated import
-
+import {handleNext} from '../pr/PRView';
 // Form steps definition
 const steps = ['Basic Information', 'Line Items', 'Review'];
 
@@ -353,12 +353,54 @@ export const NewPRForm = () => {
   }, [formState.estimatedAmount]);
 
   // Form navigation handlers
-  const handleNext = useCallback(() => {
-    setActiveStep((prev) => Math.min(prev + 1, steps.length - 1));
-    // Reset validation state when moving to a new step
-    setValidationAttempted(false);
-    setValidationErrors([]);
-  }, [steps.length]);
+  // const handleNext = useCallback(() => {
+  //   setActiveStep((prev) => Math.min(prev + 1, steps.length - 1));
+  //   // Reset validation state when moving to a new step
+  //   setValidationAttempted(false);
+  //   setValidationErrors([]);
+  // }, [steps.length]);
+
+
+
+const handleNext = async () => {
+  try {
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "bokangleqele7@gmail.com" }),
+    });
+    console.log('Response status:', res.status);
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.log('Response text:', text);
+      throw new Error(`HTTP error! Status: ${res.status}`);
+    }
+
+    const data = await res.json();
+    console.log('Response data:', data);
+
+    if (data.success) {
+      console.log("Email sent ");
+      setError(null);
+    } else {
+      console.error("Email failed:", data.error);
+      setError(data.error);
+    }
+  } catch (err) {
+    console.error("Request error:", err);
+      if (err instanceof Error) {
+    setError(err.message);
+  } else {
+    setError(String(err)); 
+  }
+  }
+};
+
+// In your JSX
+{error && <div style={{ color: 'red' }}>{error}</div>}
+
+
 
   const handleBack = useCallback(() => {
     setActiveStep((prev) => Math.max(prev - 1, 0));
@@ -971,7 +1013,7 @@ export const NewPRForm = () => {
             </Button>
 
             {activeStep === steps.length - 1 ? null : (
-              <Button onClick={handleNextStep}>
+              <Button onClick={handleNext}>
                 Next
               </Button>
             )}

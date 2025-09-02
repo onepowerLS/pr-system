@@ -995,13 +995,32 @@ export function PRView() {
   const [activeStep, setActiveStep] = useState(0);
   const steps = ['Basic Information', 'Line Items', 'Quotes'];
 
-  const handleNext = () => {
-    setActiveStep((prevStep) => prevStep + 1);
-  };
+  // const handleNext = () => {
+  //   setActiveStep((prevStep) => prevStep + 1);
+  // };
 
-  const handleBack = () => {
-    setActiveStep((prevStep) => prevStep - 1);
-  };
+          const handleNext = async () => {
+          try {
+            const res = await fetch("http://localhost:3000/api/send-email", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ to: "bokangleqele7@gmail.com" }),
+            });
+
+            const data = await res.json();
+            if (data.success) {
+              console.log("Email sent ");
+            } else {
+              console.error("Email failed:", data.error);
+            }
+          } catch (err) {
+            console.error("Request error:", err);
+          }
+        };
+
+          const handleBack = () => {
+            setActiveStep((prevStep) => prevStep - 1);
+          };
 
   const renderBasicInformation = () => {
     return (
@@ -1615,18 +1634,18 @@ export function PRView() {
     );
   };
 
-  const renderStepContent = () => {
-    switch (activeStep) {
-      case 0:
-        return renderBasicInformation();
-      case 1:
-        return renderLineItems();
-      case 2:
-        return renderQuotes();
-      default:
-        return null;
-    }
-  };
+  // const renderStepContent = () => {
+  //   switch (activeStep) {
+  //     case 0:
+  //       return renderBasicInformation();
+  //     case 1:
+  //       return renderLineItems();
+  //     case 2:
+  //       return renderQuotes();
+  //     default:
+  //       return null;
+  //   }
+  // };
 
   // Load approvers
   const loadApprovers = async () => {
