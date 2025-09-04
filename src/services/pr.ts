@@ -420,12 +420,29 @@ export async function getUserPRs(
             const data = docSnapshot.data();
             prs.push({
                 id: docSnapshot.id,
-                ...data,
-                createdAt: safeTimestampToISO(data.createdAt),
-                updatedAt: safeTimestampToISO(data.updatedAt),
-                requiredDate: safeTimestampToISO(data.requiredDate),
-                lastModifiedAt: safeTimestampToISO(data.lastModifiedAt), // Ensure lastModifiedAt is serializable
-                // Ensure nested timestamps are also converted
+                prNumber: data.prNumber || `TEMP-${docSnapshot.id.substring(0,6)}`,
+                organization: data.organization,
+                department: data.department,
+                projectCategory: data.projectCategory,
+                site: data.site,
+                description: data.description,
+                status: data.status as PRStatus,
+                expenseType: data.expenseType,
+                estimatedAmount: data.estimatedAmount || 0,
+                currency: data.currency,
+                totalAmount: data.totalAmount || 0,
+                requestor: data.requestor as UserReference,
+                requestorId: data.requestorId,
+                requestorEmail: data.requestorEmail,
+                submittedBy: data.submittedBy,
+                approver: data.approver,
+                requiredDate: safeTimestampToISO(data.requiredDate) || '',
+                createdAt: safeTimestampToISO(data.createdAt) || new Date().toISOString(),
+                updatedAt: safeTimestampToISO(data.updatedAt) || new Date().toISOString(),
+                // lastModifiedAt: safeTimestampToISO(data.lastModifiedAt),
+                lineItems: (data.lineItems || []).map((item: any): LineItem => ({ ...item })),
+                quotes: data.quotes || [],
+                attachments: data.attachments || [],
                 history: (data.history || []).map((item: any): HistoryItem => ({
                     ...item,
                     timestamp: safeTimestampToISO(item.timestamp),
@@ -438,11 +455,13 @@ export async function getUserPRs(
                     ...data.approvalWorkflow,
                     lastUpdated: safeTimestampToISO(data.approvalWorkflow.lastUpdated),
                     approvalHistory: (data.approvalWorkflow.approvalHistory || []).map((item: any): ApprovalHistoryItem => ({
-                      ...item,
-                      timestamp: safeTimestampToISO(item.timestamp),
-                  })),
+                        ...item,
+                        timestamp: safeTimestampToISO(item.timestamp),
+                    })),
                 } : undefined,
-            } as PRRequest);
+                isUrgent: data.isUrgent || false,
+                metrics: data.metrics || undefined,
+            });
         });
 
         logger.info(`Fetched ${prs.length} PRs for user ${userId}`);

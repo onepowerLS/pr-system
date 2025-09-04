@@ -101,10 +101,12 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
     });
   };
 
-  const handleApproverChange = (_event: any, value: any) => {
+  const handleApproverChange = (_event: any, selectedApprovers: Array<{ id: string }>) => {
     setFormState(prev => ({
       ...prev,
-      approvers: value.map((approver: any) => approver.id)
+      approvers: selectedApprovers.map(approver => approver.id),
+      // Set the first selected approver as the current approver
+      approver: selectedApprovers[0]?.id || null
     }));
   };
 

@@ -503,21 +503,14 @@ export function PRView() {
       setPr(prData);
 
       // Load requestor details if not already loaded
-      if (prData.requestorId && (!prData.requestor || !prData.requestor.organization)) {
-        try {
-          const requestorData = await auth.getUserDetails(prData.requestorId);
-          console.log('Requestor data loaded:', requestorData);
-          
-          // Update PR with requestor data
-          setPr(prev => ({
-            ...prev,
-            requestor: requestorData,
-            organization: requestorData.organization || prev.organization
-          }));
-        } catch (error) {
-          console.error('Error loading requestor details:', error);
-        }
-      }
+                    if (!prData.requestor && prData.requestorId) {
+                try {
+                  const requestorData = await auth.getUserDetails(prData.requestorId);
+                  prData.requestor = requestorData;
+                } catch (error) {
+                  console.error('Error loading requestor details:', error);
+                }
+              }
 
       try {
         // Get organization from PR or requestor
@@ -559,6 +552,25 @@ export function PRView() {
           });
           if (currentApprover) {
             setSelectedApprover(currentApprover.id);
+            setAssignedApprover(currentApprover);
+            setCurrentApprover(currentApprover);
+          }
+        } else if (prData.approver) {
+          // Fallback to legacy approver field if approval workflow is not set
+          const legacyApprover = approverList.find(a => a.id === prData.approver);
+          if (legacyApprover) {
+            setSelectedApprover(legacyApprover.id);
+            setAssignedApprover(legacyApprover);
+            setCurrentApprover(legacyApprover);
+            
+            // Update the approval workflow if it doesn't exist
+            if (!prData.approvalWorkflow) {
+              prData.approvalWorkflow = {
+                currentApprover: legacyApprover.id,
+                approvalHistory: [],
+                lastUpdated: new Date().toISOString()
+              };
+            }
           }
         }
 
@@ -995,32 +1007,13 @@ export function PRView() {
   const [activeStep, setActiveStep] = useState(0);
   const steps = ['Basic Information', 'Line Items', 'Quotes'];
 
-  // const handleNext = () => {
-  //   setActiveStep((prevStep) => prevStep + 1);
-  // };
+  const handleNext = () => {
+    setActiveStep((prevStep) => prevStep + 1);
+  };
 
-          const handleNext = async () => {
-          try {
-            const res = await fetch("http://localhost:3000/api/send-email", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ to: "bokangleqele7@gmail.com" }),
-            });
-
-            const data = await res.json();
-            if (data.success) {
-              console.log("Email sent ");
-            } else {
-              console.error("Email failed:", data.error);
-            }
-          } catch (err) {
-            console.error("Request error:", err);
-          }
-        };
-
-          const handleBack = () => {
-            setActiveStep((prevStep) => prevStep - 1);
-          };
+  const handleBack = () => {
+    setActiveStep((prevStep) => prevStep - 1);
+  };
 
   const renderBasicInformation = () => {
     return (
@@ -1282,18 +1275,23 @@ export function PRView() {
             <Grid container spacing={2}>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Created By</Typography>
-                <Typography>
-                  {pr?.requestor?.firstName && pr?.requestor?.lastName ? (
-                    `${pr.requestor.firstName} ${pr.requestor.lastName}`
-                  ) : (
-                    console.error('PR requestor not found:', {
-                      prId: pr?.id,
-                      requestorId: pr?.requestorId,
-                      requestorEmail: pr?.requestorEmail
-                    }),
-                    <span style={{ color: 'red' }}>Error loading user details</span>
-                  )}
-                </Typography>
+                    <Typography>
+                      {pr?.requestor?.firstName && pr?.requestor?.lastName
+                        ? `${pr.requestor.firstName} ${pr.requestor.lastName}`
+                        : pr?.requestor?.email
+                          ? pr.requestor.email
+                          : pr?.requestorEmail
+                            ? pr.requestorEmail
+                            : (
+                              console.error('PR requestor not found:', {
+                                prId: pr?.id,
+                                requestorId: pr?.requestorId,
+                                requestorEmail: pr?.requestorEmail
+                              }),
+                              <span style={{ color: 'red' }}>Error loading user details</span>
+                            )
+                      }
+                    </Typography>
               </Grid>
               <Grid item xs={6}>
                 <Typography color="textSecondary">Created Date</Typography>
@@ -1634,58 +1632,33 @@ export function PRView() {
     );
   };
 
-  // const renderStepContent = () => {
-  //   switch (activeStep) {
-  //     case 0:
-  //       return renderBasicInformation();
-  //     case 1:
-  //       return renderLineItems();
-  //     case 2:
-  //       return renderQuotes();
-  //     default:
-  //       return null;
-  //   }
-  // };
-
-  // Load approvers
-  const loadApprovers = async () => {
-    try {
-      console.log('Loading approvers for organization:', pr?.organization);
-      
-      if (!pr?.organization) {
-        console.log('No organization specified');
-        return;
-      }
-
-      const approverList = await approverService.getApprovers(pr.organization);
-      console.log('Loaded approvers:', {
-        count: approverList.length,
-        approvers: approverList.map(a => ({
-          id: a.id,
-          name: a.name,
-          department: a.department,
-          permissionLevel: a.permissionLevel
-        }))
-      });
-      setApprovers(approverList);
-
-      // Set initial selected approver if present
-      if (pr?.approvalWorkflow?.currentApprover) {
-        const currentApprover = approverList.find(a => a.id === pr.approvalWorkflow?.currentApprover);
-        console.log('Setting current approver:', {
-          workflowApproverId: pr.approvalWorkflow.currentApprover,
-          foundApprover: currentApprover,
-          workflow: pr.approvalWorkflow
-        });
-        if (currentApprover) {
-          setSelectedApprover(currentApprover.id);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading approvers:', error);
-      enqueueSnackbar('Error loading approvers', { variant: 'error' });
+  const renderStepContent = () => {
+    switch (activeStep) {
+      case 0:
+        return renderBasicInformation();
+      case 1:
+        return renderLineItems();
+      case 2:
+        return renderQuotes();
+      default:
+        return null;
     }
   };
+
+  // Load approvers
+useEffect(() => {
+  const loadApprover = async () => {
+    if (pr?.approver) {
+      try {
+        const approverData = await auth.getUserDetails(pr.approver);
+        setAssignedApprover(approverData);
+      } catch (error) {
+        console.error('Error loading approver details:', error);
+      }
+    }
+  };
+  loadApprover();
+}, [pr?.approver]);
 
   // Load reference data
   useEffect(() => {
