@@ -31,14 +31,14 @@ import {
   Switch
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon, Visibility, VisibilityOff, Key as KeyIcon } from '@mui/icons-material';
-import { doc, collection, query, where, getDocs, updateDoc, addDoc, deleteDoc, orderBy, setDoc } from 'firebase/firestore';
+import { doc, collection, query, where, getDocs, getDoc, updateDoc, addDoc, deleteDoc, orderBy, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../config/firebase';
 import { User } from '../../types/user';
 import { updateUserEmail, createUser, updateUserPassword } from '../../services/auth';
 import { useSnackbar } from '../../contexts/SnackbarContext';
 import { referenceDataService } from '../../services/referenceData';
-import { ReferenceData } from '../../types/referenceData';
+import { ReferenceDataItem } from '../../types/referenceData';
 
 // Helper function to generate random password
 function generateRandomPassword(): string {
@@ -125,8 +125,8 @@ function PasswordDialog({ open, onClose, onSubmit, userId }: PasswordDialogProps
 export function UserManagement({ isReadOnly }: UserManagementProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [departments, setDepartments] = useState<ReferenceData[]>([]);
-  const [organizations, setOrganizations] = useState<ReferenceData[]>([]);
+  const [departments, setDepartments] = useState<ReferenceDataItem[]>([]);
+  const [organizations, setOrganizations] = useState<ReferenceDataItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDepartmentsLoading, setIsDepartmentsLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -258,35 +258,36 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
   };
 
   // Helper function to find department by name (case insensitive)
-  const findDepartmentByName = (deptName: string): ReferenceData | undefined => {
+  const findDepartmentByName = (deptName: string): ReferenceDataItem | undefined => {
     return departments.find(d => 
       d.name.toLowerCase() === deptName.toLowerCase()
     );
   };
 
   // Helper function to find department by ID
-  const findDepartmentById = (deptId: string): ReferenceData | undefined => {
+  const findDepartmentById = (deptId: string): ReferenceDataItem | undefined => {
     return departments.find(d => d.id === deptId);
   };
 
   // Load departments for a specific organization
-  const loadDepartmentsForOrg = async (organization: string) => {
-    console.log('Loading departments for organization:', organization);
-    setIsDepartmentsLoading(true);
-    
+  const loadDepartmentsForOrg = async (orgId: string) => {
+    if (!orgId) {
+      setDepartments([]);
+      return;
+    }
+
     try {
-      const loadedDepartments = await referenceDataService.getDepartments(organization);
-      console.log('Loaded departments:', loadedDepartments);
-      console.log('Available department values:', loadedDepartments.map(dept => ({
+      setIsDepartmentsLoading(true);
+      const depts = await referenceDataService.getDepartments(orgId);
+      const loadedDepartments: ReferenceDataItem[] = depts.map(dept => ({
         id: dept.id,
         name: dept.name,
-        organization: dept.organization
-      })));
-      
+        description: dept.description || ''
+      }));
       setDepartments(loadedDepartments);
     } catch (error) {
       console.error('Error loading departments:', error);
-      setDepartments([]);
+      showSnackbar('Error loading departments', 'error');
     } finally {
       setIsDepartmentsLoading(false);
     }
@@ -294,9 +295,12 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
 
   const loadOrganizations = async () => {
     try {
-      console.log('Loading organizations...');
-      const loadedOrganizations = await referenceDataService.getOrganizations();
-      console.log('Loaded organizations:', loadedOrganizations);
+      const orgs = await referenceDataService.getOrganizations();
+      const loadedOrganizations: ReferenceDataItem[] = orgs.map(org => ({
+        id: org.id,
+        name: org.name,
+        description: org.description || ''
+      }));
       setOrganizations(loadedOrganizations);
     } catch (error) {
       console.error('Error loading organizations:', error);
@@ -350,7 +354,8 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
     console.log('Editing user:', user);
     
     const normalizedOrg = normalizeOrgId(user.organization);
-    const dept = findDepartmentByName(user.department);
+    // Find the department by name since that's what's stored in the user document
+    const dept = departments.find(d => d.name === user.department);
     
     console.log('Normalized values:', {
       originalOrg: user.organization,
@@ -388,12 +393,21 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
     try {
       setIsLoading(true);
       
-      // If email is being updated, use special function to sync with Firebase Auth
-      if (updatedData.email) {
-        await updateUserEmail(userId, updatedData.email);
+      // Get current user data
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      const currentUserData = userDoc.data() as User;
+      
+      // If email is being updated and it's different from current email
+      if (updatedData.email && updatedData.email !== currentUserData.email) {
+        try {
+          await updateUserEmail(userId, updatedData.email);
+        } catch (error) {
+          console.error('Error updating email:', error);
+          
+        }
       }
 
-      // Update other user data in Firestore
+      // Update user data in Firestore
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, {
         ...updatedData,
@@ -450,15 +464,22 @@ export function UserManagement({ isReadOnly }: UserManagementProps) {
       setIsLoading(true);
       
       if (editingUser) {
+        // Find the department name using the department ID from the form
+        const department = departments.find(d => d.id === formData.department);
+        
+        // Get the permission object to determine the role
+        const permission = permissions.find(p => p.level === formData.permissionLevel);
+        
         await handleUserUpdate(editingUser.id, {
           firstName: formData.firstName,
           lastName: formData.lastName,
           email: formData.email,
-          department: formData.department,
+          department: department ? department.name : formData.department, // Save department name, not ID
           organization: formData.organization,
           additionalOrganizations: formData.additionalOrganizations,
           permissionLevel: formData.permissionLevel,
-          isActive: formData.isActive
+          isActive: formData.isActive,
+          role: permission?.code || 'REQ' // Set role based on permission level or default to 'REQ'
         });
       } else {
         // Create new user
