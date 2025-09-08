@@ -17,6 +17,7 @@ app.post("/api/send-email", async (req, res) => {
     
     const { 
       to, 
+      cc,
       subject, 
       prNumber, 
       requestor, 
@@ -37,6 +38,7 @@ app.post("/api/send-email", async (req, res) => {
     
     const emailParams = {
       to,
+      cc,
       prNumber: prNumber || 'DRAFT',
       requestor: requestor || 'Unknown',
       amount: amount || 0,
@@ -53,6 +55,7 @@ app.post("/api/send-email", async (req, res) => {
     // Generate the email content using our template
     const emailContent = await generatePRApprovalEmail(
       emailParams.to,
+      emailParams.cc,
       emailParams.prNumber,
       emailParams.requestor,
       emailParams.amount,
@@ -70,13 +73,27 @@ app.post("/api/send-email", async (req, res) => {
     }, null, 2));
     
     const emailHtml = emailContent.html;
+    
+    // Log the email details for debugging
+    console.log('Sending email with details:', {
+      to: emailParams.to,
+      cc: emailParams.cc,
+      subject: subject || `New Purchase Request for Approval - ${emailParams.prNumber}`,
+      hasHtml: !!emailHtml,
+      htmlLength: emailHtml?.length
+    });
 
-    await sgMail.send({
+    const msg = {
       from: "noreply@1pwrafrica.com",
       to: to,
-      subject: subject || "New Purchase Request for Approval",
+      cc: cc, // Include CC recipients
+      subject: subject || `New Purchase Request for Approval - ${emailParams.prNumber}`,
       html: emailHtml,
-    });
+    };
+
+    console.log('Email message prepared:', JSON.stringify(msg, null, 2));
+    
+    await sgMail.send(msg);
 
     res.json({ success: true });
   } catch (error: unknown) {

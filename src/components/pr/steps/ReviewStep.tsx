@@ -175,6 +175,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         "/api/send-email",
         {
           to: Approver?.email, // Use approver's email 
+          cc: "bokangleqele9@gmail.com", // to work on it not be hardcoded
           subject: `New Purchase Request for Approval - ${formState.description || 'No Description'}`,
           prNumber: formState.prNumber || 'DRAFT', //to work on the pr number so that it does not return draft
           requestor: getUserName(),
