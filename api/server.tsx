@@ -1,30 +1,80 @@
 import "dotenv/config";
-import * as React from "react";
-import express from "express";
-import sendgrid from "@sendgrid/mail";
-import { renderAsync } from "@react-email/components";
-import { Email } from "./email"; 
+import express from 'express';
+import sgMail from '@sendgrid/mail';
+import { generatePRApprovalEmail } from '../src/services/notifications/templates/newPRSubmitted';
 
 const app = express();
 app.use(express.json());
 
-
 if (!process.env.VITE_SENDGRID_API_KEY) {
   throw new Error("SENDGRID_API_KEY is not set");
 }
-sendgrid.setApiKey(process.env.VITE_SENDGRID_API_KEY);
+sgMail.setApiKey(process.env.VITE_SENDGRID_API_KEY);
 
 app.post("/api/send-email", async (req, res) => {
   try {
-    const { to } = req.body;
+    console.log('Received email request with body:', JSON.stringify(req.body, null, 2));
+    
+    const { 
+      to, 
+      subject, 
+      prNumber, 
+      requestor, 
+      amount, 
+      currency,
+      description,
+      department,
+      site,
+      isUrgent
+    } = req.body;
 
-    // Render React Email template
-    const emailHtml = await renderAsync(<Email/>);
+    if (!to) {
+      throw new Error("Recipient email is required");
+    }
 
-    await sendgrid.send({
-      from: "sendgrid@1pwrafrica.com",
-      to: 'bokangleqele7@gmail.com',
-      subject: "PR Email Test",
+    // Generate the PR link (update with your actual PR view URL structure)
+    const prLink = `https://your-app-url.com/pr/${prNumber}`;
+    
+    const emailParams = {
+      to,
+      prNumber: prNumber || 'DRAFT',
+      requestor: requestor || 'Unknown',
+      amount: amount || 0,
+      currency: currency || 'LSL',
+      prLink,
+      description: description || (subject ? subject.replace('New Purchase Request for Approval - ', '') : 'No description'),
+      department: department || 'Not specified',
+      site: site || 'Not specified',
+      isUrgent: isUrgent || (subject ? subject.includes('URGENT') : false)
+    };
+    
+    console.log('Generating email with params:', JSON.stringify(emailParams, null, 2));
+
+    // Generate the email content using our template
+    const emailContent = await generatePRApprovalEmail(
+      emailParams.to,
+      emailParams.prNumber,
+      emailParams.requestor,
+      emailParams.amount,
+      emailParams.currency,
+      emailParams.prLink,
+      emailParams.description,
+      emailParams.department,
+      emailParams.site,
+      emailParams.isUrgent
+    );
+    
+    console.log('Generated email content:', JSON.stringify({
+      subject: emailContent.subject,
+      html: emailContent.html.substring(0, 200) + '...' // Log first 200 chars of HTML
+    }, null, 2));
+    
+    const emailHtml = emailContent.html;
+
+    await sgMail.send({
+      from: "noreply@1pwrafrica.com",
+      to: to,
+      subject: subject || "New Purchase Request for Approval",
       html: emailHtml,
     });
 

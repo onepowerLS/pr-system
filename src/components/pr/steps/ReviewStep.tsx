@@ -6,8 +6,7 @@
  * Final step in the PR creation process. Shows a summary of the PR
  * and allows for quote management and final approver selection.
  */
-
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Grid,
   Typography,
@@ -24,12 +23,14 @@ import {
   IconButton,
   Tooltip,
   Link,
+  CircularProgress,
 } from '@mui/material';
 import { FormState } from '../NewPRForm';
 import { ReferenceDataItem } from '../../../types/referenceData';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DownloadIcon from '@mui/icons-material/Download';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import axios, { AxiosResponse } from 'axios';
 
 // Define the Approver interface since it's not exported from NewPRForm
 interface Approver {
@@ -40,14 +41,14 @@ interface Approver {
 }
 
 interface ReviewStepProps {
-  formState: FormState;
+  formState: FormState & { prNumber?: string };
   setFormState?: React.Dispatch<React.SetStateAction<FormState>>;
   vendors: ReferenceDataItem[];
   projectCategories: ReferenceDataItem[];
   sites: ReferenceDataItem[];
   approvers: Approver[];
-  loading: boolean;
-  onSubmit: () => void;
+  loading?: boolean;
+  onSubmit?: () => Promise<void> | void;
 }
 
 export const ReviewStep: React.FC<ReviewStepProps> = ({
@@ -57,7 +58,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   projectCategories,
   sites,
   approvers,
-  loading,
+  loading: isSubmitting = false,
   onSubmit
 }) => {
   // Get approver names for display
@@ -146,6 +147,57 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   // Get user name from the form state
   const getUserName = () => {
     return formState.requestor || 'Current User';
+  };
+
+  const [isEmailSending, setIsEmailSending] = useState<boolean>(false);
+
+  const handleSubmit = async (): Promise<void> => {
+    if (isSubmitting || isEmailSending) return; // prevent double submissions
+
+    try {
+      setIsEmailSending(true);
+
+      // First, call the parent's onSubmit if it exists
+      if (onSubmit) {
+        await onSubmit();
+      }
+
+      // Get the approver's email
+      const ApproverId = formState.approvers[0];
+      const Approver = approvers.find(a => a.id === ApproverId);
+      
+      // Get the site names
+      
+      const siteName = sites.find(site => site.id === formState.site)?.name || 'Not specified';
+      
+      // Then send the email notification
+      const res: AxiosResponse<{ success: boolean }> = await axios.post(
+        "/api/send-email",
+        {
+          to: Approver?.email, // Use approver's email 
+          subject: `New Purchase Request for Approval - ${formState.description || 'No Description'}`,
+          prNumber: formState.prNumber || 'DRAFT', //to work on the pr number so that it does not return draft
+          requestor: getUserName(),
+          amount: formState.estimatedAmount || 0,
+          currency: formState.currency || 'LSL',
+          description: formState.description || 'No description provided',
+          department: formState.department || 'not found',
+          site: siteName,
+          isUrgent: formState.isUrgent || false
+        }
+      );
+
+      if (res.data.success) {
+        // Show success message 
+        console.log("Email notification sent successfully!");
+      } else {
+        console.warn("Failed to send email notification.");
+      }
+    } catch (error) {
+      console.error("Error during submission:", error);     
+    } finally {
+      setIsEmailSending(false);
+    }
   };
 
   return (
@@ -293,11 +345,18 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           <Button
             variant="contained"
             color="primary"
-            onClick={onSubmit}
-            disabled={loading}
+            onClick={handleSubmit}
+            disabled={isSubmitting || isEmailSending}
             size="large"
           >
-            Submit Purchase Request
+            {isSubmitting || isEmailSending ? (
+              <>
+                <CircularProgress size={24} sx={{ mr: 1 }} />
+                Submitting...
+              </>
+            ) : (
+              'Submit Purchase Request'
+            )}
           </Button>
         </Box>
       </Grid>
