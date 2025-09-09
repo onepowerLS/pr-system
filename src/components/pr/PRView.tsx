@@ -1806,6 +1806,9 @@ useEffect(() => {
               Edit PR
             </Button>
           )}
+
+
+ 
           {pr?.status === PRStatus.REVISION_REQUIRED && pr?.requestor?.id === currentUser?.id && (
             <Button
               startIcon={<SendIcon />}
@@ -1834,7 +1837,7 @@ useEffect(() => {
       )}
 
       {/* Approver Actions */}
-      {pr?.status === PRStatus.PENDING_APPROVAL && (
+      {(pr?.status === PRStatus.PENDING_APPROVAL || pr?.status === PRStatus.SUBMITTED) && (
         <Box sx={{ mb: 3 }}>
           <ApproverActions
             pr={pr}

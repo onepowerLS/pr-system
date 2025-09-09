@@ -13,11 +13,11 @@ import {
   Stack,
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
-import { PRStatus } from '@/types/pr';
+import { PRStatus, PRRequest, ApprovalWorkflow } from '@/types/pr';
 import { prService } from '@/services/pr';
 import { notificationService } from '@/services/notification';
 import { User } from '@/types/user';
-import { navigate } from '@/utils/navigation';
+import { validatePRForApproval } from '@/utils/prValidation';
 
 interface ApproverActionsProps {
   pr: PRRequest;
@@ -46,17 +46,16 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
       prApprover: pr.approver,
       isProcurement,
       isApprover,
-      status: pr.status,
-      type: pr.type
+      status: pr.status
     });
 
-    // If PO is in PENDING_APPROVAL, only approvers can take action
-    if (pr.status === PRStatus.PENDING_APPROVAL && pr.type === 'PO') {
+    // If in PENDING_APPROVAL, only approvers can take action
+    if (pr.status === PRStatus.PENDING_APPROVAL) {
       return isApprover;
     }
 
     return isProcurement || isApprover;
-  }, [currentUser, assignedApprover, pr.approver, pr.status, pr.type]);
+  }, [currentUser, assignedApprover, pr.approver, pr.status]);
 
   if (!canTakeAction) {
     return null;
@@ -66,13 +65,18 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
     const isProcurement = currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
     const isApprover = currentUser.id === assignedApprover?.id || currentUser.id === pr.approver;
     
-    // If PO is in PENDING_APPROVAL
-    if (pr.status === PRStatus.PENDING_APPROVAL && pr.type === 'PO') {
+    // If in PENDING_APPROVAL
+    if (pr.status === PRStatus.PENDING_APPROVAL) {
       // Only approvers can see actions, and they can't push to queue
       if (isApprover) {
         return ['approve', 'reject', 'revise'];
       }
       return [];
+    }
+
+    // For PR in SUBMITTED status, show approve button for approvers
+    if (pr.status === PRStatus.SUBMITTED && isApprover) {
+      return ['approve', 'reject', 'revise'];
     }
 
     // For other statuses, show all actions if user has permission
@@ -92,6 +96,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
     setError(null);
   };
 
+
   const handleClose = () => {
     setIsDialogOpen(false);
     setSelectedAction(null);
@@ -106,9 +111,13 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
     while (retryCount < maxRetries) {
       try {
         setLoading(true);
-        await prService.updatePRStatus(pr.id, newStatus, notes);
+        await prService.updatePRStatus(pr.id, newStatus, notes, {
+          id: currentUser.id,
+          email: currentUser.email,
+          name: currentUser.name || ''
+        });
         enqueueSnackbar(`PR status successfully updated to ${newStatus}`, { variant: 'success' });
-        onStatusChange(); // Trigger parent refresh
+        onStatusChange?.(); // Trigger parent refresh
         return;
       } catch (error) {
         retryCount++;
@@ -145,54 +154,86 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
 
       let newStatus: PRStatus;
       switch (selectedAction) {
-        case 'approve':
-          // Get the rules for this organization
-          const rules = await prService.getRuleForOrganization(prData.organization, prData.estimatedAmount);
-          if (!rules || rules.length === 0) {
-            setError('No approval rules found for this organization');
-            return;
-          }
+        // case 'approve':
+        //   // Get the rules for this organization
+        //   const rule = await prService.getRuleForOrganization(prData.organization, prData.estimatedAmount);
+        //   if (!rule) {
+        //     setError('No approval rules found for this organization');
+        //     return;
+        //   }
 
-          // Validate PR against rules
-          const validation = await validatePRForApproval(
-            prData,
-            rules,
-            currentUser,
-            pr.status === PRStatus.PENDING_APPROVAL ? PRStatus.APPROVED : PRStatus.PENDING_APPROVAL
-          );
-          if (!validation.isValid) {
-            setError(validation.errors.join('\n\n')); // Add double newline for better separation
-            return;
-          }
+        //   // Validate PR against rules
+        //   const validation = await validatePRForApproval(
+        //     prData,
+        //     [rule], // Convert single rule to array
+        //     currentUser,
+        //     pr.status === PRStatus.PENDING_APPROVAL ? PRStatus.APPROVED : PRStatus.PENDING_APPROVAL
+        //   );
+        //   if (!validation.isValid) {
+        //     setError(validation.errors.join('\n\n')); // Add double newline for better separation
+        //     return;
+        //   }
 
-          // Change designation from PR to PO
-          const poNumber = prData.prNumber.replace('PR', 'PO');
-          newStatus = PRStatus.PENDING_APPROVAL;
+        //   // Change designation from PR to PO
+        //   const poNumber = prData.prNumber.replace('PR', 'PO');
+        //   newStatus = PRStatus.PENDING_APPROVAL;
           
-          // Update PR with PO number and approver information
-          await prService.updatePR(pr.id, {
-            prNumber: poNumber,
-            status: newStatus,
-            lastModifiedBy: currentUser.email,
-            lastModifiedAt: new Date().toISOString(),
-            approvalWorkflow: {
-              // Respect pr.approver as the single source of truth
-              currentApprover: prData.approver || prData.approvers[0], 
-              approvalChain: prData.approvers,
-              approvalHistory: [],
-              submittedForApprovalAt: new Date().toISOString()
-            }
-          });
+        //   // Update PR with PO number and approver information
+        //   const approvalWorkflow: ApprovalWorkflow = {
+        //     currentApprover: prData.approver || (prData.approvers && prData.approvers[0]) || null,
+        //     approvalHistory: [],
+        //     lastUpdated: new Date().toISOString()
+        //   };
+          
+        //   // Create update object with only the fields that exist in PRRequest
+        //   const updateData: Partial<PRRequest> = {
+        //     prNumber: poNumber,
+        //     status: newStatus,
+        //     updatedAt: new Date().toISOString(),
+        //     approvalWorkflow
+        //   };
+          
+        //   // Only add modifiedBy if it exists in PRRequest
+        //   if ('modifiedBy' in prData) {
+        //     (updateData as any).modifiedBy = currentUser.email;
+        //   }
+          
+        //   await prService.updatePR(pr.id, updateData);
 
-          // Send notification to first approver
-          await notificationService.handleStatusChange(
-            pr.id,
-            String(pr.status),
-            String(newStatus),
-            currentUser,
-            `PR ${prData.prNumber} has been converted to PO ${poNumber} and is pending your approval.`
-          );
+        //   // Send notification to first approver
+        //   await notificationService.handleStatusChange(
+        //     pr.id,
+        //     String(pr.status),
+        //     String(newStatus),
+        //     currentUser,
+        //     `PR ${prData.prNumber} has been converted to PO ${poNumber} and is pending your approval.`
+        //   );
+        //   break;
+
+        // case 'approve':
+        //   const isProcurement = currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
+        //   const isApprover = currentUser.id === assignedApprover?.id || currentUser.id === pr.approver;
+        //   if (isProcurement){
+        //   newStatus = PRStatus.PENDING_APPROVAL;
+        //   else if (isApprover){
+        //     newStatus = PRStatus.APPROVED; 
+        //    }
+        //   }          
+        //   break;
+
+         case "approve":
+          const isProcurement =
+            currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
+          const isApprover =
+            currentUser.id === assignedApprover?.id || currentUser.id === pr.approver;
+
+          if (isProcurement) {
+            newStatus = PRStatus.PENDING_APPROVAL;
+          } else if (isApprover) {
+            newStatus = PRStatus.APPROVED;
+          }
           break;
+
 
         case 'reject':
           newStatus = PRStatus.REJECTED;
