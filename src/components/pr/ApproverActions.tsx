@@ -15,9 +15,10 @@ import {
 import { useSnackbar } from 'notistack';
 import { PRStatus, PRRequest, ApprovalWorkflow } from '@/types/pr';
 import { prService } from '@/services/pr';
-import { notificationService } from '@/services/notification';
 import { User } from '@/types/user';
 import { validatePRForApproval } from '@/utils/prValidation';
+import axios from 'axios';
+
 
 interface ApproverActionsProps {
   pr: PRRequest;
@@ -152,7 +153,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
         return;
       }
 
-      let newStatus: PRStatus;
+      let newStatus: PRStatus = PRStatus.SUBMITTED;
       switch (selectedAction) {
         // case 'approve':
         //   // Get the rules for this organization
@@ -253,6 +254,61 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
 
       // Update PR status
       await handleStatusUpdate(newStatus, notes);
+
+        // --- Send email if status is now PENDING_APPROVAL ---
+        if (newStatus === PRStatus.PENDING_APPROVAL) {
+          try {
+            // Get the first approver - either from approvers array or single approver field
+            const firstApprover = Array.isArray(pr.approvers) && pr.approvers.length > 0 
+              ? pr.approvers[0] 
+              : pr.approver || assignedApprover;
+
+            if (!firstApprover) {
+              console.error("No approver found for PR:", pr.id);
+              enqueueSnackbar("No approver assigned to this PR", { variant: "warning" });
+              return;
+            }
+
+            // Get the approver's email, handling both string and object formats
+            const approverEmail = typeof firstApprover === 'string' 
+              ? firstApprover 
+              : firstApprover.email;
+
+            if (!approverEmail) {
+              console.error("No email found for approver:", firstApprover);
+              enqueueSnackbar("Approver does not have an email address", { variant: "error" });
+              return;
+            }
+
+            await axios.post("/api/send-email", {
+              to: approverEmail,
+              templateType: "pendingApproval",
+              pr: {
+                ...pr,
+                // Ensure we're passing a clean object without circular references
+                requestor: {
+                  id: pr.requestor?.id,
+                  name: pr.requestor?.name || pr.requestor?.displayName || 'Unknown',
+                  email: pr.requestor?.email
+                },
+                approver: {
+                  id: typeof firstApprover === 'string' ? firstApprover : firstApprover.id,
+                  name: typeof firstApprover === 'string' ? firstApprover : firstApprover.name || firstApprover.email,
+                  email: approverEmail
+                }
+              },
+              prNumber: pr.prNumber,
+              user: firstApprover,
+              notes,
+                isUrgent: pr.isUrgent,
+            });
+            
+            enqueueSnackbar(`Pending approval email sent to ${approverEmail}`, { variant: "success" });
+          } catch (error) {
+            console.error("Failed to send pending approval email:", error);
+            enqueueSnackbar("Failed to send pending approval email", { variant: "error" });
+          }
+        }
 
       // Navigate to dashboard after any successful status change
       navigate('/dashboard');

@@ -131,6 +131,7 @@ const PRApprovalEmail = ({
 // Main export function
 export async function generatePRApprovalEmail(
   to: string,
+  cc: string,
   prNumber: string,
   requestor: string,
   amount: number,
