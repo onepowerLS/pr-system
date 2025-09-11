@@ -18,6 +18,8 @@ import { prService } from '@/services/pr';
 import { User } from '@/types/user';
 import { validatePRForApproval } from '@/utils/prValidation';
 import axios from 'axios';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 
 
 interface ApproverActionsProps {
@@ -32,6 +34,27 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
   const [selectedAction, setSelectedAction] = useState<'approve' | 'reject' | 'revise' | 'queue' | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [showNotesDialog, setShowNotesDialog] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PRStatus | null>(null);
+
+  // Function to fetch users with permissionLevel 3 (Procurement)
+  const fetchProcurementUsers = async (): Promise<{email: string}[]> => {
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('permissionLevel', '==', 3));
+      const querySnapshot = await getDocs(q);
+      
+      return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        email: doc.data().email || '',
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error fetching procurement users:', error);
+      return [];
+    }
+  };
+
   const [loading, setLoading] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
   const navigate = useNavigate();
@@ -280,12 +303,24 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
               return;
             }
 
+            // Get procurement users' emails and requestor emails
+            const procurementUsers = await fetchProcurementUsers();
+            const procurementEmails = procurementUsers
+              .map(user => user.email)
+              .filter(Boolean);
+            
+            // Add requestor email to CC if it exists
+            const ccRecipients = [
+              ...procurementEmails,
+              pr.requestor?.email
+            ].filter(Boolean).join(',');
+
             await axios.post("/api/send-email", {
               to: approverEmail,
+              cc: ccRecipients,
               templateType: "pendingApproval",
               pr: {
-                ...pr,
-                // Ensure we're passing a clean object without circular references
+                ...pr,                
                 requestor: {
                   id: pr.requestor?.id,
                   name: pr.requestor?.name || pr.requestor?.displayName || 'Unknown',
