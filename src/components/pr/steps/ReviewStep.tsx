@@ -31,6 +31,8 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import DownloadIcon from '@mui/icons-material/Download';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import axios, { AxiosResponse } from 'axios';
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "../../../config/firebase";
 
 // Define the Approver interface since it's not exported from NewPRForm
 interface Approver {
@@ -151,6 +153,33 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
 
   const [isEmailSending, setIsEmailSending] = useState<boolean>(false);
 
+  //User interface for Firestore data
+  interface User {
+    id: string;
+    email: string;
+    permissionLevel?: number;
+    [key: string]: any; // For other potential fields
+  }
+
+  // Function to fetch users with permissionLevel 3(Procurement)
+  const fetchUsersWithPermissionLevel3 = async (): Promise<User[]> => {
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('permissionLevel', '==', 3));
+      const querySnapshot = await getDocs(q);
+      
+      return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        email: doc.data().email || '',
+        permissionLevel: doc.data().permissionLevel,
+        ...doc.data()
+      } as User));
+    } catch (error) {
+      console.error('Error fetching users with permission level 3:', error);
+      return [];
+    }
+  };
+
   const handleSubmit = async (): Promise<void> => {
     if (isSubmitting || isEmailSending) return; // prevent double submissions
 
@@ -161,21 +190,22 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       if (onSubmit) {
         await onSubmit();
       }
-
-      // Get the approver's email
-      const ApproverId = formState.approvers[0];
-      const Approver = approvers.find(a => a.id === ApproverId);
       
-      // Get the site names
-      
+      // Get the site names      
       const siteName = sites.find(site => site.id === formState.site)?.name || 'Not specified';
       
+      // Fetch users with permission level 3
+      const usersWithPermission3 = await fetchUsersWithPermissionLevel3();
+      const procEmail = usersWithPermission3
+        .map(user => user.email)
+        .filter(Boolean) // Remove any undefined/null emails
+        .join(',');
+
       // Then send the email notification
       const res: AxiosResponse<{ success: boolean }> = await axios.post(
         "/api/send-email",
         {
-          to: Approver?.email, // Use approver's email 
-          cc: "bokangleqele9@gmail.com", // to work on it not be hardcoded
+          to: procEmail, // all users with permission level 3          
           subject: `New Purchase Request for Approval - ${formState.description || 'No Description'}`,
           prNumber: formState.prNumber || 'DRAFT', //to work on the pr number so that it does not return draft
           requestor: getUserName(),
