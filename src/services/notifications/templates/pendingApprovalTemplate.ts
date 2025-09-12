@@ -18,7 +18,7 @@ export function generatePendingApprovalEmail(context: NotificationContext): Emai
 
     const prSummary = [
       ['PR Number', prNumber || 'Not specified'],
-      ['Category', pr.category || 'Not specified'],
+      ['Category', pr.projectCategory || 'Not specified'],
       ['Expense Type', pr.expenseType || 'Not specified'],
       ['Total Amount', pr.estimatedAmount ? pr.estimatedAmount.toLocaleString('en-US', { 
         style: 'currency', 

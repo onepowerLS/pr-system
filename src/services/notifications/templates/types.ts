@@ -28,6 +28,7 @@ export interface PR {
   site?: string;
   department?: string;
   category?: string;
+  projectCategory?: string;
   expenseType?: string;
   estimatedAmount?: number;
   currency?: string;
