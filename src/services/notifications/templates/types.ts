@@ -16,6 +16,7 @@ export interface NotificationUser {
 export interface PRRequestor {
   firstName?: string;
   lastName?: string;
+  name?: string;
   email?: string;
   department?: string;
 }
@@ -25,6 +26,7 @@ export interface PR {
   prNumber: string;
   requestor?: PRRequestor;
   site?: string;
+  department?: string;
   category?: string;
   expenseType?: string;
   estimatedAmount?: number;

@@ -10,10 +10,9 @@ export function generatePendingApprovalEmail(context: NotificationContext): Emai
     const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Awaiting Your Approval`;
     
     const requestorDetails = [
-      ['Name', pr.requestor?.firstName && pr.requestor?.lastName ? 
-        `${pr.requestor.firstName} ${pr.requestor.lastName}` : 'Not specified'],
+      ['Name', pr.requestor?.name || 'Not specified'],
       ['Email', pr.requestor?.email || 'Not specified'],
-      ['Department', pr.requestor?.department || 'Not specified'],
+      ['Department', pr.department || 'Not specified'],
       ['Site', pr.site || 'Not specified'],
     ];
 
