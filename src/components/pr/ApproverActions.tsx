@@ -20,6 +20,7 @@ import { validatePRForApproval } from '@/utils/prValidation';
 import axios from 'axios';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
+import { generateApprovedEmail } from '@/services/notifications/templates/approvedTemplate';
 
 
 interface ApproverActionsProps {
@@ -278,8 +279,95 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
       // Update PR status
       await handleStatusUpdate(newStatus, notes);
 
-        // --- Send email if status is now PENDING_APPROVAL ---
-        if (newStatus === PRStatus.PENDING_APPROVAL) {
+      // --- Send email if status is now APPROVED ---
+      if (newStatus === PRStatus.APPROVED) {
+        try {
+          // Get procurement users' emails
+          const procurementUsers = await fetchProcurementUsers();
+          const procurementEmails = procurementUsers
+            .map(user => user.email)
+            .filter(Boolean);
+
+          // Generate email content using the approved template
+          const emailContent = generateApprovedEmail({
+            pr: {
+              ...pr,
+              requestor: {
+                firstName: pr.requestor?.name?.split(' ')[0] || '',
+                lastName: pr.requestor?.name?.split(' ').slice(1).join(' ') || '',
+                name: pr.requestor?.name || 'Unknown',
+                email: pr.requestor?.email,
+                department: pr.requestor?.department
+               
+              },
+              site: pr.site,
+              department: pr.department,
+              category: pr.category,
+              projectCategory: pr.projectCategory,
+              expenseType: pr.expenseType,
+              estimatedAmount: pr.estimatedAmount,
+              currency: pr.currency,
+              preferredVendor: pr.preferredVendor,
+              requiredDate: pr.requiredDate,
+              isUrgent: pr.isUrgent || false,
+              id: pr.id
+            },
+            prNumber: pr.prNumber,
+            user: {
+              firstName: currentUser.name?.split(' ')[0] || '',
+              lastName: currentUser.name?.split(' ').slice(1).join(' ') || '',
+              name: currentUser.name || currentUser.email || 'Unknown',
+              email: currentUser.email || ''
+             
+            },
+            notes: notes || '',
+            baseUrl: window.location.origin,
+            isUrgent: pr.isUrgent || false
+          });
+          
+          // Send email to requestor with procurement in CC
+          if (pr.requestor?.email) {
+            try {
+              await axios.post("/api/send-email", {
+                to: pr.requestor.email,
+                cc: procurementEmails,
+                subject: emailContent.subject,
+                html: emailContent.html,
+                text: emailContent.text,
+                templateType: "approved",
+                pr: {
+                  ...pr,
+                  requestor: {
+                    id: pr.requestor?.id,
+                    name: pr.requestor?.name || pr.requestor?.displayName || 'Unknown',
+                    email: pr.requestor?.email,
+                    department: pr.requestor?.department
+                  },
+                  approver: {
+                    id: currentUser.id,
+                    name: currentUser.name || currentUser.email || 'Unknown',
+                    email: currentUser.email
+                  }
+                },
+                prNumber: pr.prNumber,
+                isUrgent: pr.isUrgent || false,
+                notes: notes || ''
+              });
+              
+              enqueueSnackbar(`Approval email sent to ${pr.requestor.email}`, { variant: "success" });
+            } catch (error) {
+              console.error("Error sending approval email:", error);
+              enqueueSnackbar("Failed to send approval email", { variant: "error" });
+            }
+          }
+          
+        } catch (error) {
+          console.error("Failed to send approval email:", error);
+          enqueueSnackbar("Failed to send approval email", { variant: "error" });
+        }
+      }
+      // --- Send email if status is now PENDING_APPROVAL ---
+      else if (newStatus === PRStatus.PENDING_APPROVAL) {
           try {
             // Get the first approver - either from approvers array or single approver field
             const firstApprover = Array.isArray(pr.approvers) && pr.approvers.length > 0 
@@ -292,7 +380,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
               return;
             }
 
-            // Get the approver's email, handling both string and object formats
+            // Get the approver's email
             const approverEmail = typeof firstApprover === 'string' 
               ? firstApprover 
               : firstApprover.email;
@@ -313,7 +401,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
             const ccRecipients = [
               ...procurementEmails,
               pr.requestor?.email
-            ].filter(Boolean).join(',');
+            ].filter(Boolean);
 
             await axios.post("/api/send-email", {
               to: approverEmail,
