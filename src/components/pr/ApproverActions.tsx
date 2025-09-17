@@ -298,7 +298,13 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
                 name: pr.requestor?.name || 'Unknown',
                 email: pr.requestor?.email,
                 department: pr.requestor?.department
-               
+              },
+              approver: {
+                id: currentUser.id,
+                name: currentUser.name || 'Unknown',
+                email: currentUser.email || '',
+                firstName: currentUser.name?.split(' ')[0],
+                lastName: currentUser.name?.split(' ').slice(1).join(' ')
               },
               site: pr.site,
               department: pr.department,

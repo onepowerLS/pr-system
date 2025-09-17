@@ -25,6 +25,13 @@ export interface PR {
   id: string;
   prNumber: string;
   requestor?: PRRequestor;
+  approver?: {
+    id: string;
+    name: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+  };
   site?: string;
   department?: string;
   category?: string;

@@ -10,8 +10,7 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
     const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Has Been Approved`;
     
     const requestorDetails = [
-      ['Name', pr.requestor?.firstName && pr.requestor?.lastName ? 
-        `${pr.requestor.firstName} ${pr.requestor.lastName}` : 'Not specified'],
+      ['Name', pr.requestor?.name  || 'Not specified'],
       ['Email', pr.requestor?.email || 'Not specified'],
       ['Department', pr.requestor?.department || 'Not specified'],
       ['Site', pr.site || 'Not specified'],
@@ -37,7 +36,7 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
         <div style="${styles.section}">
           <h3 style="${styles.subHeader}">Approval Details</h3>
           <p style="${styles.paragraph}">
-            <strong>Approved By:</strong> ${user ? `${user.firstName} ${user.lastName}` : 'System'}
+            Approved By: ${pr.approver?.firstName && pr.approver?.lastName || pr.approver?.name || 'Approver'}
           </p>
           ${notes ? `
             <p style="${styles.paragraph}">
@@ -65,7 +64,7 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
     const text = `
 PR ${prNumber} Has Been Approved
 
-Approved By: ${user ? `${user.firstName} ${user.lastName}` : 'System'}
+Approved By: ${pr.approver?.firstName && pr.approver?.lastName || pr.approver?.name || 'Approver'}
 ${notes ? `Notes: ${notes}\n` : ''}
 
 Requestor Information:
