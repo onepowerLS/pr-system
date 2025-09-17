@@ -64,6 +64,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
   const canTakeAction = useMemo(() => {
     const isProcurement = currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
     const isApprover = currentUser.id === assignedApprover?.id || currentUser.id === pr.approver;
+    const isRequestor = currentUser.id === pr.requestor.id;
 
     console.log('Permission check:', {
       userId: currentUser.id,
@@ -71,6 +72,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
       prApprover: pr.approver,
       isProcurement,
       isApprover,
+      isRequestor,
       status: pr.status
     });
 
@@ -89,8 +91,14 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
   const getAvailableActions = () => {
     const isProcurement = currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
     const isApprover = currentUser.id === assignedApprover?.id || currentUser.id === pr.approver;
+    const isRequestor = currentUser.id === pr.requestor.id;
     
-    // If in PENDING_APPROVAL
+    // If user is the requestor, they can't approve their own PR
+    if (isRequestor) {
+      return [];
+    }
+
+    // If in PENDING_APPROVAL, only approvers can take action
     if (pr.status === PRStatus.PENDING_APPROVAL) {
       // Only approvers can see actions, and they can't push to queue
       if (isApprover) {
@@ -164,6 +172,13 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
 
   const handleSubmit = async () => {
     try {
+      // Prevent self-approval
+      if (selectedAction === 'approve' && currentUser.id === pr.requestor.id) {
+        setError('You cannot approve your own PR');
+        enqueueSnackbar('You cannot approve your own PR', { variant: 'error' });
+        return;
+      }
+
       // Validate notes for reject and revise actions
       if ((selectedAction === 'reject' || selectedAction === 'revise') && !notes.trim()) {
         setError('Notes are required when rejecting or requesting revision');
@@ -246,7 +261,7 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
         //   }          
         //   break;
 
-         case "approve":
+        case "approve":
           const isProcurement =
             currentUser.permissionLevel === 2 || currentUser.permissionLevel === 3;
           const isApprover =
@@ -258,7 +273,6 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
             newStatus = PRStatus.APPROVED;
           }
           break;
-
 
         case 'reject':
           newStatus = PRStatus.REJECTED;
