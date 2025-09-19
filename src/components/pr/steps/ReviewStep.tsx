@@ -7,6 +7,8 @@
  * and allows for quote management and final approver selection.
  */
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useSnackbar, VariantType } from 'notistack';
 import {
   Grid,
   Typography,
@@ -50,7 +52,10 @@ interface ReviewStepProps {
   sites: ReferenceDataItem[];
   approvers: Approver[];
   loading?: boolean;
-  onSubmit?: () => Promise<void> | void;
+  onSubmit?: () => Promise<{ prNumber: string }>;
+  
+  // Add navigation prop
+  navigate?: (path: string) => void;
 }
 
 export const ReviewStep: React.FC<ReviewStepProps> = ({
@@ -180,15 +185,30 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     }
   };
 
+  const navigate = useNavigate();
+  const { enqueueSnackbar } = useSnackbar();
+
+  const showNotification = (message: string, variant: VariantType = 'default') => {
+    enqueueSnackbar(message, { variant });
+  };
+
   const handleSubmit = async (): Promise<void> => {
     if (isSubmitting || isEmailSending) return; // prevent double submissions
 
     try {
       setIsEmailSending(true);
 
-      // First, call the parent's onSubmit if it exists
-      if (onSubmit) {
-        await onSubmit();
+      if (!onSubmit) {
+        showNotification('Submit handler not available', 'error');
+        throw new Error('Submit handler not provided');
+      }
+
+      // Call the parent's onSubmit and get the PR number
+      const { prNumber } = await onSubmit();
+      
+      if (!prNumber) {
+        showNotification('Failed to generate PR number', 'error');
+        throw new Error('Failed to generate PR number');
       }
       
       // Get the site names      
@@ -207,7 +227,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         {
           to: procEmail, // all users with permission level 3          
           subject: `New Purchase Request for Approval - ${formState.description || 'No Description'}`,
-          prNumber: formState.prNumber || 'DRAFT', //to work on the pr number so that it does not return draft
+          prNumber: prNumber, // Use the PR number from the response
           requestor: getUserName(),
           amount: formState.estimatedAmount || 0,
           currency: formState.currency || 'LSL',
@@ -220,12 +240,19 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
 
       if (res.data.success) {
         // Show success message 
+        showNotification('Purchase request submitted successfully!', 'success');
         console.log("Email notification sent successfully!");
+        
+        // Navigate to dashboard after successful submission
+        navigate('/dashboard');
       } else {
         console.warn("Failed to send email notification.");
+        showNotification('Failed to send notification email', 'warning');
       }
     } catch (error) {
-      console.error("Error during submission:", error);     
+      console.error("Error during submission:", error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      showNotification(`Submission failed: ${errorMessage}`, 'error');
     } finally {
       setIsEmailSending(false);
     }

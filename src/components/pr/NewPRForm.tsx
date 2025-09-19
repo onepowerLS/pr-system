@@ -749,7 +749,7 @@ export const NewPRForm = () => {
     }));
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (): Promise<{ prNumber: string }> => {
     console.log('Form submit triggered');
     if (!user) {
       console.error('Cannot submit PR: User is not authenticated.');
@@ -778,7 +778,7 @@ export const NewPRForm = () => {
       if (!basicInfoValid || !lineItemsValid) {
         console.log('Form validation failed:', { basicInfoValid, lineItemsValid });
         setIsSubmitting(false);
-        return;
+        throw new Error('Form validation failed');
       }
 
       // Validate email format
@@ -786,7 +786,7 @@ export const NewPRForm = () => {
       if (!emailRegex.test(formState.email)) {
         enqueueSnackbar('Please enter a valid email address', { variant: 'error' });
         setIsSubmitting(false);
-        return;
+        throw new Error('Invalid email format');
       }
 
       // Validate and convert estimated amount
@@ -876,6 +876,12 @@ export const NewPRForm = () => {
       const { prId, prNumber } = await createPR(prData); // Removed 'as any' cast
       console.log('PR created successfully with ID:', prId, 'and Number:', prNumber);
       
+      // Update form state with the new PR number
+      setFormState(prev => ({
+        ...prev,
+        prNumber
+      }));
+      
       // Show success message
       enqueueSnackbar('Purchase Request submitted successfully!', { 
         variant: 'success',
@@ -890,10 +896,10 @@ export const NewPRForm = () => {
         dispatch(setUserPRs(updatedPRs));
       }
 
-      // Reset form and navigate back
-      setFormState(initialFormState);
-      console.log('Navigating to dashboard...');
-      navigate('/dashboard');
+      // Return the PR number to the caller
+      return { prNumber };
+      
+      // Note: Navigation is now handled by the caller (ReviewStep)
     } catch (error) {
       console.error('Error submitting PR:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
