@@ -2,6 +2,7 @@
 export interface EmailContent {
   subject: string;
   html: string;
+  prNumber: string;
 }
 
 // Email props interface
@@ -52,7 +53,7 @@ function formatDate(dateString?: string): string {
 // Main email component
 const PRApprovalEmail = ({
   subject,
-  prNumber = 'DRAFT',
+  prNumber,
   requestor = 'Unknown',
   amount = 0,
   currency = 'LSL',
@@ -62,71 +63,86 @@ const PRApprovalEmail = ({
   site = 'Not specified',
   isUrgent = false
 }: PRApprovalEmailProps) => {
-  // Log the received props for debugging
-  console.log('PRApprovalEmail received props:', {
-    prNumber,
-    requestor,
-    amount,
-    currency,
-    description,
-    department,
-    site,
-    isUrgent
-  });
-
   const formattedAmount = formatCurrency(amount, currency);
-  
+
   return `
-    <div style="${styles.container}">
-      <h1 style="${styles.header}">
-        ${isUrgent ? '<span style="color: #d32f2f;">URGENT: </span>' : ''}
-        New Purchase Request #${prNumber} for Approval
-      </h1>
-      
-      <p>Hello,</p>
-      
-      <p>
-        You have a new purchase request <strong>#${prNumber}</strong> from 
-        <strong>${requestor}</strong> that requires your approval.
-      </p>
-      
-      <div style="${styles.card}">
-        <div style="${styles.value}">
-          <span style="${styles.label}">Requestor:</span> ${requestor}
-        </div>
-        <div style="${styles.value}">
-          <span style="${styles.label}">Department:</span> ${department}
-        </div>
-        <div style="${styles.value}">
-          <span style="${styles.label}">Site:</span> ${site}
-        </div>
-        <div style="${styles.value}">
-          <span style="${styles.label}">Amount:</span> ${formattedAmount}
-        </div>
-        <div style="${styles.value}">
-          <span style="${styles.label}">Description:</span> ${description}
-        </div>
-        ${isUrgent ? `<div style="${styles.urgent} margin-top: 10px;">
-          ⚠️ This is an urgent request
-        </div>` : ''}
+    <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; color: #333;">
+      <!-- Header -->
+      <div style="background-color: #1976d2; padding: 20px; text-align: center;">
+        <h1 style="color: white; margin: 0; font-size: 24px;">
+          ${isUrgent ? '<span style="color: #ffeb3b;">URGENT: </span>' : ''} 
+          New Purchase Request #${prNumber}
+        </h1>
       </div>
-      
-      <div style="text-align: center; margin: 25px 0;">
-        <a href="${prLink}" style="${styles.button}">
-          Review Purchase Request
-        </a>
-      </div>
-      
-      <p style="color: #666; font-size: 0.9em;">
-        This is an automated message. Please do not reply to this email.
-      </p>
-      
-      <div style="${styles.footer}">
-        <p>1PWR Procurement System</p>
+
+      <!-- Submission Details -->
+      <div style="padding: 20px; background-color: #f9f9f9;">
+        <p><strong>Submitted By:</strong> ${requestor}</p>
+        
+        <!-- Requestor Info -->
+        <div style="background: white; border-radius: 8px; padding: 15px; margin: 15px 0; border: 1px solid #eee;">
+          <h3 style="margin-top: 0; color: #1976d2;">Requestor Information</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px; font-weight: bold;">Name</td>
+              <td style="padding: 8px;">${requestor}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; font-weight: bold;">Department</td>
+              <td style="padding: 8px;">${department}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; font-weight: bold;">Site</td>
+              <td style="padding: 8px;">${site}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- PR Details -->
+        <div style="background: white; border-radius: 8px; padding: 15px; margin: 15px 0; border: 1px solid #eee;">
+          <h3 style="margin-top: 0; color: #1976d2;">PR Details</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px; font-weight: bold;">PR Number</td>
+              <td style="padding: 8px;">${prNumber}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; font-weight: bold;">Amount</td>
+              <td style="padding: 8px;">${formattedAmount}</td>
+            </tr>
+            ${description ? `
+            <tr>
+              <td style="padding: 8px; font-weight: bold;">Description</td>
+              <td style="padding: 8px;">${description}</td>
+            </tr>` : ''}
+          </table>
+
+          ${isUrgent ? `
+          <div style="background-color: #fff3e0; border-left: 4px solid #ff9800; padding: 10px; margin-top: 15px;">
+            <span style="color: #e65100; font-weight: bold;">⚠️ This is an urgent request</span>
+          </div>` : ''}
+        </div>
+
+        <!-- Button -->
+        <div style="text-align: center; margin: 20px 0;">
+          <a href="${prLink}" 
+             style="display: inline-block; background-color: #1976d2; color: white; 
+                    text-decoration: none; padding: 12px 25px; border-radius: 4px; 
+                    font-weight: bold; font-size: 16px;">
+            View Purchase Request
+          </a>
+        </div>
+
+        <!-- Footer -->
+        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #777; text-align: center;">
+          <p>This is an automated message. Please do not reply to this email.</p>
+          <p>© ${new Date().getFullYear()} 1PWR Procurement System. All rights reserved.</p>
+        </div>
       </div>
     </div>
   `;
 };
+
 
 // Main export function
 export async function generatePRApprovalEmail(
@@ -159,7 +175,8 @@ export async function generatePRApprovalEmail(
 
   return {
     subject,
-    html
+    html,
+    prNumber
   };
 }
 
