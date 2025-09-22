@@ -418,7 +418,7 @@ export const BasicInformationStep: React.FC<BasicInformationStepProps> = ({
             {vendors
               .filter(vendor => vendor.active)
               .map(vendor => (
-                <MenuItem key={vendor.id} value={vendor.id}>
+                <MenuItem key={vendor.id} value={vendor.name}>
                   {vendor.name}
                 </MenuItem>
               ))}
