@@ -83,12 +83,15 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
 
   // Get vendor name for display
   const getVendorName = () => {
-    if (!formState.preferredVendor) {
-      return formState.customVendorName || "Not specified";
+    if (formState.customVendorName?.trim()) {
+      return formState.customVendorName;
     }
-    
-    const vendorObj = vendors.find(v => v.name === formState.preferredVendor);
-    return vendorObj ? vendorObj.name : "Not found";
+  
+    if (formState.preferredVendor) {
+      const vendorObj = vendors.find(v => v.name === formState.preferredVendor);
+      return vendorObj ? vendorObj.name : "Not found";
+    }
+    return "Not specified";
   };
 
   // Get project category name for display
