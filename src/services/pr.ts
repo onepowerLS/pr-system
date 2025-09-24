@@ -137,6 +137,7 @@ export async function getPR(prId: string): Promise<PRRequest | null> {
       estimatedAmount: data.estimatedAmount || 0,
       currency: data.currency,
       totalAmount: data.totalAmount || 0,
+      preferredVendor: data.preferredVendor,
       requestor: data.requestor as UserReference,
       requestorId: data.requestorId,
       requestorEmail: data.requestorEmail,
