@@ -143,7 +143,7 @@ export async function getPR(prId: string): Promise<PRRequest | null> {
       requestorEmail: data.requestorEmail,
       submittedBy: data.submittedBy,
       approver: data.approver, 
-      requiredDate: safeTimestampToISO(data.requiredDate) || '', 
+      requiredDate: safeTimestampToISO(data.requiredDate) || data.requiredDate ||'', 
       createdAt: safeTimestampToISO(data.createdAt) || new Date().toISOString(),
       updatedAt: safeTimestampToISO(data.updatedAt) || new Date().toISOString(),
       lineItems: (data.lineItems || []).map((item: any): LineItem => ({ ...item })),
