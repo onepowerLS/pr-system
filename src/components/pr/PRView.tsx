@@ -592,7 +592,7 @@ export function PRView() {
           referenceDataService.getItemsByType('vendors'),
           referenceDataService.getItemsByType('currencies'),
         ]);
-
+        console.log('Vendors:', JSON.stringify(vendorList, null, 2));
         setDepartments(depts);
         setProjectCategories(categories);
         setSites(siteList);
@@ -629,6 +629,7 @@ export function PRView() {
   // Initial fetch
   useEffect(() => {
     fetchPR();
+    console.log('PR data:', JSON.stringify(pr, null, 2));
   }, [id]);
 
   useEffect(() => {
@@ -1841,6 +1842,7 @@ useEffect(() => {
         <Box sx={{ mb: 3 }}>
           <ApproverActions
             pr={pr}
+            approvers={approvers}
             currentUser={currentUser}
             assignedApprover={currentApprover}
             onStatusChange={refreshPR}

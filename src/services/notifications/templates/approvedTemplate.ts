@@ -6,9 +6,7 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
   try {
     const { pr, prNumber, user, notes, baseUrl, isUrgent } = context;
     const prUrl = `${baseUrl}/pr/${pr.id}`;
-    
     const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Has Been Approved`;
-    
     const requestorDetails = [
       ['Name', pr.requestor?.name  || 'Not specified'],
       ['Email', pr.requestor?.email || 'Not specified'],
@@ -27,6 +25,10 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
       ['Vendor', pr.preferredVendor || 'Not specified'],
       ['Required Date', pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'Not specified'],
     ];
+    // Use approver info directly from PR
+    const approverName = pr.approver?.name 
+                      || `${pr.approver?.firstName ?? ''} ${pr.approver?.lastName ?? ''}`.trim()
+                      || 'Approver';
 
     const html = `
       <div style="${styles.container}">
@@ -36,7 +38,7 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
         <div style="${styles.section}">
           <h3 style="${styles.subHeader}">Approval Details</h3>
           <p style="${styles.paragraph}">
-            Approved By: ${pr.approver?.firstName && pr.approver?.lastName || pr.approver?.name || 'Approver'}
+            Approved By: ${approverName}
           </p>
           ${notes ? `
             <p style="${styles.paragraph}">
@@ -64,7 +66,7 @@ export function generateApprovedEmail(context: NotificationContext): EmailConten
     const text = `
 PR ${prNumber} Has Been Approved
 
-Approved By: ${pr.approver?.firstName && pr.approver?.lastName || pr.approver?.name || 'Approver'}
+Approved By: ${approverName}
 ${notes ? `Notes: ${notes}\n` : ''}
 
 Requestor Information:
@@ -86,3 +88,4 @@ View PR: ${prUrl}
     };
   }
 }
+

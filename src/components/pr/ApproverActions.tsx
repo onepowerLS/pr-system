@@ -26,11 +26,12 @@ import { generateApprovedEmail } from '@/services/notifications/templates/approv
 interface ApproverActionsProps {
   pr: PRRequest;
   currentUser: User;
+  approvers: User[];
   assignedApprover?: User;
   onStatusChange?: () => void;
 }
 
-export function ApproverActions({ pr, currentUser, assignedApprover, onStatusChange }: ApproverActionsProps) {
+export function ApproverActions({ pr, currentUser, approvers, assignedApprover, onStatusChange }: ApproverActionsProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedAction, setSelectedAction] = useState<'approve' | 'reject' | 'revise' | 'queue' | null>(null);
   const [notes, setNotes] = useState('');
@@ -301,50 +302,37 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
           const procurementEmails = procurementUsers
             .map(user => user.email)
             .filter(Boolean);
-
-          // Generate email content using the approved template
+      
+          // resolve current approver from workflow
+          const approverId = pr?.approvalWorkflow?.currentApprover;
+          const approver = approvers.find((a: { id: string }) => a.id === approverId);
+      
+          // Generate the email using the correct approver
           const emailContent = generateApprovedEmail({
             pr: {
               ...pr,
-              requestor: {
-                firstName: pr.requestor?.name?.split(' ')[0] || '',
-                lastName: pr.requestor?.name?.split(' ').slice(1).join(' ') || '',
-                name: pr.requestor?.name || 'Unknown',
-                email: pr.requestor?.email,
-                department: pr.requestor?.department
-              },
-              approver: {
-                id: currentUser.id,
-                name: currentUser.name || 'Unknown',
-                email: currentUser.email || '',
-                firstName: currentUser.name?.split(' ')[0],
-                lastName: currentUser.name?.split(' ').slice(1).join(' ')
-              },
-              site: pr.site,
-              department: pr.department,
-              category: pr.category,
-              projectCategory: pr.projectCategory,
-              expenseType: pr.expenseType,
-              estimatedAmount: pr.estimatedAmount,
-              currency: pr.currency,
-              preferredVendor: pr.preferredVendor,
-              requiredDate: pr.requiredDate,
-              isUrgent: pr.isUrgent || false,
-              id: pr.id
+              approver: approver
+                ? {
+                    id: approver.id,
+                    name: `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email,
+                    email: approver.email,
+                    firstName: approver.firstName,
+                    lastName: approver.lastName,
+                  }
+                : undefined,
             },
             prNumber: pr.prNumber,
             user: {
-              firstName: currentUser.name?.split(' ')[0] || '',
-              lastName: currentUser.name?.split(' ').slice(1).join(' ') || '',
-              name: currentUser.name || currentUser.email || 'Unknown',
-              email: currentUser.email || ''
-             
+              firstName: currentUser.name?.split(" ")[0] || "",
+              lastName: currentUser.name?.split(" ").slice(1).join(" ") || "",
+              name: currentUser.name || currentUser.email || "Unknown",
+              email: currentUser.email || "",
             },
-            notes: notes || '',
+            notes: notes || "",
             baseUrl: window.location.origin,
-            isUrgent: pr.isUrgent || false
+            isUrgent: pr.isUrgent || false,
           });
-          
+      
           // Send email to requestor with procurement in CC
           if (pr.requestor?.email) {
             try {
@@ -359,33 +347,49 @@ export function ApproverActions({ pr, currentUser, assignedApprover, onStatusCha
                   ...pr,
                   requestor: {
                     id: pr.requestor?.id,
-                    name: pr.requestor?.name || pr.requestor?.displayName || 'Unknown',
+                    name:
+                      pr.requestor?.name ||
+                      pr.requestor?.displayName ||
+                      "Unknown",
                     email: pr.requestor?.email,
-                    department: pr.requestor?.department
+                    department: pr.requestor?.department,
                   },
-                  approver: {
-                    id: currentUser.id,
-                    name: currentUser.name || currentUser.email || 'Unknown',
-                    email: currentUser.email
-                  }
+                  approver: approver
+                    ? {
+                        id: approver.id,
+                        name: approver.name,
+                        email: approver.email,
+                      }
+                    : {
+                        id: currentUser.id,
+                        name:
+                          currentUser.name ||
+                          currentUser.email ||
+                          "Unknown",
+                        email: currentUser.email,
+                      },
                 },
                 prNumber: pr.prNumber,
                 isUrgent: pr.isUrgent || false,
-                notes: notes || ''
+                notes: notes || "",
               });
-              
-              enqueueSnackbar(`Approval email sent to ${pr.requestor.email}`, { variant: "success" });
+      
+              enqueueSnackbar(
+                `Approval email sent to ${pr.requestor.email}`,
+                { variant: "success" }
+              );
             } catch (error) {
               console.error("Error sending approval email:", error);
-              enqueueSnackbar("Failed to send approval email", { variant: "error" });
+              enqueueSnackbar("Failed to send approval email", {
+                variant: "error",
+              });
             }
           }
-          
         } catch (error) {
           console.error("Failed to send approval email:", error);
           enqueueSnackbar("Failed to send approval email", { variant: "error" });
         }
-      }
+      }    
       // --- Send email if status is now PENDING_APPROVAL ---
       else if (newStatus === PRStatus.PENDING_APPROVAL) {
           try {

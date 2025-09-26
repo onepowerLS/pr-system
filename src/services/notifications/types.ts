@@ -36,6 +36,7 @@ export interface NotificationContext {
     firstName?: string;
     lastName?: string;
     name?: string;
+    approverId: string;
   };
   requestorInfo?: {
     name: string;
