@@ -21,6 +21,7 @@ import axios from 'axios';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { generateApprovedEmail } from '@/services/notifications/templates/approvedTemplate';
+import { generateRejectedEmail } from '@/services/notifications/templates/rejectedTemplate';
 
 
 interface ApproverActionsProps {
@@ -456,6 +457,103 @@ export function ApproverActions({ pr, currentUser, approvers, assignedApprover, 
             enqueueSnackbar("Failed to send pending approval email", { variant: "error" });
           }
         }
+
+        // --- Send email if status is now REJECTED ---
+        if (newStatus === PRStatus.REJECTED) {
+          try {
+            // Get procurement users' emails
+            const procurementUsers = await fetchProcurementUsers();
+            const procurementEmails = procurementUsers
+              .map(user => user.email)
+              .filter(Boolean);
+        
+            // resolve current approver from workflow
+            const approverId = pr?.approvalWorkflow?.currentApprover;
+            const approver = approvers.find((a: { id: string }) => a.id === approverId);
+        
+            // Generate the email using the correct approver
+            const emailContent = generateRejectedEmail({
+              pr: {
+                ...pr,
+                approver: approver
+                  ? {
+                      id: approver.id,
+                      name: `${approver.firstName || ''} ${approver.lastName || ''}`.trim() || approver.email,
+                      email: approver.email,
+                      firstName: approver.firstName,
+                      lastName: approver.lastName,
+                    }
+                  : undefined,
+              },
+              prNumber: pr.prNumber,
+              user: {
+                firstName: currentUser.name?.split(" ")[0] || "",
+                lastName: currentUser.name?.split(" ").slice(1).join(" ") || "",
+                name: currentUser.name || currentUser.email || "Unknown",
+                email: currentUser.email || "",
+              },
+              notes: notes || "",
+              baseUrl: window.location.origin,
+              isUrgent: pr.isUrgent || false,
+            });
+        
+            // Send email to requestor with procurement in CC
+            if (pr.requestor?.email) {
+              try {
+                await axios.post("/api/send-email", {
+                  to: pr.requestor.email,
+                  cc: procurementEmails,
+                  subject: emailContent.subject,
+                  html: emailContent.html,
+                  text: emailContent.text,
+                  templateType: "rejected",
+                  pr: {
+                    ...pr,
+                    requestor: {
+                      id: pr.requestor?.id,
+                      name:
+                        pr.requestor?.name ||
+                        pr.requestor?.displayName ||
+                        "Unknown",
+                      email: pr.requestor?.email,
+                      department: pr.requestor?.department,
+                    },
+                    approver: approver
+                      ? {
+                          id: approver.id,
+                          name: approver.name,
+                          email: approver.email,
+                        }
+                      : {
+                          id: currentUser.id,
+                          name:
+                            currentUser.name ||
+                            currentUser.email ||
+                            "Unknown",
+                          email: currentUser.email,
+                        },
+                  },
+                  prNumber: pr.prNumber,
+                  isUrgent: pr.isUrgent || false,
+                  notes: notes || "",
+                });
+        
+                enqueueSnackbar(
+                  `Rejected email sent to ${pr.requestor.email}`,
+                  { variant: "success" }
+                );
+              } catch (error) {
+                console.error("Error sending rejection email:", error);
+                enqueueSnackbar("Failed to send rejection email", {
+                  variant: "error",
+                });
+              }
+            }
+          } catch (error) {
+            console.error("Failed to send rejection email:", error);
+            enqueueSnackbar("Failed to send rejection email", { variant: "error" });
+          }
+        } 
 
       // Navigate to dashboard after any successful status change
       navigate('/dashboard');

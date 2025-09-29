@@ -10,8 +10,7 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
     const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Has Been Rejected`;
     
     const requestorDetails = [
-      ['Name', pr.requestor?.firstName && pr.requestor?.lastName ? 
-        `${pr.requestor.firstName} ${pr.requestor.lastName}` : 'Not specified'],
+      ['Name', pr.requestor?.name || 'Not specified'],
       ['Email', pr.requestor?.email || 'Not specified'],
       ['Department', pr.requestor?.department || 'Not specified'],
       ['Site', pr.site || 'Not specified'],
@@ -19,7 +18,7 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
 
     const prSummary = [
       ['PR Number', prNumber || 'Not specified'],
-      ['Category', pr.category || 'Not specified'],
+      ['Category', pr.projectCategory || 'Not specified'],
       ['Expense Type', pr.expenseType || 'Not specified'],
       ['Total Amount', pr.estimatedAmount ? pr.estimatedAmount.toLocaleString('en-US', { 
         style: 'currency', 
@@ -29,6 +28,10 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
       ['Required Date', pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'Not specified'],
     ];
 
+    const approverName = pr.approver?.name 
+    || `${pr.approver?.firstName ?? ''} ${pr.approver?.lastName ?? ''}`.trim()
+    || 'Approver';
+
     const html = `
       <div style="${styles.container}">
         ${isUrgent ? `<div style="${styles.urgentHeader}">URGENT</div>` : ''}
@@ -37,7 +40,7 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
         <div style="${styles.section}">
           <h3 style="${styles.subHeader}">Rejection Details</h3>
           <p style="${styles.paragraph}">
-            <strong>Rejected By:</strong> ${user ? `${user.firstName} ${user.lastName}` : 'System'}
+            <strong>Rejected By:</strong> ${approverName}
           </p>
           ${notes ? `
             <p style="${styles.paragraph}">
@@ -65,7 +68,7 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
     const text = `
 PR ${prNumber} Has Been Rejected
 
-Rejected By: ${user ? `${user.firstName} ${user.lastName}` : 'System'}
+Rejected By: ${approverName}
 ${notes ? `Notes: ${notes}\n` : ''}
 
 Requestor Information:

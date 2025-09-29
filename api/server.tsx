@@ -5,6 +5,8 @@ import sgMail from "@sendgrid/mail";
 // Import your templates
 import { generatePRApprovalEmail } from "../src/services/notifications/templates/newPRSubmitted";
 import { generatePendingApprovalEmail } from "../src/services/notifications/templates/pendingApprovalTemplate";
+import { generateApprovedEmail } from "../src/services/notifications/templates/approvedTemplate";
+import { generateRejectedEmail } from "../src/services/notifications/templates/rejectedTemplate";
 
 const app = express();
 app.use(express.json());
@@ -60,7 +62,31 @@ app.post("/api/send-email", async (req, res) => {
         baseUrl: "https://your-app-url.com",
         isUrgent: isUrgent || false,
       });
-    } else {
+    } else if (templateType === "approved") {
+      // Use the approved template
+      emailContent = generateApprovedEmail({
+        pr,
+        prNumber: prNumber || "DRAFT",
+        user,
+        notes,
+        baseUrl: "https://your-app-url.com",
+        isUrgent: isUrgent || false,
+      });
+    }
+    
+    else if (templateType === "rejected") {
+      // Use the rejected template
+      emailContent = generateRejectedEmail({
+        pr,
+        prNumber: prNumber || "DRAFT",
+        user,
+        notes,
+        baseUrl: "https://your-app-url.com",
+        isUrgent: isUrgent || false,
+      });
+    }
+    
+    else {
       // Fallback to new PR submitted template
       const emailParams = {
         to,
@@ -118,7 +144,7 @@ app.post("/api/send-email", async (req, res) => {
 
     console.log("Email message prepared:", JSON.stringify(msg, null, 2));
 
-    await sgMail.send(msg);
+   await sgMail.send(msg);
 
     res.json({ success: true });
   } catch (error: unknown) {
