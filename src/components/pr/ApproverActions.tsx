@@ -536,6 +536,7 @@ export function ApproverActions({ pr, currentUser, approvers, assignedApprover, 
                   prNumber: pr.prNumber,
                   isUrgent: pr.isUrgent || false,
                   notes: notes || "",
+                  currentUser: currentUser,
                 });
         
                 enqueueSnackbar(

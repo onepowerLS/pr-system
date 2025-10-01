@@ -28,10 +28,24 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
       ['Required Date', pr.requiredDate ? new Date(pr.requiredDate).toLocaleDateString() : 'Not specified'],
     ];
 
-    const approverName = pr.approver?.name 
-    || `${pr.approver?.firstName ?? ''} ${pr.approver?.lastName ?? ''}`.trim()
-    || 'Approver';
-
+    const getDisplayName = (item: any): string => {
+      if (!item) return "Not specified";
+    
+      if (item.name) return item.name;
+      if (item.displayName) return item.displayName;
+      if (item.firstName && item.lastName) return `${item.firstName} ${item.lastName}`;
+      if (item.firstName) return item.firstName;
+      if (typeof item === "string") return item;
+      if (item.email) return item.email;
+    
+      return "System Administrator";
+    };
+    
+    // Log the user object for debugging
+    console.log('User object in rejected template:', JSON.stringify(user, null, 2));
+    
+    const rejectorName = getDisplayName(user) || 'System Administrator';
+    
     const html = `
       <div style="${styles.container}">
         ${isUrgent ? `<div style="${styles.urgentHeader}">URGENT</div>` : ''}
@@ -40,7 +54,7 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
         <div style="${styles.section}">
           <h3 style="${styles.subHeader}">Rejection Details</h3>
           <p style="${styles.paragraph}">
-            <strong>Rejected By:</strong> ${approverName}
+            <strong>Rejected By:</strong> ${rejectorName}
           </p>
           ${notes ? `
             <p style="${styles.paragraph}">
@@ -68,8 +82,7 @@ export function generateRejectedEmail(context: NotificationContext): EmailConten
     const text = `
 PR ${prNumber} Has Been Rejected
 
-Rejected By: ${approverName}
-${notes ? `Notes: ${notes}\n` : ''}
+Rejected By: ${rejectorName}
 
 Requestor Information:
 ${requestorDetails.map(([key, value]) => `${key}: ${value}`).join('\n')}

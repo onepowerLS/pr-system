@@ -39,6 +39,7 @@ app.post("/api/send-email", async (req, res) => {
       templateType, //decide which template to use
       pr,
       user,
+      currentUser,
       notes,
     } = req.body;
 
@@ -54,71 +55,71 @@ app.post("/api/send-email", async (req, res) => {
 
     if (templateType === "pendingApproval") {
       // Use the pending approval template
-      emailContent = generatePendingApprovalEmail({
-        pr,
-        prNumber: prNumber || "DRAFT",
+        emailContent = generatePendingApprovalEmail({
+          pr,
+          prNumber: prNumber || "DRAFT",
         user,
-        notes,
-        baseUrl: "https://your-app-url.com",
-        isUrgent: isUrgent || false,
-      });
+          notes,
+          baseUrl: "https://your-app-url.com",
+          isUrgent: isUrgent || false,
+        });
     } else if (templateType === "approved") {
       // Use the approved template
-      emailContent = generateApprovedEmail({
-        pr,
-        prNumber: prNumber || "DRAFT",
-        user,
-        notes,
-        baseUrl: "https://your-app-url.com",
-        isUrgent: isUrgent || false,
-      });
+        emailContent = generateApprovedEmail({
+          pr,
+          prNumber: prNumber || "DRAFT",
+          user,
+          notes,
+          baseUrl: "https://your-app-url.com",
+          isUrgent: isUrgent || false,
+        });
     }
-    
+
     else if (templateType === "rejected") {
       // Use the rejected template
-      emailContent = generateRejectedEmail({
-        pr,
-        prNumber: prNumber || "DRAFT",
-        user,
-        notes,
-        baseUrl: "https://your-app-url.com",
-        isUrgent: isUrgent || false,
-      });
+        emailContent = generateRejectedEmail({
+          pr,
+          prNumber: prNumber || "DRAFT",
+          user: currentUser,
+          notes,
+          baseUrl: "https://your-app-url.com",
+          isUrgent: isUrgent || false,
+        });
     }
-    
+
     else {
       // Fallback to new PR submitted template
-      const emailParams = {
-        to,
-        cc,
-        prNumber: prNumber || "DRAFT",
-        requestor: requestor || "Unknown",
-        amount: amount || 0,
-        currency: currency || "LSL",
-        prLink,
-        description:
-          description ||
-          (subject
-            ? subject.replace("New Purchase Request for Approval - ", "")
-            : "No description"),
-        department: department || "Not specified",
-        site: site || "Not specified",
-        isUrgent: isUrgent || (subject ? subject.includes("URGENT") : false),
-      };
+        const emailParams = {
+          to,
+          cc,
+          prNumber: prNumber || "DRAFT",
+          requestor: requestor || "Unknown",
+          amount: amount || 0,
+          currency: currency || "LSL",
+          prLink,
+          description:
+            description ||
+            (subject
+              ? subject.replace("New Purchase Request for Approval - ", "")
+              : "No description"),
+          department: department || "Not specified",
+          site: site || "Not specified",
+          isUrgent: isUrgent || (subject ? subject.includes("URGENT") : false),
+        };
 
-      emailContent = await generatePRApprovalEmail(
-        emailParams.to,
-        emailParams.cc,
-        emailParams.prNumber,
-        emailParams.requestor,
-        emailParams.amount,
-        emailParams.currency,
-        emailParams.prLink,
-        emailParams.description,
-        emailParams.department,
-        emailParams.site,
-        emailParams.isUrgent
-      );
+        emailContent = await generatePRApprovalEmail(
+          emailParams.to,
+          emailParams.cc,
+          emailParams.prNumber,
+          emailParams.requestor,
+          emailParams.amount,
+          emailParams.currency,
+          emailParams.prLink,
+          emailParams.description,
+          emailParams.department,
+          emailParams.site,
+          emailParams.isUrgent
+        );
     }
 
     console.log(
@@ -144,8 +145,8 @@ app.post("/api/send-email", async (req, res) => {
 
     console.log("Email message prepared:", JSON.stringify(msg, null, 2));
 
-   await sgMail.send(msg);
-
+   //await sgMail.send(msg);
+    
     res.json({ success: true });
   } catch (error: unknown) {
     console.error("SendGrid error:", error);
