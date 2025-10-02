@@ -7,6 +7,9 @@ import { generatePRApprovalEmail } from "../src/services/notifications/templates
 import { generatePendingApprovalEmail } from "../src/services/notifications/templates/pendingApprovalTemplate";
 import { generateApprovedEmail } from "../src/services/notifications/templates/approvedTemplate";
 import { generateRejectedEmail } from "../src/services/notifications/templates/rejectedTemplate";
+import { generateRevisionRequiredEmail } from "../src/services/notifications/templates/revisionRequiredTemplate";
+import { generateReviseAndResubmitEmail } from "../src/services/notifications/templates/reviseAndResubmitTemplate";
+
 
 const app = express();
 app.use(express.json());
@@ -81,6 +84,18 @@ app.post("/api/send-email", async (req, res) => {
           pr,
           prNumber: prNumber || "DRAFT",
           user: currentUser,
+          notes,
+          baseUrl: "https://your-app-url.com",
+          isUrgent: isUrgent || false,
+        });
+    }
+
+    else if (templateType === "REVISION_REQUIRED") {
+      // Use the revise and resubmit template
+        emailContent = await generateRevisionRequiredEmail({
+          pr,
+          prId: pr?.id || '',
+          prNumber: prNumber || "DRAFT",
           notes,
           baseUrl: "https://your-app-url.com",
           isUrgent: isUrgent || false,
@@ -164,5 +179,5 @@ app.post("/api/send-email", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(` Server running on http://localhost:${PORT}`);
 });

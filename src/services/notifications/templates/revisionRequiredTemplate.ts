@@ -1,5 +1,5 @@
 import { NotificationContext, EmailContent } from '../types';
-import { generateEmailHeaders } from '../types/emailHeaders';
+// import { generateEmailHeaders } from '../types/emailHeaders';
 import { generateTable } from './baseTemplate';
 import { styles } from './styles';
 import { referenceDataService } from '../../referenceData';
@@ -160,10 +160,10 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
     const html = `
       <div style="${styles.container}">
         ${isUrgent ? `<div style="${styles.urgentBadge}">URGENT</div>` : ''}
-        <h2 style="${styles.heading}">Purchase Request #${prNumber} Requires Revision</h2>
+        <h2 style="${styles.header}">Purchase Request #${prNumber} Requires Revision</h2>
         
         <div style="${styles.section}">
-          <h3 style="${styles.subheading}">Revision Details</h3>
+          <h3 style="${styles.subHeader}">Revision Details</h3>
           <p style="${styles.paragraph}">
             <strong>Reviewer:</strong> ${user?.name || 'System'}
           </p>
@@ -175,12 +175,12 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
         </div>
 
         <div style="${styles.section}">
-          <h3 style="${styles.subheading}">Requestor Information</h3>
+          <h3 style="${styles.subHeader}">Requestor Information</h3>
           ${generateTable(requestorDetails)}
         </div>
 
         <div style="${styles.section}">
-          <h3 style="${styles.subheading}">PR Details</h3>
+          <h3 style="${styles.subHeader}">PR Details</h3>
           ${generateTable(prDetails)}
         </div>
 
@@ -194,12 +194,12 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
       subject,
       text: `PR ${prNumber} Requires Revision\n\nReviewer: ${user?.name || 'System'}\n${notes ? `Notes: ${notes}\n` : ''}\n\nRequestor Information:\n${requestorDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nPR Details:\n${prDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nView PR: ${prUrl}`,
       html,
-      headers: generateEmailHeaders({
-        to: pr?.requestorEmail || '',
-        subject,
-        prNumber,
-        isHtml: true
-      }),
+    //   headers: generateEmailHeaders({
+    //     to: pr?.requestorEmail || '',
+    //     subject,
+    //     prNumber,
+    //     isHtml: true
+    //   }),
       context: {
         ...context,
         pr,
@@ -209,7 +209,6 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
         }
       }
     };
-
     return emailContent;
   } catch (error) {
     console.error('Error generating revision required email:', error);
