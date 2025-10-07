@@ -6,7 +6,6 @@ import { referenceDataService } from '../../referenceData';
 
 interface RevisionRequiredDetails {
   prNumber: string;
-  reviewerName: string;
   revisionNotes: string;
   baseUrl: string;
   prId: string;
@@ -14,22 +13,6 @@ interface RevisionRequiredDetails {
   category?: string;
   expenseType?: string;
   vendorName?: string;
-}
-
-function extractRevisionDetails(context: NotificationContext): RevisionRequiredDetails {
-  const { pr, prNumber, user, notes, isUrgent } = context;
-  return {
-    prNumber,
-    reviewerName: user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.name || 'System' : 'System',
-    revisionNotes: notes || '',
-    baseUrl: context.baseUrl || '',
-    prId: pr?.id || '',
-    isUrgent,
-    // Use optional chaining to safely access properties that might not exist
-    category: pr?.category || '',
-    expenseType: pr?.expenseType || '',
-    vendorName: pr?.vendorName || ''
-  };
 }
 
 const formatCurrency = (amount?: number | null, currency?: string) => {
@@ -157,6 +140,21 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
       { label: 'PR Link', value: prUrl }
     ];
 
+    const getDisplayName = (item: any): string => {
+      if (!item) return "Not specified";
+    
+      if (item.name) return item.name;
+      if (item.displayName) return item.displayName;
+      if (item.firstName && item.lastName) return `${item.firstName} ${item.lastName}`;
+      if (item.firstName) return item.firstName;
+      if (typeof item === "string") return item;
+      if (item.email) return item.email;
+    
+      return "System Administrator";
+    };
+
+    const reviewerName = getDisplayName(user) || 'System Administrator';
+
     const html = `
       <div style="${styles.container}">
         ${isUrgent ? `<div style="${styles.urgentBadge}">URGENT</div>` : ''}
@@ -165,7 +163,7 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
         <div style="${styles.section}">
           <h3 style="${styles.subHeader}">Revision Details</h3>
           <p style="${styles.paragraph}">
-            <strong>Reviewer:</strong> ${user?.name || 'System'}
+            <strong>Reviewer:</strong> ${reviewerName || 'System'}
           </p>
           ${notes ? `
             <p style="${styles.paragraph}">
@@ -192,14 +190,8 @@ export async function generateRevisionRequiredEmail(context: NotificationContext
 
     const emailContent: EmailContent = {
       subject,
-      text: `PR ${prNumber} Requires Revision\n\nReviewer: ${user?.name || 'System'}\n${notes ? `Notes: ${notes}\n` : ''}\n\nRequestor Information:\n${requestorDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nPR Details:\n${prDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nView PR: ${prUrl}`,
+      text: `PR ${prNumber} Requires Revision\n\nReviewer: ${reviewerName}\n${notes ? `Notes: ${notes}\n` : ''}\n\nRequestor Information:\n${requestorDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nPR Details:\n${prDetails.map(d => `${d.label}: ${d.value}`).join('\n')}\n\nView PR: ${prUrl}`,
       html,
-    //   headers: generateEmailHeaders({
-    //     to: pr?.requestorEmail || '',
-    //     subject,
-    //     prNumber,
-    //     isHtml: true
-    //   }),
       context: {
         ...context,
         pr,

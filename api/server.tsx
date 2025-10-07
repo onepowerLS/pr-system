@@ -95,6 +95,7 @@ app.post("/api/send-email", async (req, res) => {
         emailContent = await generateRevisionRequiredEmail({
           pr,
           prId: pr?.id || '',
+          user: currentUser,
           prNumber: prNumber || "DRAFT",
           notes,
           baseUrl: "https://your-app-url.com",

@@ -577,8 +577,8 @@ export function ApproverActions({ pr, currentUser, approvers, assignedApprover, 
                       prNumber: pr.prNumber,
                       user: {
                         id: currentUser.id,
-                        firstName: currentUser.name?.split(" ")[0] || "",
-                        lastName: currentUser.name?.split(" ").slice(1).join(" ") || "",
+                        firstName: currentUser.firstName?.split(" ")[0] || "",
+                        lastName: currentUser.lastName?.split(" ").slice(1).join(" ") || "",
                         name: currentUser.name || currentUser.email || "Unknown",
                         email: currentUser.email || "",
                       },
@@ -632,7 +632,7 @@ export function ApproverActions({ pr, currentUser, approvers, assignedApprover, 
                               : {
                                   id: currentUser.id,
                                   name:
-                                    currentUser.name ||
+                                    `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() ||
                                     currentUser.email ||
                                     "Unknown",
                                   email: currentUser.email,
@@ -643,10 +643,10 @@ export function ApproverActions({ pr, currentUser, approvers, assignedApprover, 
                           notes: notes || "",
                           currentUser: {
                             id: currentUser.id,
-                            name: currentUser.name || currentUser.email || "Unknown",
+                            name: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
                             email: currentUser.email || "",
-                            firstName: currentUser.name?.split(" ")[0] || "",
-                            lastName: currentUser.name?.split(" ").slice(1).join(" ") || "",
+                            firstName: currentUser.firstName?.split(" ")[0] || "",
+                            lastName: currentUser.lastName?.split(" ").slice(1).join(" ") || "",
                           },
                         });
                 
