@@ -8,7 +8,7 @@ import { generatePendingApprovalEmail } from "../src/services/notifications/temp
 import { generateApprovedEmail } from "../src/services/notifications/templates/approvedTemplate";
 import { generateRejectedEmail } from "../src/services/notifications/templates/rejectedTemplate";
 import { generateRevisionRequiredEmail } from "../src/services/notifications/templates/revisionRequiredTemplate";
-import { generateReviseAndResubmitEmail } from "../src/services/notifications/templates/reviseAndResubmitTemplate";
+import { generateResubmittedEmail } from "../src/services/notifications/templates/prResubmittedTemplate";
 
 
 const app = express();
@@ -103,6 +103,20 @@ app.post("/api/send-email", async (req, res) => {
         });
     }
 
+    else if (templateType === "resubmitted") {
+      // Use the resubmit pr
+      emailContent = await generateResubmittedEmail({
+        pr,
+        prId: pr?.id || '',
+        user,
+        prNumber: prNumber || "DRAFT",
+        notes,
+        baseUrl: "https://your-app-url.com",
+        isUrgent: isUrgent || false,
+      });
+    }
+    
+
     else {
       // Fallback to new PR submitted template
         const emailParams = {
@@ -161,7 +175,7 @@ app.post("/api/send-email", async (req, res) => {
 
     console.log("Email message prepared:", JSON.stringify(msg, null, 2));
 
-   //await sgMail.send(msg);
+   await sgMail.send(msg);
     
     res.json({ success: true });
   } catch (error: unknown) {

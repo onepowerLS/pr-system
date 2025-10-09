@@ -1,5 +1,5 @@
 import { NotificationContext, EmailContent } from '../types';
-import { generateEmailHeaders } from '../types/emailHeaders';
+
 import { generateTable } from './baseTemplate';
 import { styles } from './styles';
 
@@ -78,12 +78,12 @@ View PR: ${prUrl}
   `.trim();
 
   return {
-    headers: generateEmailHeaders({
-      to: pr?.requestorEmail || '',
-      subject,
-      prNumber,
-      isHtml: true
-    }),
+    // headers: generateEmailHeaders({
+    //   to: pr?.requestorEmail || '',
+    //   subject,
+    //   prNumber,
+    //   isHtml: true
+    // }),
     subject,
     html,
     text,

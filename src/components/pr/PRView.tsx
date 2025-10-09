@@ -1717,19 +1717,66 @@ useEffect(() => {
 
   const handleResubmit = async () => {
     if (!pr || !currentUser) return;
-
+  
+    setLoading(true);
+  
     try {
-      setLoading(true);
-      await prService.updatePRStatus(pr.id, PRStatus.RESUBMITTED, 'PR resubmitted after revisions', currentUser);
-      enqueueSnackbar('PR resubmitted successfully', { variant: 'success' });
+      // Update PR status
+      await prService.updatePRStatus(
+        pr.id,
+        PRStatus.RESUBMITTED,
+        'PR resubmitted after revisions',
+        currentUser
+      );
+  
+      // Fetch Procurement users
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('permissionLevel', '==', 3));
+      const querySnapshot = await getDocs(q);
+      const procEmails = querySnapshot.docs
+        .map(doc => doc.data().email)
+        .filter(Boolean)
+        .join(',');
+  
+      if (!procEmails) {
+        enqueueSnackbar('No Procurement users found to notify.', { variant: 'warning' });
+        return;
+      }
+  
+      // Send email notification
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: procEmails,                 
+          templateType: 'resubmitted',
+          pr,
+          prNumber: pr.prNumber || 'DRAFT',
+          user: currentUser,
+          notes: pr.notes || '',
+          isUrgent: pr.isUrgent || false,
+        }),
+      });
+  
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error('Email failed to send');
+      }
+  
+      enqueueSnackbar('PR resubmitted and email sent successfully', { variant: 'success' });
       navigate('/dashboard');
     } catch (error) {
       console.error('Error resubmitting PR:', error);
-      enqueueSnackbar('Failed to resubmit PR', { variant: 'error' });
+      enqueueSnackbar('Failed to resubmit PR or send email', { variant: 'error' });
     } finally {
       setLoading(false);
     }
   };
+  
+  
+  
 
   const handleExitEditMode = () => {
     if (hasUnsavedChanges) {
