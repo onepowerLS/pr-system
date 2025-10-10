@@ -10,8 +10,7 @@ export function generateResubmittedEmail(context: NotificationContext): EmailCon
   const subject = `${isUrgent ? 'URGENT: ' : ''}PR ${prNumber} Has Been Resubmitted`;
   
   const requestorDetails = [
-    ['Name', pr?.requestor?.firstName && pr?.requestor?.lastName ? 
-      `${pr.requestor.firstName} ${pr.requestor.lastName}` : 'Not specified'],
+    ['Name', user ? `${user.firstName} ${user.lastName}` : 'Not specified'],
     ['Email', pr?.requestor?.email || 'Not specified'],
     ['Department', pr?.requestor?.department || 'Not specified'],
     ['Site', pr?.site || 'Not specified'],
@@ -19,7 +18,7 @@ export function generateResubmittedEmail(context: NotificationContext): EmailCon
 
   const prSummary = [
     ['PR Number', prNumber || 'Not specified'],
-    ['Category', pr?.category || 'Not specified'],
+    ['Category', pr?.projectCategory || 'Not specified'],
     ['Expense Type', pr?.expenseType || 'Not specified'],
     ['Total Amount', pr?.estimatedAmount ? pr.estimatedAmount.toLocaleString('en-US', { 
       style: 'currency', 
